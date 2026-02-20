@@ -1,0 +1,391 @@
+import { describe, expect, it, vi } from "vitest";
+import { FactExtractor } from "./fact-extractor";
+import type { Conversation } from "./types";
+import type { ModelsFactory } from "../../models";
+import type { AppConfig } from "../../config";
+
+const createMockConfig = (): AppConfig => ({
+  llm: {
+    defaultProvider: "openai",
+    defaultModel: "gpt-4",
+    timeoutMs: 60000,
+    maxRetries: 3,
+    retryBaseMs: 500,
+    rateLimitRps: 2,
+    networkMode: "auto",
+    offlineNonModelOnly: true,
+    auditLogEnabled: false,
+    piiRedactionEnabled: false
+  },
+  sandbox: {
+    virtualRoot: "/mnt/workspace",
+    allowedWorkspaces: [],
+    allowedCommands: [],
+    execTimeoutMs: 30000,
+    maxOutputBytes: 64 * 1024,
+    auditLogEnabled: false
+  },
+  providers: {
+    openai: {
+      enabled: true,
+      apiKey: "",
+      baseUrl: "",
+      model: "gpt-4"
+    },
+    deepseek: {
+      enabled: false,
+      apiKey: "",
+      baseUrl: "",
+      model: ""
+    },
+    volcengine: {
+      enabled: false,
+      apiKey: "",
+      baseUrl: "",
+      model: ""
+    }
+  },
+  features: {
+    enableMiddleware: false,
+    enableMultiAgent: false,
+    enableMemory: false,
+    enableMCP: false
+  },
+  paths: {
+    projectConfigPath: "",
+    userConfigPath: "",
+    auditLogPath: "",
+    sandboxAuditLogPath: "",
+    workspaceDir: "",
+    databasePath: "",
+    traceDir: "",
+    resourcesDir: ""
+  }
+});
+
+describe("FactExtractor", () => {
+  it("should extract facts from conversation", async () => {
+    const mockModelsFactory = {
+      generateText: vi.fn(async () => ({
+        provider: "openai" as const,
+        model: "gpt-4",
+        text: JSON.stringify([
+          {
+            content: "User prefers TypeScript over JavaScript",
+            tags: ["preference", "language"],
+            confidence: 0.9
+          },
+          {
+            content: "Project uses Vite for bundling",
+            tags: ["tooling", "build"],
+            confidence: 1.0
+          }
+        ]),
+        latencyMs: 100
+      }))
+    } as unknown as ModelsFactory;
+
+    const config = createMockConfig();
+    const extractor = new FactExtractor(mockModelsFactory, config);
+
+    const conversation: Conversation = {
+      sessionId: "session_123",
+      messages: [
+        {
+          role: "user",
+          content: "I prefer TypeScript over JavaScript",
+          timestamp: Date.now()
+        },
+        {
+          role: "assistant",
+          content: "Great choice! TypeScript provides type safety.",
+          timestamp: Date.now()
+        },
+        {
+          role: "user",
+          content: "We're using Vite for bundling",
+          timestamp: Date.now()
+        }
+      ]
+    };
+
+    const facts = await extractor.extractFacts(conversation);
+
+    expect(facts).toHaveLength(2);
+    expect(facts[0].content).toBe("User prefers TypeScript over JavaScript");
+    expect(facts[0].tags).toEqual(["preference", "language"]);
+    expect(facts[0].confidence).toBe(0.9);
+    expect(facts[0].source).toBe("session_123");
+    expect(facts[1].content).toBe("Project uses Vite for bundling");
+  });
+
+  it("should filter facts by minimum confidence", async () => {
+    const mockModelsFactory = {
+      generateText: vi.fn(async () => ({
+        provider: "openai" as const,
+        model: "gpt-4",
+        text: JSON.stringify([
+          {
+            content: "High confidence fact",
+            tags: ["test"],
+            confidence: 0.9
+          },
+          {
+            content: "Low confidence fact",
+            tags: ["test"],
+            confidence: 0.3
+          }
+        ]),
+        latencyMs: 100
+      }))
+    } as unknown as ModelsFactory;
+
+    const config = createMockConfig();
+    const extractor = new FactExtractor(mockModelsFactory, config);
+
+    const conversation: Conversation = {
+      sessionId: "session_123",
+      messages: [
+        {
+          role: "user",
+          content: "Test message",
+          timestamp: Date.now()
+        }
+      ]
+    };
+
+    const facts = await extractor.extractFacts(conversation, {
+      minConfidence: 0.5
+    });
+
+    expect(facts).toHaveLength(1);
+    expect(facts[0].content).toBe("High confidence fact");
+  });
+
+  it("should handle empty conversation", async () => {
+    const mockModelsFactory = {
+      generateText: vi.fn()
+    } as unknown as ModelsFactory;
+
+    const config = createMockConfig();
+    const extractor = new FactExtractor(mockModelsFactory, config);
+
+    const conversation: Conversation = {
+      sessionId: "session_123",
+      messages: []
+    };
+
+    const facts = await extractor.extractFacts(conversation);
+
+    expect(facts).toHaveLength(0);
+    expect(mockModelsFactory.generateText).not.toHaveBeenCalled();
+  });
+
+  it("should handle invalid JSON response", async () => {
+    const mockModelsFactory = {
+      generateText: vi.fn(async () => ({
+        provider: "openai" as const,
+        model: "gpt-4",
+        text: "This is not valid JSON",
+        latencyMs: 100
+      }))
+    } as unknown as ModelsFactory;
+
+    const config = createMockConfig();
+    const extractor = new FactExtractor(mockModelsFactory, config);
+
+    const conversation: Conversation = {
+      sessionId: "session_123",
+      messages: [
+        {
+          role: "user",
+          content: "Test message",
+          timestamp: Date.now()
+        }
+      ]
+    };
+
+    const facts = await extractor.extractFacts(conversation);
+
+    expect(facts).toHaveLength(0);
+  });
+
+  it("should extract facts from plain text", async () => {
+    const mockModelsFactory = {
+      generateText: vi.fn(async () => ({
+        provider: "openai" as const,
+        model: "gpt-4",
+        text: JSON.stringify([
+          {
+            content: "Extracted fact from text",
+            tags: ["test"],
+            confidence: 0.8
+          }
+        ]),
+        latencyMs: 100
+      }))
+    } as unknown as ModelsFactory;
+
+    const config = createMockConfig();
+    const extractor = new FactExtractor(mockModelsFactory, config);
+
+    const facts = await extractor.extractFromText(
+      "This is some text to extract facts from",
+      "text_source"
+    );
+
+    expect(facts).toHaveLength(1);
+    expect(facts[0].content).toBe("Extracted fact from text");
+    expect(facts[0].source).toBe("text_source");
+  });
+
+  it("should merge duplicate facts", () => {
+    const config = createMockConfig();
+    const mockModelsFactory = {} as ModelsFactory;
+    const extractor = new FactExtractor(mockModelsFactory, config);
+
+    const facts = [
+      {
+        id: "1",
+        content: "User prefers TypeScript",
+        source: "session_1",
+        timestamp: Date.now(),
+        tags: ["preference"],
+        confidence: 0.9
+      },
+      {
+        id: "2",
+        content: "User prefers TypeScript",
+        source: "session_2",
+        timestamp: Date.now(),
+        tags: ["preference"],
+        confidence: 0.8
+      },
+      {
+        id: "3",
+        content: "Project uses Vite",
+        source: "session_1",
+        timestamp: Date.now(),
+        tags: ["tooling"],
+        confidence: 1.0
+      }
+    ];
+
+    const merged = extractor.mergeFacts(facts);
+
+    expect(merged).toHaveLength(2);
+    expect(merged[0].content).toBe("User prefers TypeScript");
+    expect(merged[1].content).toBe("Project uses Vite");
+  });
+
+  it("should filter facts by tags", () => {
+    const config = createMockConfig();
+    const mockModelsFactory = {} as ModelsFactory;
+    const extractor = new FactExtractor(mockModelsFactory, config);
+
+    const facts = [
+      {
+        id: "1",
+        content: "Fact 1",
+        source: "session_1",
+        timestamp: Date.now(),
+        tags: ["preference", "language"],
+        confidence: 0.9
+      },
+      {
+        id: "2",
+        content: "Fact 2",
+        source: "session_1",
+        timestamp: Date.now(),
+        tags: ["tooling", "build"],
+        confidence: 0.8
+      },
+      {
+        id: "3",
+        content: "Fact 3",
+        source: "session_1",
+        timestamp: Date.now(),
+        tags: ["preference"],
+        confidence: 1.0
+      }
+    ];
+
+    const filtered = extractor.filterByTags(facts, ["preference"]);
+
+    expect(filtered).toHaveLength(2);
+    expect(filtered[0].tags).toContain("preference");
+    expect(filtered[1].tags).toContain("preference");
+  });
+
+  it("should sort facts by confidence", () => {
+    const config = createMockConfig();
+    const mockModelsFactory = {} as ModelsFactory;
+    const extractor = new FactExtractor(mockModelsFactory, config);
+
+    const facts = [
+      {
+        id: "1",
+        content: "Low confidence",
+        source: "session_1",
+        timestamp: Date.now(),
+        confidence: 0.5
+      },
+      {
+        id: "2",
+        content: "High confidence",
+        source: "session_1",
+        timestamp: Date.now(),
+        confidence: 0.95
+      },
+      {
+        id: "3",
+        content: "Medium confidence",
+        source: "session_1",
+        timestamp: Date.now(),
+        confidence: 0.7
+      }
+    ];
+
+    const sorted = extractor.sortByConfidence(facts);
+
+    expect(sorted[0].confidence).toBe(0.95);
+    expect(sorted[1].confidence).toBe(0.7);
+    expect(sorted[2].confidence).toBe(0.5);
+  });
+
+  it("should get top N facts", () => {
+    const config = createMockConfig();
+    const mockModelsFactory = {} as ModelsFactory;
+    const extractor = new FactExtractor(mockModelsFactory, config);
+
+    const facts = [
+      {
+        id: "1",
+        content: "Fact 1",
+        source: "session_1",
+        timestamp: Date.now(),
+        confidence: 0.5
+      },
+      {
+        id: "2",
+        content: "Fact 2",
+        source: "session_1",
+        timestamp: Date.now(),
+        confidence: 0.95
+      },
+      {
+        id: "3",
+        content: "Fact 3",
+        source: "session_1",
+        timestamp: Date.now(),
+        confidence: 0.7
+      }
+    ];
+
+    const top2 = extractor.getTopFacts(facts, 2);
+
+    expect(top2).toHaveLength(2);
+    expect(top2[0].confidence).toBe(0.95);
+    expect(top2[1].confidence).toBe(0.7);
+  });
+});

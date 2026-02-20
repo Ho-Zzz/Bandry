@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DeerFlow Local is an Electron desktop application built with TypeScript, React, and Vite. It provides a local AI agent interface with sandboxed file operations and command execution.
+Bandry is an Electron desktop application built with TypeScript, React, and Vite. It provides a local AI agent interface with sandboxed file operations and command execution.
 
 ## Development Commands
 
