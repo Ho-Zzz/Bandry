@@ -11,6 +11,8 @@ import { ChatAgentV2 } from "./v2/chat-agent-v2";
 import { LeadAgent } from "./v2/agents";
 import { EmployeeStore, ProviderStore, ConversationStore } from "./v2/database";
 import type {
+  ChatCancelInput,
+  ChatCancelResult,
   ChatSendInput,
   ChatSendResult,
   ChatV2SendInput,
@@ -18,6 +20,7 @@ import type {
   ChatMultiAgentSendInput,
   ChatMultiAgentSendResult,
   ChatUpdateEvent,
+  ChatDeltaEvent,
   ConversationInput,
   ConversationResult,
   EmployeeInput,
@@ -58,6 +61,7 @@ let openVikingProcessManager: OpenVikingProcessManager | null = null;
 let openVikingMemoryProvider: OpenVikingMemoryProvider | null = null;
 const settingsService = new SettingsService({ config });
 settingsService.ensureRuntimeAssignments();
+const activeChatRequests = new Map<string, AbortController>();
 
 const broadcastTaskUpdate = (update: TaskUpdateEvent): void => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -68,6 +72,12 @@ const broadcastTaskUpdate = (update: TaskUpdateEvent): void => {
 const broadcastChatUpdate = (update: ChatUpdateEvent): void => {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send("chat:update", update);
+  }
+};
+
+const broadcastChatDelta = (update: ChatDeltaEvent): void => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send("chat:delta", update);
   }
 };
 
@@ -182,14 +192,63 @@ const registerIpcHandlers = (): void => {
 
   ipcMain.handle("chat:send", async (_event, input: ChatSendInput): Promise<ChatSendResult> => {
     const requestId = input.requestId?.trim() || `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    return await deepSeekChatAgent.send(input, (stage, message) => {
-      broadcastChatUpdate({
+    const controller = new AbortController();
+    activeChatRequests.set(requestId, controller);
+
+    try {
+      return await deepSeekChatAgent.send(
+        input,
+        (stage, message) => {
+          broadcastChatUpdate({
+            requestId,
+            stage,
+            message,
+            timestamp: Date.now()
+          });
+        },
+        (delta) => {
+          broadcastChatDelta({
+            requestId,
+            delta,
+            timestamp: Date.now()
+          });
+        },
+        controller.signal
+      );
+    } finally {
+      activeChatRequests.delete(requestId);
+    }
+  });
+
+  ipcMain.handle("chat:cancel", async (_event, input: ChatCancelInput): Promise<ChatCancelResult> => {
+    const requestId = input.requestId.trim();
+    if (!requestId) {
+      return {
+        requestId: "",
+        cancelled: false
+      };
+    }
+
+    const controller = activeChatRequests.get(requestId);
+    if (!controller) {
+      return {
         requestId,
-        stage,
-        message,
-        timestamp: Date.now()
-      });
+        cancelled: false
+      };
+    }
+
+    controller.abort();
+    broadcastChatUpdate({
+      requestId,
+      stage: "error",
+      message: "已主动中断当前生成",
+      timestamp: Date.now()
     });
+
+    return {
+      requestId,
+      cancelled: true
+    };
   });
 
   // V2 chat handler with middleware pipeline
@@ -200,14 +259,24 @@ const registerIpcHandlers = (): void => {
     if (!enableMiddleware) {
       // Fall back to legacy agent
       const requestId = input.requestId?.trim() || `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const result = await deepSeekChatAgent.send(input, (stage, message) => {
-        broadcastChatUpdate({
-          requestId,
-          stage,
-          message,
-          timestamp: Date.now()
-        });
-      });
+      const result = await deepSeekChatAgent.send(
+        input,
+        (stage, message) => {
+          broadcastChatUpdate({
+            requestId,
+            stage,
+            message,
+            timestamp: Date.now()
+          });
+        },
+        (delta) => {
+          broadcastChatDelta({
+            requestId,
+            delta,
+            timestamp: Date.now()
+          });
+        }
+      );
 
       return {
         ...result,

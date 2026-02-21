@@ -20,6 +20,7 @@ export type GenerateTextInput = {
   temperature?: number;
   maxTokens?: number;
   taskId?: string;
+  abortSignal?: AbortSignal;
 };
 
 export type GenerateTextResult = {

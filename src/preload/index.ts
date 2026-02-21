@@ -1,7 +1,10 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
+  ChatCancelInput,
+  ChatCancelResult,
   ChatSendInput,
   ChatSendResult,
+  ChatDeltaEvent,
   ChatV2SendInput,
   ChatV2SendResult,
   ChatMultiAgentSendInput,
@@ -39,6 +42,7 @@ import type {
 const api = {
   ping: (): Promise<PingResult> => ipcRenderer.invoke("app:ping"),
   chatSend: (input: ChatSendInput): Promise<ChatSendResult> => ipcRenderer.invoke("chat:send", input),
+  chatCancel: (input: ChatCancelInput): Promise<ChatCancelResult> => ipcRenderer.invoke("chat:cancel", input),
   chatV2Send: (input: ChatV2SendInput): Promise<ChatV2SendResult> => ipcRenderer.invoke("chat:v2:send", input),
   chatMultiAgentSend: (input: ChatMultiAgentSendInput): Promise<ChatMultiAgentSendResult> => ipcRenderer.invoke("chat:multi-agent:send", input),
   startTask: (input: TaskStartInput): Promise<TaskStartResult> => ipcRenderer.invoke("task:start", input),
@@ -62,6 +66,17 @@ const api = {
 
     return () => {
       ipcRenderer.removeListener("chat:update", wrappedListener);
+    };
+  },
+  onChatDelta: (listener: (update: ChatDeltaEvent) => void): (() => void) => {
+    const wrappedListener = (_event: IpcRendererEvent, update: ChatDeltaEvent): void => {
+      listener(update);
+    };
+
+    ipcRenderer.on("chat:delta", wrappedListener);
+
+    return () => {
+      ipcRenderer.removeListener("chat:delta", wrappedListener);
     };
   },
   onTaskUpdate: (listener: (update: TaskUpdateEvent) => void): (() => void) => {
