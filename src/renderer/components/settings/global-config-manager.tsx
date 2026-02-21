@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import {
   Button,
   Card,
@@ -43,8 +44,29 @@ export const GlobalConfigManager = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string>("");
+  const [visibleApiKeys, setVisibleApiKeys] = useState<Record<string, boolean>>({});
 
   const profiles = useMemo(() => state?.modelProfiles ?? [], [state]);
+  const getProfileLabel = (profile: GlobalSettingsState["modelProfiles"][number]) =>
+    `${profile.name} (${profile.provider}/${profile.model || "未设置模型"})`;
+
+  const isApiKeyVisible = (fieldId: string) => Boolean(visibleApiKeys[fieldId]);
+  const toggleApiKeyVisibility = (fieldId: string) => {
+    setVisibleApiKeys((current) => ({
+      ...current,
+      [fieldId]: !current[fieldId]
+    }));
+  };
+  const renderApiKeyToggle = (fieldId: string) => (
+    <button
+      type="button"
+      className="text-gray-500 hover:text-gray-700 transition-colors"
+      aria-label={isApiKeyVisible(fieldId) ? "隐藏 API Key" : "显示 API Key"}
+      onClick={() => toggleApiKeyVisibility(fieldId)}
+    >
+      {isApiKeyVisible(fieldId) ? <EyeOff size={16} /> : <Eye size={16} />}
+    </button>
+  );
 
   useEffect(() => {
     const load = async () => {
@@ -180,8 +202,9 @@ export const GlobalConfigManager = () => {
                   />
                   <Input
                     label="API Key"
-                    type="password"
+                    type={isApiKeyVisible(`provider.${provider}.apiKey`) ? "text" : "password"}
                     value={cfg.apiKey}
+                    endContent={renderApiKeyToggle(`provider.${provider}.apiKey`)}
                     onValueChange={(value) => updateProviderField(provider, "apiKey", value)}
                   />
                   {provider === "openai" ? (
@@ -272,32 +295,49 @@ export const GlobalConfigManager = () => {
           <h3 className="text-lg font-semibold">角色模型绑定</h3>
         </CardHeader>
         <CardBody className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {ROLE_LABELS.map((item) => (
-            <Select
-              key={item.role}
-              label={item.label}
-              selectedKeys={[state.routing[item.role] ?? ""]}
-              onChange={(event) => {
-                const profileId = event.target.value;
-                setState((current) => {
-                  if (!current) return current;
-                  return {
-                    ...current,
-                    routing: {
-                      ...current.routing,
-                      [item.role]: profileId
-                    }
-                  };
-                });
-              }}
-            >
-              {profiles.map((profile) => (
-                <SelectItem key={profile.id}>
-                  {profile.name} ({profile.provider}/{profile.model})
-                </SelectItem>
-              ))}
-            </Select>
-          ))}
+          {ROLE_LABELS.map((item) => {
+            const selectedProfileId = state.routing[item.role];
+            const selectedKeys =
+              selectedProfileId && profiles.some((profile) => profile.id === selectedProfileId)
+                ? [selectedProfileId]
+                : [];
+            const boundProfile = profiles.find((profile) => profile.id === selectedProfileId);
+
+            return (
+              <div key={item.role} className="space-y-2">
+                <Select
+                  label={item.label}
+                  placeholder={profiles.length ? "选择模型档案" : "暂无可用模型档案"}
+                  selectedKeys={selectedKeys}
+                  onSelectionChange={(keys) => {
+                    if (keys === "all") return;
+                    const [profileId] = Array.from(keys, String);
+                    setState((current) => {
+                      if (!current) return current;
+                      return {
+                        ...current,
+                        routing: {
+                          ...current.routing,
+                          [item.role]: profileId ?? ""
+                        }
+                      };
+                    });
+                  }}
+                >
+                  {profiles.map((profile) => (
+                    <SelectItem key={profile.id}>{getProfileLabel(profile)}</SelectItem>
+                  ))}
+                </Select>
+                <p className="text-xs text-gray-500">
+                  {boundProfile
+                    ? `当前绑定：${getProfileLabel(boundProfile)}`
+                    : selectedProfileId
+                      ? `当前绑定：${selectedProfileId}（档案不存在）`
+                      : "当前绑定：未绑定"}
+                </p>
+              </div>
+            );
+          })}
         </CardBody>
       </Card>
 
@@ -416,8 +456,9 @@ export const GlobalConfigManager = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <Input
                 label="API Key"
-                type="password"
+                type={isApiKeyVisible("tools.webSearch.apiKey") ? "text" : "password"}
                 value={state.tools.webSearch.apiKey}
+                endContent={renderApiKeyToggle("tools.webSearch.apiKey")}
                 onValueChange={(value) =>
                   setState((current) => {
                     if (!current) return current;
@@ -500,8 +541,9 @@ export const GlobalConfigManager = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Input
                 label="API Key"
-                type="password"
+                type={isApiKeyVisible("tools.webFetch.apiKey") ? "text" : "password"}
                 value={state.tools.webFetch.apiKey}
+                endContent={renderApiKeyToggle("tools.webFetch.apiKey")}
                 onValueChange={(value) =>
                   setState((current) => {
                     if (!current) return current;

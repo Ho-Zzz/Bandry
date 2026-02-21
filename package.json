@@ -24,7 +24,7 @@
     "@assistant-ui/react": "^0.12.10",
     "@assistant-ui/react-markdown": "^0.12.3",
     "@heroui/react": "^2.8.9",
-    "@heroui/theme": "^2.8.9",
+    "@heroui/theme": "^2.4.26",
     "@tailwindcss/vite": "^4.2.0",
     "autoprefixer": "^10.4.24",
     "better-sqlite3": "^12.6.2",
