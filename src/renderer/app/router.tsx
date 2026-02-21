@@ -89,7 +89,7 @@ export const AppRouter = () => {
 
           {/* Copilot Views */}
           <Route path="copilot" element={<Copilot />} />
-          <Route path="copilot/:taskId" element={<Copilot />} />
+          <Route path="copilot/:conversationId" element={<Copilot />} />
           
           {/* Chat Views */}
           <Route path="chat" element={<ChatPage />} />
