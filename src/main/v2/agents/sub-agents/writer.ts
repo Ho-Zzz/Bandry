@@ -1,6 +1,7 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { BaseAgent } from "../base-agent";
+import { resolveModelTarget } from "../../../config";
 import type { AgentRole, AgentResult, AgentExecutionInput } from "../types";
 
 /**
@@ -52,12 +53,20 @@ Focus on clear, well-formatted output.`;
           content: `${input.prompt}\n\nWorkspace: ${input.workspacePath}`
         }
       ];
+      const target = resolveModelTarget(this.appConfig, "sub.writer");
+      const providerConfig = this.appConfig.providers[target.provider];
 
       const result = await this.modelsFactory.generateText({
-        provider: this.appConfig.llm.defaultProvider,
-        model: this.appConfig.llm.defaultModel,
+        runtimeConfig: {
+          provider: target.provider,
+          baseUrl: providerConfig.baseUrl,
+          apiKey: providerConfig.apiKey,
+          orgId: providerConfig.orgId
+        },
+        model: target.model,
         messages,
-        temperature: 0.3 // Slightly creative for writing
+        temperature: target.temperature ?? 0.3, // Slightly creative for writing
+        maxTokens: target.maxTokens
       });
 
       // If writePath is specified, write the output

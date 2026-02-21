@@ -6,16 +6,32 @@ import { DeepSeekToolChatAgent } from "./deepseek-tool-chat-agent";
 
 const createConfig = () => {
   const workspaceDir = path.resolve("/tmp/bandry-chat-workspace");
-  return createDefaultConfig({
-    workspaceDir,
-    projectConfigPath: path.join(workspaceDir, "config.json"),
-    userConfigPath: path.join(workspaceDir, "user-config.json"),
-    auditLogPath: path.join(workspaceDir, "model-audit.log"),
-    sandboxAuditLogPath: path.join(workspaceDir, "sandbox-audit.log"),
-    databasePath: path.join(workspaceDir, "bandry.db"),
-    traceDir: path.join(workspaceDir, "traces"),
-    resourcesDir: path.join(workspaceDir, "resources")
+  const config = createDefaultConfig({
+    paths: {
+      projectRoot: workspaceDir,
+      bandryHome: workspaceDir,
+      configDir: path.join(workspaceDir, "config"),
+      logsDir: path.join(workspaceDir, "logs"),
+      workspaceDir,
+      workspacesDir: workspaceDir,
+      resourcesDir: path.join(workspaceDir, "resources"),
+      pluginsDir: path.join(workspaceDir, "plugins"),
+      traceDir: path.join(workspaceDir, "traces"),
+      projectConfigPath: path.join(workspaceDir, "config.json"),
+      userConfigPath: path.join(workspaceDir, "user-config.json"),
+      auditLogPath: path.join(workspaceDir, "model-audit.log"),
+      sandboxAuditLogPath: path.join(workspaceDir, "sandbox-audit.log"),
+      databasePath: path.join(workspaceDir, "bandry.db"),
+      dotenvPath: path.join(workspaceDir, ".env")
+    },
+    runtime: {
+      inheritedEnv: {}
+    }
   });
+  config.providers.openai.apiKey = "test-openai-key";
+  config.providers.deepseek.apiKey = "test-deepseek-key";
+  config.providers.volcengine.apiKey = "test-volcengine-key";
+  return config;
 };
 
 describe("DeepSeekToolChatAgent", () => {

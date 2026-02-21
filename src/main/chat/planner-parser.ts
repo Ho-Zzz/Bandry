@@ -63,7 +63,9 @@ const parsePlannerInput = (inputRaw: unknown): PlannerActionTool["input"] => {
     command: typeof obj.command === "string" ? obj.command : undefined,
     args: Array.isArray(obj.args) ? obj.args.filter((item): item is string => typeof item === "string") : undefined,
     cwd: typeof obj.cwd === "string" ? obj.cwd : undefined,
-    timeoutMs: typeof obj.timeoutMs === "number" && Number.isFinite(obj.timeoutMs) ? obj.timeoutMs : undefined
+    timeoutMs: typeof obj.timeoutMs === "number" && Number.isFinite(obj.timeoutMs) ? obj.timeoutMs : undefined,
+    query: typeof obj.query === "string" ? obj.query : undefined,
+    url: typeof obj.url === "string" ? obj.url : undefined
   };
 };
 
@@ -89,7 +91,14 @@ export const parsePlannerAction = (rawText: string): PlannerAction | null => {
       return { action: "answer", answer };
     }
 
-    if (root.action === "tool" && (root.tool === "list_dir" || root.tool === "read_file" || root.tool === "exec")) {
+    if (
+      root.action === "tool" &&
+      (root.tool === "list_dir" ||
+        root.tool === "read_file" ||
+        root.tool === "exec" ||
+        root.tool === "web_search" ||
+        root.tool === "web_fetch")
+    ) {
       return {
         action: "tool",
         tool: root.tool,

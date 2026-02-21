@@ -31,6 +31,56 @@ export const envToLayer = (env: NodeJS.ProcessEnv): ConfigLayer => {
       maxOutputBytes: toNumberValue(env.SANDBOX_MAX_OUTPUT_BYTES),
       auditLogEnabled: toBooleanValue(env.SANDBOX_AUDIT_LOG_ENABLED)
     },
+    features: {
+      enableMiddleware: toBooleanValue(env.ENABLE_MIDDLEWARE),
+      enableMultiAgent: toBooleanValue(env.ENABLE_MULTI_AGENT),
+      enableMemory: toBooleanValue(env.ENABLE_MEMORY),
+      enableMCP: toBooleanValue(env.ENABLE_MCP)
+    },
+    openviking: {
+      enabled: toBooleanValue(env.OPENVIKING_ENABLED),
+      host: toStringValue(env.OPENVIKING_HOST),
+      port: toNumberValue(env.OPENVIKING_PORT),
+      apiKey: toStringValue(env.OPENVIKING_API_KEY),
+      serverCommand: toStringValue(env.OPENVIKING_SERVER_COMMAND),
+      serverArgs: toStringListValue(env.OPENVIKING_SERVER_ARGS),
+      startTimeoutMs: toNumberValue(env.OPENVIKING_START_TIMEOUT_MS),
+      healthcheckIntervalMs: toNumberValue(env.OPENVIKING_HEALTHCHECK_INTERVAL_MS),
+      memoryTopK: toNumberValue(env.OPENVIKING_MEMORY_TOP_K),
+      memoryScoreThreshold: toNumberValue(env.OPENVIKING_MEMORY_SCORE_THRESHOLD),
+      commitDebounceMs: toNumberValue(env.OPENVIKING_COMMIT_DEBOUNCE_MS),
+      targetUris: toStringListValue(env.OPENVIKING_TARGET_URIS)
+    },
+    paths: {
+      bandryHome: toStringValue(env.BANDRY_HOME),
+      configDir: toStringValue(env.BANDRY_CONFIG_DIR),
+      logsDir: toStringValue(env.BANDRY_LOG_DIR),
+      workspaceDir: toStringValue(env.BANDRY_WORKSPACE_DIR ?? env.BANDRY_WORKSPACES_DIR),
+      workspacesDir: toStringValue(env.BANDRY_WORKSPACES_DIR),
+      resourcesDir: toStringValue(env.BANDRY_RESOURCES_DIR),
+      pluginsDir: toStringValue(env.BANDRY_PLUGINS_DIR),
+      traceDir: toStringValue(env.BANDRY_TRACE_DIR),
+      databasePath: toStringValue(env.BANDRY_DB_PATH),
+      auditLogPath: toStringValue(env.BANDRY_AUDIT_LOG_PATH),
+      sandboxAuditLogPath: toStringValue(env.BANDRY_SANDBOX_AUDIT_LOG_PATH)
+    },
+    tools: {
+      webSearch: {
+        enabled: toBooleanValue(env.WEB_SEARCH_ENABLED),
+        provider: "tavily",
+        apiKey: toStringValue(env.TAVILY_API_KEY),
+        baseUrl: toStringValue(env.TAVILY_BASE_URL),
+        timeoutMs: toNumberValue(env.WEB_SEARCH_TIMEOUT_MS),
+        maxResults: toNumberValue(env.WEB_SEARCH_MAX_RESULTS)
+      },
+      webFetch: {
+        enabled: toBooleanValue(env.WEB_FETCH_ENABLED),
+        provider: "jina",
+        apiKey: toStringValue(env.JINA_API_KEY),
+        baseUrl: toStringValue(env.JINA_BASE_URL),
+        timeoutMs: toNumberValue(env.WEB_FETCH_TIMEOUT_MS)
+      }
+    },
     providers: {
       openai: {
         apiKey: toStringValue(env.OPENAI_API_KEY),

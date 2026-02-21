@@ -1,4 +1,5 @@
 import { BaseAgent } from "../base-agent";
+import { resolveModelTarget } from "../../../config";
 import type { AgentRole, AgentResult, AgentExecutionInput } from "../types";
 
 /**
@@ -47,12 +48,20 @@ Provide clear, concise summaries of your findings.`;
         { role: "system" as const, content: this.config.systemPrompt! },
         { role: "user" as const, content: input.prompt }
       ];
+      const target = resolveModelTarget(this.appConfig, "sub.researcher");
+      const providerConfig = this.appConfig.providers[target.provider];
 
       const result = await this.modelsFactory.generateText({
-        provider: this.appConfig.llm.defaultProvider,
-        model: this.appConfig.llm.defaultModel,
+        runtimeConfig: {
+          provider: target.provider,
+          baseUrl: providerConfig.baseUrl,
+          apiKey: providerConfig.apiKey,
+          orgId: providerConfig.orgId
+        },
+        model: target.model,
         messages,
-        temperature: 0.2
+        temperature: target.temperature ?? 0.2,
+        maxTokens: target.maxTokens
       });
 
       return this.successResult(result.text);

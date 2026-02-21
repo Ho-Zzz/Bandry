@@ -1,5 +1,5 @@
 import type { Middleware, MiddlewareContext } from "./types";
-import type { OpenVikingMemory } from "../memory/openviking-adapter";
+import type { MemoryProvider } from "../memory/types";
 
 /**
  * Memory middleware
@@ -8,7 +8,7 @@ import type { OpenVikingMemory } from "../memory/openviking-adapter";
 export class MemoryMiddleware implements Middleware {
   name = "memory";
 
-  constructor(private memory: OpenVikingMemory) {}
+  constructor(private memory: MemoryProvider) {}
 
   /**
    * Inject memory context before LLM call
@@ -16,7 +16,8 @@ export class MemoryMiddleware implements Middleware {
   async beforeLLM(ctx: MiddlewareContext): Promise<MiddlewareContext> {
     try {
       // Read memory layers (L0/L1 by default)
-      const chunks = await this.memory.injectContext(ctx.sessionId);
+      const query = this.getLatestUserQuery(ctx);
+      const chunks = await this.memory.injectContext(ctx.sessionId, query);
 
       if (chunks.length === 0) {
         return ctx;
@@ -104,5 +105,18 @@ export class MemoryMiddleware implements Middleware {
     lines.push("Use this context to inform your responses when relevant.");
 
     return lines.join("\n");
+  }
+
+  /**
+   * Extract latest user query from context messages.
+   */
+  private getLatestUserQuery(ctx: MiddlewareContext): string {
+    for (let i = ctx.messages.length - 1; i >= 0; i -= 1) {
+      if (ctx.messages[i].role === "user") {
+        return ctx.messages[i].content;
+      }
+    }
+
+    return "";
   }
 }

@@ -101,6 +101,22 @@ export class ModelsFactory {
   }
 
   private resolveProviderConfig(input: GenerateTextInput): ProviderResolvedConfig {
+    if (input.runtimeConfig) {
+      const runtime = input.runtimeConfig;
+      const runtimeApiKey = runtime.apiKey.trim();
+      if (!runtimeApiKey) {
+        throw new Error(`Provider ${runtime.provider} is not configured`);
+      }
+
+      return {
+        provider: runtime.provider,
+        baseUrl: runtime.baseUrl,
+        apiKey: runtimeApiKey,
+        model: input.model?.trim() || this.config.providers[runtime.provider].model,
+        orgId: runtime.orgId
+      };
+    }
+
     const provider = input.provider ?? this.config.llm.defaultProvider;
     const providerConfig = this.config.providers[provider];
 

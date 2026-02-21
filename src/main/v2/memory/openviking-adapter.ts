@@ -1,12 +1,13 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import type { ModelsFactory } from "../../models";
-import type { AppConfig } from "../../config";
+import { resolveModelTarget, type AppConfig } from "../../config";
 import type {
   ContextChunk,
   Fact,
   Conversation,
   MemoryLayer,
+  MemoryProvider,
   MemoryStorageOptions
 } from "./types";
 import { FactExtractor } from "./fact-extractor";
@@ -15,7 +16,7 @@ import { FactExtractor } from "./fact-extractor";
  * OpenViking memory adapter
  * Manages L0/L1/L2 memory layers with Markdown storage
  */
-export class OpenVikingMemory {
+export class OpenVikingMemory implements MemoryProvider {
   private resourcesPath: string;
   private pendingStorage: Map<string, NodeJS.Timeout> = new Map();
   private options: Required<MemoryStorageOptions>;
@@ -39,7 +40,7 @@ export class OpenVikingMemory {
   /**
    * Inject context from memory into session
    */
-  async injectContext(_sessionId: string): Promise<ContextChunk[]> {
+  async injectContext(_sessionId: string, _query?: string): Promise<ContextChunk[]> {
     const chunks: ContextChunk[] = [];
 
     try {
@@ -194,9 +195,16 @@ export class OpenVikingMemory {
         : "Create a brief summary (2-3 sentences):";
 
     try {
+      const target = resolveModelTarget(this.config, "memory.fact_extractor");
+      const providerConfig = this.config.providers[target.provider];
       const result = await this.modelsFactory.generateText({
-        provider: this.config.llm.defaultProvider,
-        model: this.config.llm.defaultModel,
+        runtimeConfig: {
+          provider: target.provider,
+          baseUrl: providerConfig.baseUrl,
+          apiKey: providerConfig.apiKey,
+          orgId: providerConfig.orgId
+        },
+        model: target.model,
         messages: [
           {
             role: "system",
@@ -207,7 +215,8 @@ export class OpenVikingMemory {
             content
           }
         ],
-        temperature: 0.3
+        temperature: target.temperature ?? 0.3,
+        maxTokens: target.maxTokens
       });
 
       return result.text;

@@ -1,361 +1,253 @@
 /**
  * Copilot View Component
  *
- * Main interface for interacting with the Lead Agent.
- * Features task list, DAG visualization, and CopilotKit chat integration.
+ * Single-column ChatGPT-like interface for interacting with the AI agent.
  */
 
-import { useEffect, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useState, useRef, useEffect } from "react";
 import {
   Card,
-  CardHeader,
-  CardBody,
-  Chip,
   Button,
   Textarea,
+  Chip,
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem,
 } from "@heroui/react";
 import {
-  Zap,
-  CheckCircle,
-  Clock,
-  Loader2,
-  AlertTriangle,
-  ArrowLeft,
-  FolderOpen,
   Send,
+  Settings,
+  Trash2,
+  Loader2,
+  User,
+  Bot,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { clsx } from "clsx";
-import { useTaskStore } from "../../store/use-task-store";
-import type { DAGTask, SubTask, TaskStatus } from "../../types/task";
+import { ModelSelector } from "../../components/chat/model-selector";
+import { useCopilotChat } from "../../features/copilot/use-copilot-chat";
+import type { Message } from "../../features/copilot/use-copilot-chat";
 
 /**
- * Task Status Configuration
+ * Message Component
  */
-const taskStatusConfig: Record<
-  TaskStatus,
-  { color: "success" | "warning" | "danger" | "default"; icon: typeof CheckCircle; label: string }
-> = {
-  PENDING: { color: "default", icon: Clock, label: "Pending" },
-  RUNNING: { color: "warning", icon: Loader2, label: "Running" },
-  PAUSED_FOR_HITL: { color: "danger", icon: AlertTriangle, label: "Waiting for Approval" },
-  COMPLETED: { color: "success", icon: CheckCircle, label: "Completed" },
-  FAILED: { color: "danger", icon: AlertTriangle, label: "Failed" },
-};
+const MessageBubble = ({ message }: { message: Message }) => {
+  const [showTrace, setShowTrace] = useState(false);
+  const isUser = message.role === "user";
+  const isSystem = message.role === "system";
 
-/**
- * SubTask Node Component
- */
-const SubTaskNode = ({
-  subTask,
-  isActive,
-  onClick,
-}: {
-  subTask: SubTask;
-  isActive: boolean;
-  onClick?: () => void;
-}) => {
-  const config = taskStatusConfig[subTask.status];
-  const Icon = config.icon;
-
-  return (
-    <Card
-      isPressable={!!onClick}
-      onPress={onClick}
-      className={clsx(
-        "w-64 shrink-0 transition-all",
-        isActive && "ring-2 ring-blue-500 shadow-lg"
-      )}
-    >
-      <CardHeader className="flex items-center gap-2 pb-0 pt-3 px-3">
-        <Chip size="sm" color={config.color} variant="flat">
-          <Icon
-            size={14}
-            className={subTask.status === "RUNNING" ? "animate-spin" : ""}
-          />
-        </Chip>
-        <span className="font-medium text-sm text-gray-900">{subTask.agent_role}</span>
-      </CardHeader>
-      <CardBody className="pt-2 pb-3 px-3">
-        <p className="text-xs text-gray-600 line-clamp-2 mb-2">{subTask.prompt}</p>
-        {subTask.write_path && (
-          <code className="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-500 truncate block">
-            {subTask.write_path}
-          </code>
-        )}
-      </CardBody>
-    </Card>
-  );
-};
-
-/**
- * DAG Visualizer Component
- */
-const DAGVisualizer = ({ task }: { task: DAGTask }) => {
-  const levels = useMemo(() => {
-    const result: SubTask[][] = [];
-    const assigned = new Set<string>();
-
-    while (assigned.size < task.sub_tasks.length) {
-      const level: SubTask[] = [];
-      for (const st of task.sub_tasks) {
-        if (assigned.has(st.sub_task_id)) continue;
-        const depsMet = st.dependencies.every((d) => assigned.has(d));
-        if (depsMet) {
-          level.push(st);
-          assigned.add(st.sub_task_id);
-        }
-      }
-      if (level.length > 0) result.push(level);
-      else break;
-    }
-
-    return result;
-  }, [task.sub_tasks]);
-
-  if (task.sub_tasks.length === 0) {
+  if (isSystem) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-400">
-        <Zap size={48} className="mb-4 opacity-50" />
-        <p className="text-lg font-medium">No sub-tasks yet</p>
-        <p className="text-sm">Start a conversation to create tasks</p>
+      <div className="flex justify-center my-4">
+        <Chip size="sm" variant="flat" color="default">
+          {message.content}
+        </Chip>
       </div>
     );
   }
 
   return (
-    <div className="flex gap-8 overflow-x-auto p-6 min-h-full">
-      {levels.map((level, levelIndex) => (
-        <div key={levelIndex} className="flex flex-col gap-3">
-          {level.map((st) => (
-            <SubTaskNode key={st.sub_task_id} subTask={st} isActive={false} />
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-};
-
-/**
- * Task List Sidebar Component
- */
-const TaskListSidebar = ({
-  tasks,
-  activeTaskId,
-  onSelectTask,
-}: {
-  tasks: DAGTask[];
-  activeTaskId: string | null;
-  onSelectTask: (id: string) => void;
-}) => {
-  return (
-    <div className="w-72 border-r border-gray-200 bg-gray-50/50 flex flex-col h-full">
-      <div className="p-4 border-b border-gray-200 bg-white">
-        <h2 className="font-bold text-lg text-gray-900">Tasks</h2>
-        <p className="text-xs text-gray-500 mt-0.5">{tasks.length} tasks total</p>
-      </div>
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
-        {tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-40 text-gray-400 text-sm">
-            <Zap size={24} className="mb-2 opacity-50" />
-            <p>No tasks yet</p>
-          </div>
+    <div className={clsx("flex gap-3 mb-6", isUser ? "flex-row-reverse" : "flex-row")}>
+      {/* Avatar */}
+      <div
+        className={clsx(
+          "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+          isUser ? "bg-blue-500" : "bg-gray-200"
+        )}
+      >
+        {isUser ? (
+          <User size={16} className="text-white" />
         ) : (
-          tasks.map((task) => {
-            const config = taskStatusConfig[task.status];
-            const Icon = config.icon;
-            const isActive = task.task_id === activeTaskId;
-            const truncatedPrompt =
-              task.prompt.length > 30 ? task.prompt.slice(0, 30) + "..." : task.prompt;
-
-            return (
-              <Card
-                key={task.task_id}
-                isPressable
-                className={isActive ? "ring-2 ring-blue-500" : ""}
-                onPress={() => onSelectTask(task.task_id)}
-              >
-                <CardBody className="p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <Chip size="sm" color={config.color} variant="flat">
-                      <Icon
-                        size={12}
-                        className={task.status === "RUNNING" ? "animate-spin" : ""}
-                      />
-                      <span className="ml-1">{config.label}</span>
-                    </Chip>
-                  </div>
-                  <p className="text-sm font-medium text-gray-900 line-clamp-2">
-                    {truncatedPrompt}
-                  </p>
-                  <div className="flex items-center gap-1 mt-1 text-xs text-gray-400">
-                    <FolderOpen size={10} />
-                    <code className="truncate">{task.workspace_path}</code>
-                  </div>
-                </CardBody>
-              </Card>
-            );
-          })
+          <Bot size={16} className="text-gray-600" />
         )}
       </div>
-    </div>
-  );
-};
 
-/**
- * Chat Panel Component (placeholder for CopilotKit)
- */
-const ChatPanel = ({
-  taskId,
-  onSendMessage,
-}: {
-  taskId: string | null;
-  onSendMessage: (message: string) => void;
-}) => {
-  const [inputValue, setInputValue] = React.useState("");
-
-  const handleSend = () => {
-    if (inputValue.trim()) {
-      onSendMessage(inputValue.trim());
-      setInputValue("");
-    }
-  };
-
-  return (
-    <div className="w-96 border-l border-gray-200 flex flex-col bg-white h-full">
-      <div className="p-4 border-b border-gray-200">
-        <h3 className="font-semibold text-gray-900">Bandry Assistant</h3>
-        <p className="text-xs text-gray-500">
-          {taskId ? "Continue working on your task" : "Start a new task"}
-        </p>
-      </div>
-      <div className="flex-1 overflow-y-auto p-4">
-        {!taskId && (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400 text-center">
-            <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mb-4">
-              <Zap size={28} className="text-blue-500" />
+      {/* Message Content */}
+      <div className={clsx("flex flex-col gap-2 max-w-[70%]", isUser ? "items-end" : "items-start")}>
+        <div
+          className={clsx(
+            "rounded-2xl px-4 py-3 text-sm",
+            isUser
+              ? "bg-blue-500 text-white"
+              : message.status === "error"
+              ? "bg-red-50 text-red-900 border border-red-200"
+              : "bg-gray-100 text-gray-900"
+          )}
+        >
+          {message.status === "pending" && !message.content ? (
+            <div className="flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin" />
+              <span className="text-gray-500">Thinking...</span>
             </div>
-            <p className="text-lg font-medium text-gray-600 mb-1">How can I help?</p>
-            <p className="text-sm">
-              Describe what you want to accomplish and I'll break it down into tasks.
-            </p>
+          ) : (
+            <div className="whitespace-pre-wrap break-words">{message.content}</div>
+          )}
+        </div>
+
+        {/* Trace (for assistant messages) */}
+        {!isUser && message.trace && message.trace.length > 0 && (
+          <div className="w-full">
+            <Button
+              size="sm"
+              variant="light"
+              onPress={() => setShowTrace(!showTrace)}
+              className="text-xs text-gray-500"
+              startContent={showTrace ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            >
+              {showTrace ? "Hide" : "Show"} trace ({message.trace.length})
+            </Button>
+            {showTrace && (
+              <Card className="mt-2 p-3 bg-gray-50">
+                <div className="space-y-2">
+                  {message.trace.map((event, idx) => (
+                    <div key={idx} className="text-xs">
+                      <Chip size="sm" variant="flat" color="default" className="mb-1">
+                        {event.stage}
+                      </Chip>
+                      <p className="text-gray-600 ml-2">{event.message}</p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
           </div>
         )}
-      </div>
-      <div className="p-4 border-t border-gray-200">
-        <div className="flex items-end gap-2">
-          <Textarea
-            placeholder="Describe your task..."
-            value={inputValue}
-            onValueChange={setInputValue}
-            minRows={1}
-            maxRows={4}
-            className="flex-1"
-            classNames={{ input: "text-sm" }}
-          />
-          <Button
-            isIconOnly
-            color="primary"
-            onPress={handleSend}
-            isDisabled={!inputValue.trim()}
-          >
-            <Send size={16} />
-          </Button>
-        </div>
+
+        {/* Status indicator */}
+        {message.status === "error" && (
+          <span className="text-xs text-red-500">Failed to send</span>
+        )}
       </div>
     </div>
   );
 };
-
-import React from "react";
 
 /**
  * Copilot View Component
  */
 export const Copilot = () => {
-  const { taskId } = useParams<{ taskId?: string }>();
-  const navigate = useNavigate();
-  const { tasks, fetchTasks, setActiveTask, addTask, getTask } = useTaskStore();
+  const [inputValue, setInputValue] = useState("");
+  const [selectedProvider, setSelectedProvider] = useState<string>();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
+  const { messages, sendMessage, clearMessages, isLoading } = useCopilotChat({
+    modelProfileId: selectedProvider,
+  });
 
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (taskId) {
-      setActiveTask(taskId);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSend = () => {
+    if (inputValue.trim() && !isLoading) {
+      sendMessage(inputValue.trim());
+      setInputValue("");
     }
-  }, [taskId, setActiveTask]);
-
-  const activeTask = taskId ? getTask(taskId) : undefined;
-
-  const handleSelectTask = (id: string) => {
-    setActiveTask(id);
-    navigate(`/copilot/${id}`);
   };
 
-  const handleSendMessage = (message: string) => {
-    if (!taskId) {
-      const newTask = addTask(message);
-      navigate(`/copilot/${newTask.task_id}`);
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
     }
   };
 
   return (
-    <div className="flex h-full w-full">
-      {/* Left: Task List */}
-      <TaskListSidebar
-        tasks={tasks}
-        activeTaskId={taskId || null}
-        onSelectTask={handleSelectTask}
-      />
-
-      {/* Center: DAG Visualizer */}
-      <div className="flex-1 flex flex-col min-w-0 bg-gray-50">
-        {activeTask ? (
-          <>
-            <div className="p-4 border-b bg-white flex items-center gap-3">
-              <Button
-                variant="light"
-                size="sm"
-                isIconOnly
-                onPress={() => navigate("/copilot")}
-              >
-                <ArrowLeft size={16} />
+    <div className="flex flex-col h-full w-full bg-white">
+      {/* Header */}
+      <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between bg-white shrink-0">
+        <div className="flex items-center gap-4">
+          <h1 className="text-xl font-bold text-gray-900">Bandry Assistant</h1>
+          <ModelSelector
+            value={selectedProvider}
+            onChange={setSelectedProvider}
+            className="w-48"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Dropdown>
+            <DropdownTrigger>
+              <Button variant="light" size="sm" isIconOnly>
+                <Settings size={18} />
               </Button>
-              <div className="flex-1 min-w-0">
-                <h2 className="font-bold text-lg text-gray-900 truncate">
-                  {activeTask.prompt}
-                </h2>
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                  <Chip
-                    size="sm"
-                    color={taskStatusConfig[activeTask.status].color}
-                    variant="flat"
-                  >
-                    {taskStatusConfig[activeTask.status].label}
-                  </Chip>
-                  <code className="truncate">{activeTask.workspace_path}</code>
-                </div>
-              </div>
+            </DropdownTrigger>
+            <DropdownMenu aria-label="Chat actions">
+              <DropdownItem
+                key="clear"
+                startContent={<Trash2 size={14} />}
+                onPress={clearMessages}
+              >
+                Clear conversation
+              </DropdownItem>
+              <DropdownItem
+                key="settings"
+                startContent={<Settings size={14} />}
+                href="/settings"
+              >
+                Settings
+              </DropdownItem>
+            </DropdownMenu>
+          </Dropdown>
+        </div>
+      </div>
+
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto px-6 py-6">
+        {messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <div className="w-20 h-20 rounded-full bg-blue-100 flex items-center justify-center mb-6">
+              <Bot size={40} className="text-blue-500" />
             </div>
-            <div className="flex-1 overflow-auto">
-              <DAGVisualizer task={activeTask} />
-            </div>
-          </>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">How can I help you today?</h2>
+            <p className="text-gray-500 max-w-md">
+              Describe what you want to accomplish and I'll break it down into tasks and execute
+              them for you.
+            </p>
+          </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-400">
-            <div className="text-center">
-              <Zap size={48} className="mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium">Select or create a task</p>
-              <p className="text-sm mt-1">Use the chat to describe what you want to do</p>
-            </div>
+          <div className="max-w-4xl mx-auto">
+            {messages.map((message) => (
+              <MessageBubble key={message.id} message={message} />
+            ))}
+            <div ref={messagesEndRef} />
           </div>
         )}
       </div>
 
-      {/* Right: Chat Panel */}
-      <ChatPanel taskId={taskId || null} onSendMessage={handleSendMessage} />
+      {/* Input Area */}
+      <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 shrink-0">
+        <div className="max-w-4xl mx-auto flex items-end gap-3">
+          <Textarea
+            placeholder="Type your message... (Shift+Enter for new line)"
+            value={inputValue}
+            onValueChange={setInputValue}
+            onKeyDown={handleKeyDown}
+            minRows={1}
+            maxRows={6}
+            className="flex-1"
+            classNames={{
+              input: "text-sm",
+              inputWrapper: "bg-white",
+            }}
+            isDisabled={isLoading}
+          />
+          <Button
+            color="primary"
+            onPress={handleSend}
+            isDisabled={!inputValue.trim() || isLoading}
+            isIconOnly
+            className="h-10 w-10"
+          >
+            {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+          </Button>
+        </div>
+        <p className="text-xs text-gray-400 text-center mt-2">
+          Press Enter to send, Shift+Enter for new line
+        </p>
+      </div>
     </div>
   );
 };

@@ -13,7 +13,8 @@ const createFixture = async (): Promise<{ workspaceDir: string; userHome: string
   const workspaceDir = path.join(rootDir, "workspace");
   const userHome = path.join(rootDir, "home");
 
-  await fs.mkdir(workspaceDir, { recursive: true });
+  await fs.mkdir(path.join(workspaceDir, ".bandry"), { recursive: true });
+  await fs.mkdir(path.join(userHome, ".bandry", "config"), { recursive: true });
   await fs.mkdir(path.join(userHome, ".config", "bandry"), { recursive: true });
 
   return { workspaceDir, userHome, rootDir };
@@ -30,9 +31,11 @@ afterEach(async () => {
 describe("loadAppConfig", () => {
   it("applies precedence in order env > user > project > default", async () => {
     const fixture = await createFixture();
+    const projectConfigPath = path.join(fixture.workspaceDir, ".bandry", "config.json");
+    const userConfigPath = path.join(fixture.userHome, ".bandry", "config", "config.json");
 
     await fs.writeFile(
-      path.join(fixture.workspaceDir, "config.json"),
+      projectConfigPath,
       JSON.stringify(
         {
           llm: {
@@ -53,7 +56,7 @@ describe("loadAppConfig", () => {
     );
 
     await fs.writeFile(
-      path.join(fixture.userHome, ".config", "bandry", "config.json"),
+      userConfigPath,
       JSON.stringify(
         {
           llm: {
@@ -90,7 +93,85 @@ describe("loadAppConfig", () => {
     expect(config.llm.timeoutMs).toBe(90_000);
     expect(config.providers.openai.model).toBe("user-openai-model");
     expect(config.providers.deepseek.model).toBe("deepseek-from-env");
-    expect(config.sandbox.allowedCommands).toEqual(["ls", "cat", "mkdir", "echo"]);
+    expect(config.paths.projectConfigPath).toBe(projectConfigPath);
+    expect(config.paths.userConfigPath).toBe(userConfigPath);
+    expect(config.paths.workspaceDir).toBe(path.join(fixture.userHome, ".bandry", "workspaces"));
+  });
+
+  it("loads legacy config file locations for backward compatibility", async () => {
+    const fixture = await createFixture();
+    const legacyProjectPath = path.join(fixture.workspaceDir, "config.json");
+    const legacyUserPath = path.join(fixture.userHome, ".config", "bandry", "config.json");
+
+    await fs.writeFile(
+      legacyProjectPath,
+      JSON.stringify(
+        {
+          llm: {
+            timeoutMs: 77_000
+          },
+          providers: {
+            openai: {
+              model: "legacy-project-model"
+            }
+          }
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    await fs.writeFile(
+      legacyUserPath,
+      JSON.stringify(
+        {
+          llm: {
+            maxRetries: 8
+          },
+          providers: {
+            openai: {
+              model: "legacy-user-model"
+            }
+          }
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {}
+    });
+
+    expect(config.llm.timeoutMs).toBe(77_000);
+    expect(config.llm.maxRetries).toBe(8);
+    expect(config.providers.openai.model).toBe("legacy-user-model");
+  });
+
+  it("supports BANDRY path overrides from env", async () => {
+    const fixture = await createFixture();
+    const customBandryHome = path.join(fixture.rootDir, "custom-bandry-home");
+    const customWorkspaceDir = path.join(customBandryHome, "custom-workspaces");
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {
+        BANDRY_HOME: customBandryHome,
+        BANDRY_WORKSPACES_DIR: customWorkspaceDir
+      }
+    });
+
+    expect(config.paths.bandryHome).toBe(customBandryHome);
+    expect(config.paths.workspacesDir).toBe(customWorkspaceDir);
+    expect(config.paths.workspaceDir).toBe(customWorkspaceDir);
+    expect(config.sandbox.allowedWorkspaces).toContain(customWorkspaceDir);
   });
 
   it("maps bytedance alias to volcengine", async () => {
@@ -149,9 +230,89 @@ describe("loadAppConfig", () => {
 
     expect(config.sandbox.virtualRoot).toBe("/mnt/custom-root");
     expect(config.sandbox.allowedCommands).toEqual(["ls", "cat"]);
-    expect(config.sandbox.allowedWorkspaces).toEqual([fixture.workspaceDir, fixture.userHome]);
+    expect(config.sandbox.allowedWorkspaces).toContain(fixture.workspaceDir);
+    expect(config.sandbox.allowedWorkspaces).toContain(fixture.userHome);
+    expect(config.sandbox.allowedWorkspaces).toContain(config.paths.workspaceDir);
     expect(config.sandbox.execTimeoutMs).toBe(45_000);
     expect(config.sandbox.maxOutputBytes).toBe(131_072);
     expect(config.sandbox.auditLogEnabled).toBe(false);
+  });
+
+  it("supports feature flags from env", async () => {
+    const fixture = await createFixture();
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {
+        ENABLE_MIDDLEWARE: "true",
+        ENABLE_MULTI_AGENT: "1",
+        ENABLE_MEMORY: "yes",
+        ENABLE_MCP: "false"
+      }
+    });
+
+    expect(config.features.enableMiddleware).toBe(true);
+    expect(config.features.enableMultiAgent).toBe(true);
+    expect(config.features.enableMemory).toBe(true);
+    expect(config.features.enableMCP).toBe(false);
+  });
+
+  it("captures runtime env from unified config loader", async () => {
+    const fixture = await createFixture();
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {
+        VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
+        PATH: "/usr/local/bin:/usr/bin"
+      }
+    });
+
+    expect(config.runtime.devServerUrl).toBe("http://127.0.0.1:5173");
+    expect(config.runtime.inheritedEnv.PATH).toBe("/usr/local/bin:/usr/bin");
+  });
+
+  it("supports openviking env overrides", async () => {
+    const fixture = await createFixture();
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {
+        OPENVIKING_ENABLED: "true",
+        OPENVIKING_HOST: " 127.0.0.1 ",
+        OPENVIKING_PORT: "2933",
+        OPENVIKING_API_KEY: "test-key",
+        OPENVIKING_SERVER_COMMAND: "python3",
+        OPENVIKING_SERVER_ARGS: "-m,openviking.server.bootstrap",
+        OPENVIKING_START_TIMEOUT_MS: "25000",
+        OPENVIKING_HEALTHCHECK_INTERVAL_MS: "700",
+        OPENVIKING_MEMORY_TOP_K: "9",
+        OPENVIKING_MEMORY_SCORE_THRESHOLD: "0.62",
+        OPENVIKING_COMMIT_DEBOUNCE_MS: "45000",
+        OPENVIKING_TARGET_URIS: "viking://user/memories,viking://resources/project-x"
+      }
+    });
+
+    expect(config.openviking.enabled).toBe(true);
+    expect(config.openviking.host).toBe("127.0.0.1");
+    expect(config.openviking.port).toBe(2933);
+    expect(config.openviking.apiKey).toBe("test-key");
+    expect(config.openviking.serverCommand).toBe("python3");
+    expect(config.openviking.serverArgs).toEqual(["-m", "openviking.server.bootstrap"]);
+    expect(config.openviking.startTimeoutMs).toBe(25_000);
+    expect(config.openviking.healthcheckIntervalMs).toBe(700);
+    expect(config.openviking.memoryTopK).toBe(9);
+    expect(config.openviking.memoryScoreThreshold).toBe(0.62);
+    expect(config.openviking.commitDebounceMs).toBe(45_000);
+    expect(config.openviking.targetUris).toEqual([
+      "viking://user/memories",
+      "viking://resources/project-x"
+    ]);
   });
 });

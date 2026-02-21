@@ -1,4 +1,4 @@
-import type { AppConfig } from "../../config";
+import { resolveModelTarget, type AppConfig } from "../../config";
 import type { ModelsFactory } from "../../models";
 import { DAGScheduler } from "../scheduler";
 import { WorkerPool } from "../workers";
@@ -48,6 +48,8 @@ export class LeadAgent {
    * Generate DAG plan from user prompt
    */
   private async generateDAGPlan(prompt: string): Promise<DAGPlan> {
+    const target = resolveModelTarget(this.config, "lead.planner");
+    const providerConfig = this.config.providers[target.provider];
     const systemPrompt = `You are a Lead Agent responsible for planning multi-agent workflows.
 
 Given a user request, break it down into a DAG (Directed Acyclic Graph) of sub-tasks.
@@ -84,13 +86,19 @@ Rules:
 4. Avoid circular dependencies`;
 
     const result = await this.modelsFactory.generateText({
-      provider: this.config.llm.defaultProvider,
-      model: this.config.llm.defaultModel,
+      runtimeConfig: {
+        provider: target.provider,
+        baseUrl: providerConfig.baseUrl,
+        apiKey: providerConfig.apiKey,
+        orgId: providerConfig.orgId
+      },
+      model: target.model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: prompt }
       ],
-      temperature: 0.7
+      temperature: target.temperature ?? 0.7,
+      maxTokens: target.maxTokens
     });
 
     // Parse JSON response
@@ -122,6 +130,8 @@ Rules:
     originalPrompt: string,
     results: Map<string, AgentResult>
   ): Promise<string> {
+    const target = resolveModelTarget(this.config, "lead.synthesizer");
+    const providerConfig = this.config.providers[target.provider];
     const systemPrompt = `You are a Lead Agent synthesizing results from multiple sub-agents.
 
 Provide a clear, concise summary of what was accomplished.`;
@@ -137,8 +147,13 @@ ${result.artifacts ? `Artifacts: ${result.artifacts.join(", ")}` : ""}`;
       .join("\n\n");
 
     const result = await this.modelsFactory.generateText({
-      provider: this.config.llm.defaultProvider,
-      model: this.config.llm.defaultModel,
+      runtimeConfig: {
+        provider: target.provider,
+        baseUrl: providerConfig.baseUrl,
+        apiKey: providerConfig.apiKey,
+        orgId: providerConfig.orgId
+      },
+      model: target.model,
       messages: [
         { role: "system", content: systemPrompt },
         {
@@ -146,7 +161,8 @@ ${result.artifacts ? `Artifacts: ${result.artifacts.join(", ")}` : ""}`;
           content: `Original request: ${originalPrompt}\n\nResults:\n${resultsText}\n\nProvide a summary:`
         }
       ],
-      temperature: 0.3
+      temperature: target.temperature ?? 0.3,
+      maxTokens: target.maxTokens
     });
 
     return result.text;

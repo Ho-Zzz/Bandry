@@ -36,6 +36,7 @@ const createService = (fixture: Fixture, extraEnv: NodeJS.ProcessEnv = {}): Sand
     userHome: fixture.userHome,
     skipDotenv: true,
     env: {
+      BANDRY_WORKSPACE_DIR: fixture.workspaceDir,
       SANDBOX_ALLOWED_WORKSPACES: fixture.workspaceDir,
       SANDBOX_ALLOWED_COMMANDS: "ls,cat,mkdir,echo,node",
       SANDBOX_EXEC_TIMEOUT_MS: "1000",

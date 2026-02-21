@@ -25,6 +25,11 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
 
   const llmRaw = asObject(root.llm);
   const sandboxRaw = asObject(root.sandbox);
+  const featuresRaw = asObject(root.features);
+  const openvikingRaw = asObject(root.openviking);
+  const pathsRaw = asObject(root.paths);
+  const routingRaw = asObject(root.routing);
+  const toolsRaw = asObject(root.tools);
   type LlmLayer = NonNullable<ConfigLayer["llm"]>;
   const llmLayer: ConfigLayer["llm"] = {
     defaultProvider: toStringValue(llmRaw.defaultProvider) as LlmLayer["defaultProvider"] | undefined,
@@ -48,6 +53,90 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
     auditLogEnabled: toBooleanValue(sandboxRaw.auditLogEnabled)
   };
 
+  const featuresLayer: ConfigLayer["features"] = {
+    enableMiddleware: toBooleanValue(featuresRaw.enableMiddleware),
+    enableMultiAgent: toBooleanValue(featuresRaw.enableMultiAgent),
+    enableMemory: toBooleanValue(featuresRaw.enableMemory),
+    enableMCP: toBooleanValue(featuresRaw.enableMCP)
+  };
+
+  const openvikingLayer: ConfigLayer["openviking"] = {
+    enabled: toBooleanValue(openvikingRaw.enabled),
+    host: toStringValue(openvikingRaw.host),
+    port: toNumberValue(openvikingRaw.port),
+    apiKey: toStringValue(openvikingRaw.apiKey),
+    serverCommand: toStringValue(openvikingRaw.serverCommand),
+    serverArgs: toStringListValue(openvikingRaw.serverArgs),
+    startTimeoutMs: toNumberValue(openvikingRaw.startTimeoutMs),
+    healthcheckIntervalMs: toNumberValue(openvikingRaw.healthcheckIntervalMs),
+    memoryTopK: toNumberValue(openvikingRaw.memoryTopK),
+    memoryScoreThreshold: toNumberValue(openvikingRaw.memoryScoreThreshold),
+    commitDebounceMs: toNumberValue(openvikingRaw.commitDebounceMs),
+    targetUris: toStringListValue(openvikingRaw.targetUris)
+  };
+
+  const pathsLayer: ConfigLayer["paths"] = {
+    bandryHome: toStringValue(pathsRaw.bandryHome),
+    configDir: toStringValue(pathsRaw.configDir),
+    logsDir: toStringValue(pathsRaw.logsDir),
+    workspaceDir: toStringValue(pathsRaw.workspaceDir),
+    workspacesDir: toStringValue(pathsRaw.workspacesDir),
+    resourcesDir: toStringValue(pathsRaw.resourcesDir),
+    pluginsDir: toStringValue(pathsRaw.pluginsDir),
+    traceDir: toStringValue(pathsRaw.traceDir),
+    databasePath: toStringValue(pathsRaw.databasePath),
+    auditLogPath: toStringValue(pathsRaw.auditLogPath),
+    sandboxAuditLogPath: toStringValue(pathsRaw.sandboxAuditLogPath)
+  };
+
+  const modelProfilesLayer: ConfigLayer["modelProfiles"] = Array.isArray(root.modelProfiles)
+    ? root.modelProfiles
+        .map((item) => asObject(item))
+        .map((item) => ({
+          id: toStringValue(item.id) ?? "",
+          name: toStringValue(item.name),
+          provider: toStringValue(item.provider) as "openai" | "deepseek" | "volcengine" | undefined,
+          model: toStringValue(item.model),
+          enabled: toBooleanValue(item.enabled),
+          temperature: toNumberValue(item.temperature),
+          maxTokens: toNumberValue(item.maxTokens)
+        }))
+        .filter((item) => item.id.trim().length > 0)
+    : undefined;
+
+  const routingAssignmentsRaw = asObject(routingRaw.assignments);
+  const routingLayer: ConfigLayer["routing"] = {
+    assignments: {
+      "chat.default": toStringValue(routingAssignmentsRaw["chat.default"]),
+      "lead.planner": toStringValue(routingAssignmentsRaw["lead.planner"]),
+      "lead.synthesizer": toStringValue(routingAssignmentsRaw["lead.synthesizer"]),
+      "sub.researcher": toStringValue(routingAssignmentsRaw["sub.researcher"]),
+      "sub.bash_operator": toStringValue(routingAssignmentsRaw["sub.bash_operator"]),
+      "sub.writer": toStringValue(routingAssignmentsRaw["sub.writer"]),
+      "memory.fact_extractor": toStringValue(routingAssignmentsRaw["memory.fact_extractor"])
+    }
+  };
+
+  const webSearchRaw = asObject(toolsRaw.webSearch);
+  const webFetchRaw = asObject(toolsRaw.webFetch);
+  const toolsLayer: ConfigLayer["tools"] = {
+    webSearch: {
+      enabled: toBooleanValue(webSearchRaw.enabled),
+      provider: toStringValue(webSearchRaw.provider) as "tavily" | undefined,
+      apiKey: toStringValue(webSearchRaw.apiKey),
+      baseUrl: toStringValue(webSearchRaw.baseUrl),
+      timeoutMs: toNumberValue(webSearchRaw.timeoutMs),
+      maxResults: toNumberValue(webSearchRaw.maxResults)
+    },
+    webFetch: {
+      enabled: toBooleanValue(webFetchRaw.enabled),
+      provider: toStringValue(webFetchRaw.provider) as "jina" | undefined,
+      apiKey: toStringValue(webFetchRaw.apiKey),
+      baseUrl: toStringValue(webFetchRaw.baseUrl),
+      timeoutMs: toNumberValue(webFetchRaw.timeoutMs)
+    }
+  };
+
   const providerRoot = asObject(root.providers);
   const providers: ConfigLayer["providers"] = {};
   for (const [rawName, rawConfig] of Object.entries(providerRoot)) {
@@ -69,6 +158,12 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
   return {
     llm: llmLayer,
     sandbox: sandboxLayer,
+    features: featuresLayer,
+    openviking: openvikingLayer,
+    paths: pathsLayer,
+    modelProfiles: modelProfilesLayer,
+    routing: routingLayer,
+    tools: toolsLayer,
     providers
   };
 };

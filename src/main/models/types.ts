@@ -11,6 +11,12 @@ export type GenerateTextInput = {
   systemPrompt?: string;
   provider?: LlmProvider;
   model?: string;
+  runtimeConfig?: {
+    provider: LlmProvider;
+    baseUrl: string;
+    apiKey: string;
+    orgId?: string;
+  };
   temperature?: number;
   maxTokens?: number;
   taskId?: string;

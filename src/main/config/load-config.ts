@@ -1,10 +1,10 @@
 import os from "node:os";
-import path from "node:path";
 import dotenv from "dotenv";
 import { createDefaultConfig } from "./default-config";
 import { envToLayer } from "./env-layer";
 import { applyLayer } from "./layer-merger";
 import { normalizeConfig } from "./normalize-config";
+import { resolvePathPlan } from "./path-resolver";
 import { readJsonLayer } from "./json-layer-reader";
 import { toPublicConfigSummary } from "./public-config-summary";
 import type { AppConfig } from "./types";
@@ -16,42 +16,67 @@ type LoadAppConfigOptions = {
   skipDotenv?: boolean;
 };
 
+const toInheritedEnv = (env: NodeJS.ProcessEnv): Record<string, string> => {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (typeof value === "string") {
+      result[key] = value;
+    }
+  }
+  return result;
+};
+
+const applyLayerFiles = (config: AppConfig, paths: string[]): void => {
+  for (const filePath of paths) {
+    applyLayer(config, readJsonLayer(filePath));
+  }
+};
+
 export const loadAppConfig = (options: LoadAppConfigOptions = {}): AppConfig => {
-  const workspaceDir = options.cwd ?? process.cwd();
+  const cwd = options.cwd ?? process.cwd();
   const userHome = options.userHome ?? os.homedir();
-  const projectConfigPath = path.join(workspaceDir, "config.json");
-  const userConfigPath = path.join(userHome, ".config", "bandry", "config.json");
-  const auditLogPath = path.join(userHome, ".bandry", "logs", "model-audit.log");
-  const sandboxAuditLogPath = path.join(userHome, ".bandry", "logs", "sandbox-audit.log");
-  const databasePath = path.join(userHome, ".bandry", "config", "bandry.db");
-  const traceDir = path.join(userHome, ".bandry", "traces");
-  const resourcesDir = path.join(userHome, ".bandry", "resources");
-  const envPath = path.join(workspaceDir, ".env");
+  const bootEnv = options.env ?? process.env;
+
+  const bootPlan = resolvePathPlan({
+    cwd,
+    userHome,
+    env: bootEnv
+  });
 
   if (!options.skipDotenv) {
-    dotenv.config({ path: envPath, override: false, quiet: true });
+    dotenv.config({ path: bootPlan.paths.dotenvPath, override: false, quiet: true });
   }
 
   const env = options.env ?? process.env;
-  const config = createDefaultConfig({
-    workspaceDir,
-    projectConfigPath,
-    userConfigPath,
-    auditLogPath,
-    sandboxAuditLogPath,
-    databasePath,
-    traceDir,
-    resourcesDir
+  const inheritedEnv = toInheritedEnv({
+    ...process.env,
+    ...env
+  });
+  const plan = resolvePathPlan({
+    cwd,
+    userHome,
+    env
   });
 
-  // Keep strict precedence: project -> user -> env.
-  applyLayer(config, readJsonLayer(projectConfigPath));
-  applyLayer(config, readJsonLayer(userConfigPath));
+  const config = createDefaultConfig({
+    paths: plan.paths,
+    runtime: {
+      devServerUrl: env.VITE_DEV_SERVER_URL,
+      inheritedEnv
+    }
+  });
+
+  // Precedence: default -> project -> user -> env.
+  applyLayerFiles(config, plan.projectLayerPaths);
+  applyLayerFiles(config, plan.userLayerPaths);
   applyLayer(config, envToLayer(env));
 
   if (!config.llm.defaultModel) {
     config.llm.defaultModel = config.providers[config.llm.defaultProvider].model;
   }
+
+  config.runtime.devServerUrl = env.VITE_DEV_SERVER_URL;
+  config.runtime.inheritedEnv = inheritedEnv;
 
   return normalizeConfig(config);
 };

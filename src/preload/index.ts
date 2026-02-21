@@ -12,9 +12,12 @@ import type {
   HITLApprovalRequest,
   HITLApprovalResponse,
   PingResult,
+  GlobalSettingsState,
   ProviderInput,
   ProviderResult,
   RuntimeConfigSummary,
+  SaveSettingsInput,
+  SaveSettingsResult,
   SandboxExecInput,
   SandboxExecResult,
   SandboxListDirInput,
@@ -35,6 +38,9 @@ const api = {
   chatMultiAgentSend: (input: ChatMultiAgentSendInput): Promise<ChatMultiAgentSendResult> => ipcRenderer.invoke("chat:multi-agent:send", input),
   startTask: (input: TaskStartInput): Promise<TaskStartResult> => ipcRenderer.invoke("task:start", input),
   getConfigSummary: (): Promise<RuntimeConfigSummary> => ipcRenderer.invoke("config:get-summary"),
+  getSettingsState: (): Promise<GlobalSettingsState> => ipcRenderer.invoke("config:get-settings-state"),
+  saveSettingsState: (input: SaveSettingsInput): Promise<SaveSettingsResult> =>
+    ipcRenderer.invoke("config:save-settings-state", input),
   sandboxListDir: (input: SandboxListDirInput): Promise<SandboxListDirResult> =>
     ipcRenderer.invoke("sandbox:list-dir", input),
   sandboxReadFile: (input: SandboxReadFileInput): Promise<SandboxReadFileResult> =>

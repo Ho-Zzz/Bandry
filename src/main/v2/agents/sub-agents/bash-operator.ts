@@ -1,4 +1,5 @@
 import { BaseAgent } from "../base-agent";
+import { resolveModelTarget } from "../../../config";
 import type { AgentRole, AgentResult, AgentExecutionInput } from "../types";
 
 /**
@@ -52,12 +53,20 @@ Always validate commands before execution. Report errors clearly.`;
           content: `${input.prompt}\n\nWorkspace: ${input.workspacePath}`
         }
       ];
+      const target = resolveModelTarget(this.appConfig, "sub.bash_operator");
+      const providerConfig = this.appConfig.providers[target.provider];
 
       const result = await this.modelsFactory.generateText({
-        provider: this.appConfig.llm.defaultProvider,
-        model: this.appConfig.llm.defaultModel,
+        runtimeConfig: {
+          provider: target.provider,
+          baseUrl: providerConfig.baseUrl,
+          apiKey: providerConfig.apiKey,
+          orgId: providerConfig.orgId
+        },
+        model: target.model,
         messages,
-        temperature: 0.0 // Deterministic for command execution
+        temperature: target.temperature ?? 0.0, // Deterministic for command execution
+        maxTokens: target.maxTokens
       });
 
       return this.successResult(result.text);

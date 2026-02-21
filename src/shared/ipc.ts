@@ -10,6 +10,7 @@ export type ChatSendInput = {
   requestId?: string;
   message: string;
   history: ChatHistoryMessage[];
+  modelProfileId?: string;
 };
 
 export type ChatSendResult = {
@@ -167,6 +168,94 @@ export type RuntimeConfigSummary = {
     auditLogEnabled: boolean;
   };
   providers: RuntimeProviderSummary[];
+  modelProfiles: Array<{
+    id: string;
+    name: string;
+    provider: ModelProvider;
+    model: string;
+    enabled: boolean;
+  }>;
+  routing: Record<string, string>;
+  tools: {
+    webSearchEnabled: boolean;
+    webFetchEnabled: boolean;
+  };
+};
+
+export type SettingsRuntimeRole =
+  | "chat.default"
+  | "lead.planner"
+  | "lead.synthesizer"
+  | "sub.researcher"
+  | "sub.bash_operator"
+  | "sub.writer"
+  | "memory.fact_extractor";
+
+export type SettingsModelProfile = {
+  id: string;
+  name: string;
+  provider: ModelProvider;
+  model: string;
+  enabled: boolean;
+  temperature?: number;
+  maxTokens?: number;
+};
+
+export type GlobalSettingsState = {
+  providers: Record<
+    ModelProvider,
+    {
+      enabled: boolean;
+      apiKey: string;
+      baseUrl: string;
+      model: string;
+      orgId?: string;
+    }
+  >;
+  modelProfiles: SettingsModelProfile[];
+  routing: Record<SettingsRuntimeRole, string>;
+  memory: {
+    enableMemory: boolean;
+    openviking: {
+      enabled: boolean;
+      host: string;
+      port: number;
+      apiKey: string;
+      serverCommand: string;
+      serverArgs: string[];
+      startTimeoutMs: number;
+      healthcheckIntervalMs: number;
+      memoryTopK: number;
+      memoryScoreThreshold: number;
+      commitDebounceMs: number;
+      targetUris: string[];
+    };
+  };
+  tools: {
+    webSearch: {
+      enabled: boolean;
+      apiKey: string;
+      baseUrl: string;
+      timeoutMs: number;
+      maxResults: number;
+    };
+    webFetch: {
+      enabled: boolean;
+      apiKey: string;
+      baseUrl: string;
+      timeoutMs: number;
+    };
+  };
+};
+
+export type SaveSettingsInput = {
+  state: GlobalSettingsState;
+};
+
+export type SaveSettingsResult = {
+  ok: boolean;
+  requiresRestart: boolean;
+  message: string;
 };
 
 export type SandboxEntry = {
@@ -243,4 +332,3 @@ export type HITLApprovalResponse = {
   approved: boolean;
   reason?: string;
 };
-

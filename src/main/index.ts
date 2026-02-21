@@ -3,8 +3,10 @@ import path from "node:path";
 import { DeepSeekToolChatAgent } from "./chat";
 import { loadAppConfig, toPublicConfigSummary } from "./config";
 import { ModelsFactory } from "./models";
+import { OpenVikingMemoryProvider, OpenVikingProcessManager } from "./openviking";
 import { LocalOrchestrator } from "./orchestrator";
 import { SandboxService } from "./sandbox";
+import { SettingsService } from "./settings";
 import { ChatAgentV2 } from "./v2/chat-agent-v2";
 import { LeadAgent } from "./v2/agents";
 import { EmployeeStore, ProviderStore } from "./v2/database";
@@ -18,6 +20,7 @@ import type {
   ChatUpdateEvent,
   EmployeeInput,
   EmployeeResult,
+  GlobalSettingsState,
   HITLApprovalResponse,
   ProviderInput,
   ProviderResult,
@@ -28,20 +31,27 @@ import type {
   TaskStartInput,
   TaskStartResult,
   TaskStatus,
-  TaskUpdateEvent
+  TaskUpdateEvent,
+  SaveSettingsInput,
+  SaveSettingsResult
 } from "../shared/ipc";
 
-const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const config = loadAppConfig();
+const devServerUrl = config.runtime.devServerUrl;
+const isDev = Boolean(devServerUrl);
 const modelsFactory = new ModelsFactory(config);
 const sandboxService = new SandboxService(config);
 const deepSeekChatAgent = new DeepSeekToolChatAgent(config, modelsFactory, sandboxService);
-const chatAgentV2 = new ChatAgentV2(config, deepSeekChatAgent);
+let chatAgentV2: ChatAgentV2;
 const leadAgent = new LeadAgent(config, modelsFactory);
 const orchestrator = new LocalOrchestrator(config, sandboxService, modelsFactory);
 const employeeStore = new EmployeeStore(config.paths.databasePath);
 const providerStore = new ProviderStore(config.paths.databasePath);
 const runningTasks = new Map<string, Promise<void>>();
+let openVikingProcessManager: OpenVikingProcessManager | null = null;
+let openVikingMemoryProvider: OpenVikingMemoryProvider | null = null;
+const settingsService = new SettingsService({ config });
+settingsService.ensureRuntimeAssignments();
 
 const broadcastTaskUpdate = (update: TaskUpdateEvent): void => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -101,6 +111,31 @@ const runTask = async (taskId: string, input: TaskStartInput): Promise<void> => 
   }
 };
 
+const initializeOpenViking = async (): Promise<void> => {
+  if (!config.features.enableMemory || !config.openviking.enabled) {
+    return;
+  }
+
+  const manager = new OpenVikingProcessManager(config);
+  try {
+    const { runtime } = await manager.start();
+    console.log(`[OpenViking] started at ${runtime.url}`);
+
+    openVikingProcessManager = manager;
+    openVikingMemoryProvider = new OpenVikingMemoryProvider(manager.createHttpClient(), {
+      targetUris: config.openviking.targetUris,
+      topK: config.openviking.memoryTopK,
+      scoreThreshold: config.openviking.memoryScoreThreshold,
+      commitDebounceMs: config.openviking.commitDebounceMs
+    });
+  } catch (error) {
+    console.error("[OpenViking] failed to start, memory middleware disabled:", error);
+    await manager.stop();
+    openVikingProcessManager = null;
+    openVikingMemoryProvider = null;
+  }
+};
+
 const createMainWindow = async (): Promise<BrowserWindow> => {
   const window = new BrowserWindow({
     width: 1280,
@@ -120,8 +155,8 @@ const createMainWindow = async (): Promise<BrowserWindow> => {
     window.show();
   });
 
-  if (isDev) {
-    await window.loadURL(process.env.VITE_DEV_SERVER_URL as string);
+  if (isDev && devServerUrl) {
+    await window.loadURL(devServerUrl);
   } else {
     await window.loadFile(path.resolve(__dirname, "../dist/index.html"));
   }
@@ -221,6 +256,15 @@ const registerIpcHandlers = (): void => {
     return toPublicConfigSummary(config);
   });
 
+  ipcMain.handle("config:get-settings-state", async (): Promise<GlobalSettingsState> => {
+    return settingsService.getState();
+  });
+
+  ipcMain.handle("config:save-settings-state", async (_event, input: SaveSettingsInput): Promise<SaveSettingsResult> => {
+    const result = await settingsService.saveState(input);
+    return result;
+  });
+
   // Provider IPC handlers
   ipcMain.handle("provider:create", async (_event, input: ProviderInput): Promise<ProviderResult> => {
     return providerStore.createProvider(input);
@@ -302,6 +346,8 @@ const registerIpcHandlers = (): void => {
 };
 
 app.whenReady().then(async () => {
+  await initializeOpenViking();
+  chatAgentV2 = new ChatAgentV2(config, deepSeekChatAgent, openVikingMemoryProvider ?? undefined);
   registerIpcHandlers();
   await createMainWindow();
 
@@ -314,8 +360,15 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   runningTasks.clear();
+  void openVikingMemoryProvider?.flush();
+  void openVikingProcessManager?.stop();
 
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", () => {
+  void openVikingMemoryProvider?.flush();
+  void openVikingProcessManager?.stop();
 });

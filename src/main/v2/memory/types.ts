@@ -58,3 +58,13 @@ export type MemoryStorageOptions = {
   maxContextTokens?: number;
   preferredLayers?: MemoryLayer[];
 };
+
+/**
+ * Memory provider contract for middleware integration.
+ * Allows swapping local adapter with OpenViking sidecar-backed implementation.
+ */
+export interface MemoryProvider {
+  injectContext(sessionId: string, query?: string): Promise<ContextChunk[]>;
+  storeConversation(conversation: Conversation): Promise<void>;
+  flush?(): Promise<void>;
+}

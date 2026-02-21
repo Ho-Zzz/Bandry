@@ -23,6 +23,18 @@ export const toPublicConfigSummary = (config: AppConfig): PublicConfigSummary =>
         baseUrl: provider.baseUrl,
         model: provider.model
       })
-    )
+    ),
+    modelProfiles: config.modelProfiles.map((profile) => ({
+      id: profile.id,
+      name: profile.name,
+      provider: profile.provider,
+      model: profile.model,
+      enabled: profile.enabled
+    })),
+    routing: { ...config.routing.assignments },
+    tools: {
+      webSearchEnabled: config.tools.webSearch.enabled,
+      webFetchEnabled: config.tools.webFetch.enabled
+    }
   };
 };

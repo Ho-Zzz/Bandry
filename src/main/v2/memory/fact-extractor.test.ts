@@ -51,7 +51,65 @@ const createMockConfig = (): AppConfig => ({
     enableMemory: false,
     enableMCP: false
   },
+  openviking: {
+    enabled: true,
+    host: "127.0.0.1",
+    port: 1933,
+    apiKey: "",
+    serverCommand: "openviking",
+    serverArgs: ["serve"],
+    startTimeoutMs: 20_000,
+    healthcheckIntervalMs: 500,
+    memoryTopK: 6,
+    memoryScoreThreshold: 0.35,
+    commitDebounceMs: 30_000,
+    targetUris: ["viking://user/memories", "viking://agent/memories"]
+  },
+  modelProfiles: [
+    {
+      id: "profile_openai_default",
+      name: "OpenAI Default",
+      provider: "openai",
+      model: "gpt-4",
+      enabled: true,
+      temperature: 0.2
+    }
+  ],
+  routing: {
+    assignments: {
+      "chat.default": "profile_openai_default",
+      "lead.planner": "profile_openai_default",
+      "lead.synthesizer": "profile_openai_default",
+      "sub.researcher": "profile_openai_default",
+      "sub.bash_operator": "profile_openai_default",
+      "sub.writer": "profile_openai_default",
+      "memory.fact_extractor": "profile_openai_default"
+    }
+  },
+  tools: {
+    webSearch: {
+      enabled: false,
+      provider: "tavily",
+      apiKey: "",
+      baseUrl: "https://api.tavily.com",
+      timeoutMs: 15000,
+      maxResults: 5
+    },
+    webFetch: {
+      enabled: false,
+      provider: "jina",
+      apiKey: "",
+      baseUrl: "https://r.jina.ai/http://",
+      timeoutMs: 15000
+    }
+  },
   paths: {
+    projectRoot: "",
+    bandryHome: "",
+    configDir: "",
+    logsDir: "",
+    workspacesDir: "",
+    pluginsDir: "",
     projectConfigPath: "",
     userConfigPath: "",
     auditLogPath: "",
@@ -59,7 +117,11 @@ const createMockConfig = (): AppConfig => ({
     workspaceDir: "",
     databasePath: "",
     traceDir: "",
-    resourcesDir: ""
+    resourcesDir: "",
+    dotenvPath: ""
+  },
+  runtime: {
+    inheritedEnv: {}
   }
 });
 

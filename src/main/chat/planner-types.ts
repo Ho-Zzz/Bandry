@@ -1,4 +1,4 @@
-export type PlannerToolName = "list_dir" | "read_file" | "exec";
+export type PlannerToolName = "list_dir" | "read_file" | "exec" | "web_search" | "web_fetch";
 
 export type PlannerActionAnswer = {
   action: "answer";
@@ -14,6 +14,8 @@ export type PlannerActionTool = {
     args?: string[];
     cwd?: string;
     timeoutMs?: number;
+    query?: string;
+    url?: string;
   };
   reason?: string;
 };

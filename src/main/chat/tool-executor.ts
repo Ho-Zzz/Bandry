@@ -1,6 +1,7 @@
 import type { SandboxExecInput } from "../../shared/ipc";
 import type { AppConfig } from "../config";
 import type { SandboxService } from "../sandbox";
+import { runWebFetch, runWebSearch } from "./internal-web-tools";
 import { formatExec, formatListDir, formatReadFile } from "./observation-formatters";
 import type { PlannerActionTool, ToolObservation } from "./planner-types";
 import { normalizeSpaces } from "./text-utils";
@@ -47,6 +48,46 @@ export const executePlannerTool = async ({
         input: { path: targetPath },
         ok: true,
         output: formatReadFile(result)
+      };
+    }
+
+    if (action.tool === "web_search") {
+      const query = action.input?.query?.trim();
+      if (!query) {
+        return {
+          tool: "web_search",
+          input: action.input ?? {},
+          ok: false,
+          output: "Missing required field: input.query"
+        };
+      }
+
+      const result = await runWebSearch(config, query);
+      return {
+        tool: "web_search",
+        input: { query },
+        ok: true,
+        output: result
+      };
+    }
+
+    if (action.tool === "web_fetch") {
+      const url = action.input?.url?.trim();
+      if (!url) {
+        return {
+          tool: "web_fetch",
+          input: action.input ?? {},
+          ok: false,
+          output: "Missing required field: input.url"
+        };
+      }
+
+      const result = await runWebFetch(config, url);
+      return {
+        tool: "web_fetch",
+        input: { url },
+        ok: true,
+        output: result
       };
     }
 

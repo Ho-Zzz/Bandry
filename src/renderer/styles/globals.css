@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@layer theme, base, components, utilities;
+@plugin "./hero.ts";
+@source "../../../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}";
+@custom-variant dark (&:is(.dark *));
 
 :root {
   color-scheme: light;
@@ -7,7 +11,7 @@
 
 @layer base {
   body {
-    @apply antialiased text-gray-900 bg-white;
+    @apply antialiased text-foreground bg-background;
   }
 }
 

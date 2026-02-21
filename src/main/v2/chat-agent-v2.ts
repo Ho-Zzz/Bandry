@@ -1,10 +1,11 @@
 import { EventEmitter } from "node:events";
 import type { AppConfig } from "../config";
 import type { DeepSeekToolChatAgent } from "../chat";
-import { MiddlewarePipeline, WorkspaceMiddleware, ValidationMiddleware, HITLMiddleware } from "./middleware";
+import { MiddlewarePipeline, WorkspaceMiddleware, ValidationMiddleware, HITLMiddleware, MemoryMiddleware } from "./middleware";
 import { createSessionContext } from "./session";
 import type { ChatV2SendInput, ChatV2SendResult, HITLApprovalResponse } from "../../shared/ipc";
 import type { LlmMessage } from "../models/types";
+import type { MemoryProvider } from "./memory/types";
 
 /**
  * V2 Chat Agent with middleware pipeline
@@ -17,7 +18,8 @@ export class ChatAgentV2 {
 
   constructor(
     private config: AppConfig,
-    private legacyAgent: DeepSeekToolChatAgent
+    private legacyAgent: DeepSeekToolChatAgent,
+    private memoryProvider?: MemoryProvider
   ) {
     this.eventEmitter = new EventEmitter();
     this.pipeline = new MiddlewarePipeline();
@@ -33,6 +35,9 @@ export class ChatAgentV2 {
     // Register middlewares in order
     this.pipeline.use(new WorkspaceMiddleware(workspacesPath));
     this.pipeline.use(new ValidationMiddleware(3));
+    if (this.config.features.enableMemory && this.memoryProvider) {
+      this.pipeline.use(new MemoryMiddleware(this.memoryProvider));
+    }
 
     // Create and register HITL middleware
     this.hitlMiddleware = new HITLMiddleware(this.eventEmitter);
@@ -81,11 +86,10 @@ export class ChatAgentV2 {
 
     // Execute pipeline
     const finalContext = await this.pipeline.execute(initialContext, async (ctx) => {
+      const legacyInput = this.toLegacyChatInput(ctx, input);
+
       // Execute legacy agent
-      const result = await this.legacyAgent.send({
-        message: input.message,
-        history: input.history
-      });
+      const result = await this.legacyAgent.send(legacyInput);
 
       // Populate LLM response in context
       return {
@@ -112,6 +116,36 @@ export class ChatAgentV2 {
       latencyMs,
       middlewareUsed: this.pipeline.getMiddlewareNames(),
       workspacePath: finalContext.workspacePath
+    };
+  }
+
+  /**
+   * Convert middleware context back into legacy chat input.
+   * Uses the last user message as "message" and keeps preceding messages as history.
+   */
+  private toLegacyChatInput(
+    ctx: { messages: LlmMessage[] },
+    fallback: ChatV2SendInput
+  ): { message: string; history: Array<{ role: "system" | "user" | "assistant"; content: string }> } {
+    for (let i = ctx.messages.length - 1; i >= 0; i -= 1) {
+      const message = ctx.messages[i];
+      if (message.role === "user") {
+        return {
+          message: message.content,
+          history: ctx.messages.slice(0, i).map((item) => ({
+            role: item.role,
+            content: item.content
+          }))
+        };
+      }
+    }
+
+    return {
+      message: fallback.message,
+      history: fallback.history.map((item) => ({
+        role: item.role as "system" | "user" | "assistant",
+        content: item.content
+      }))
     };
   }
 }

@@ -1,5 +1,5 @@
 import type { ModelsFactory } from "../../models";
-import type { AppConfig } from "../../config";
+import { resolveModelTarget, type AppConfig } from "../../config";
 import type { Fact, Conversation } from "./types";
 
 /**
@@ -42,9 +42,16 @@ export class FactExtractor {
     }
 
     try {
+      const target = resolveModelTarget(this.config, "memory.fact_extractor");
+      const providerConfig = this.config.providers[target.provider];
       const result = await this.modelsFactory.generateText({
-        provider: this.config.llm.defaultProvider,
-        model: this.config.llm.defaultModel,
+        runtimeConfig: {
+          provider: target.provider,
+          baseUrl: providerConfig.baseUrl,
+          apiKey: providerConfig.apiKey,
+          orgId: providerConfig.orgId
+        },
+        model: target.model,
         messages: [
           {
             role: "system",
@@ -55,7 +62,8 @@ export class FactExtractor {
             content: conversationText
           }
         ],
-        temperature
+        temperature: target.temperature ?? temperature,
+        maxTokens: target.maxTokens
       });
 
       // Parse JSON response

@@ -1,4 +1,4 @@
-import type { AppConfig } from "../config";
+import { resolveModelTarget, type AppConfig } from "../config";
 import type { GenerateTextResult, ModelsFactory } from "../models";
 import type { SandboxService } from "../sandbox";
 import type { ChatSendInput, ChatSendResult, ChatUpdateStage } from "../../shared/ipc";
@@ -33,8 +33,16 @@ export class DeepSeekToolChatAgent {
       throw new Error("message is required");
     }
 
-    if (!this.modelsFactory.isProviderConfigured("deepseek")) {
-      throw new Error("DeepSeek is not configured. Please set DEEPSEEK_API_KEY in .env.");
+    const target = resolveModelTarget(this.config, "chat.default", input.modelProfileId);
+    const providerConfig = this.config.providers[target.provider];
+    const runtimeConfig = {
+      provider: target.provider,
+      baseUrl: providerConfig.baseUrl,
+      apiKey: providerConfig.apiKey,
+      orgId: providerConfig.orgId
+    };
+    if (!providerConfig.apiKey.trim()) {
+      throw new Error(`Provider ${target.provider} is not configured. Please set API key in Settings.`);
     }
 
     const history = normalizeHistory(input.history);
@@ -44,12 +52,13 @@ export class DeepSeekToolChatAgent {
     onUpdate?.("planning", "正在规划是否需要调用工具...");
 
     for (let step = 0; step < MAX_TOOL_STEPS; step += 1) {
-      onUpdate?.("model", `规划步骤 ${step + 1}/${MAX_TOOL_STEPS}：请求 DeepSeek Planner`);
+      onUpdate?.("model", `规划步骤 ${step + 1}/${MAX_TOOL_STEPS}：请求 ${target.provider}/${target.model}`);
 
       const planner = await this.modelsFactory.generateText({
-        provider: "deepseek",
-        model: this.config.providers.deepseek.model,
-        temperature: 0,
+        runtimeConfig,
+        model: target.model,
+        temperature: target.temperature ?? 0,
+        maxTokens: target.maxTokens,
         messages: [
           {
             role: "system",
@@ -92,9 +101,10 @@ export class DeepSeekToolChatAgent {
     onUpdate?.("model", "进入最终总结阶段（基于工具观察结果）");
 
     const finalResponse = await this.modelsFactory.generateText({
-      provider: "deepseek",
-      model: this.config.providers.deepseek.model,
-      temperature: 0.2,
+      runtimeConfig,
+      model: target.model,
+      temperature: target.temperature ?? 0.2,
+      maxTokens: target.maxTokens,
       messages: [
         {
           role: "system",

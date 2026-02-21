@@ -234,7 +234,7 @@ export class SandboxService implements SandboxServiceApi {
         cwd,
         shell: false,
         env: {
-          PATH: process.env.PATH ?? ""
+          PATH: this.config.runtime.inheritedEnv.PATH ?? ""
         },
         stdio: ["ignore", "pipe", "pipe"]
       });
