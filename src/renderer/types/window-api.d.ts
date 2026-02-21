@@ -1,6 +1,9 @@
 import type {
+  ChatCancelInput,
+  ChatCancelResult,
   ChatSendInput,
   ChatSendResult,
+  ChatDeltaEvent,
   ChatUpdateEvent,
   ChatV2SendInput,
   ChatV2SendResult,
@@ -46,6 +49,7 @@ declare global {
 
       // Chat APIs
       chatSend: (input: ChatSendInput) => Promise<ChatSendResult>;
+      chatCancel: (input: ChatCancelInput) => Promise<ChatCancelResult>;
       chatV2Send: (input: ChatV2SendInput) => Promise<ChatV2SendResult>;
       chatMultiAgentSend: (input: ChatMultiAgentSendInput) => Promise<ChatMultiAgentSendResult>;
 
@@ -87,6 +91,7 @@ declare global {
 
       // Event Listeners
       onChatUpdate: (listener: (update: ChatUpdateEvent) => void) => () => void;
+      onChatDelta: (listener: (update: ChatDeltaEvent) => void) => () => void;
       onTaskUpdate: (listener: (update: TaskUpdateEvent) => void) => () => void;
       onHITLApprovalRequired: (listener: (request: HITLApprovalRequest) => void) => () => void;
       sendHITLApproval: (response: HITLApprovalResponse) => Promise<void>;

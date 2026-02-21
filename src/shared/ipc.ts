@@ -20,12 +20,27 @@ export type ChatSendResult = {
   latencyMs: number;
 };
 
+export type ChatCancelInput = {
+  requestId: string;
+};
+
+export type ChatCancelResult = {
+  requestId: string;
+  cancelled: boolean;
+};
+
 export type ChatUpdateStage = "planning" | "tool" | "model" | "final" | "error";
 
 export type ChatUpdateEvent = {
   requestId: string;
   stage: ChatUpdateStage;
   message: string;
+  timestamp: number;
+};
+
+export type ChatDeltaEvent = {
+  requestId: string;
+  delta: string;
   timestamp: number;
 };
 
