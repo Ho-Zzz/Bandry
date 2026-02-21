@@ -332,3 +332,42 @@ export type HITLApprovalResponse = {
   approved: boolean;
   reason?: string;
 };
+
+// Conversation types
+export type ConversationInput = {
+  title?: string;
+  model_profile_id?: string;
+};
+
+export type ConversationResult = {
+  id: string;
+  title?: string;
+  model_profile_id?: string;
+  created_at: number;
+  updated_at: number;
+};
+
+// Message types
+export type MessageInput = {
+  conversation_id: string;
+  role: ChatRole;
+  content: string;
+  status?: "pending" | "completed" | "error";
+  trace?: string;
+};
+
+export type MessageResult = {
+  id: string;
+  conversation_id: string;
+  role: ChatRole;
+  content: string;
+  status: "pending" | "completed" | "error";
+  trace?: string;
+  created_at: number;
+};
+
+export type MessageUpdateInput = {
+  content?: string;
+  status?: "pending" | "completed" | "error";
+  trace?: string;
+};

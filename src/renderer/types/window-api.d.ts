@@ -6,7 +6,12 @@ import type {
   ChatV2SendResult,
   ChatMultiAgentSendInput,
   ChatMultiAgentSendResult,
+  ConversationInput,
+  ConversationResult,
   GlobalSettingsState,
+  MessageInput,
+  MessageResult,
+  MessageUpdateInput,
   PingResult,
   RuntimeConfigSummary,
   SaveSettingsInput,
@@ -66,6 +71,19 @@ declare global {
       employeeGet: (id: string) => Promise<EmployeeResult | null>;
       employeeUpdate: (id: string, input: Partial<EmployeeInput>) => Promise<EmployeeResult>;
       employeeDelete: (id: string) => Promise<void>;
+
+      // Conversation Management
+      conversationCreate: (input: ConversationInput) => Promise<ConversationResult>;
+      conversationList: (limit?: number, offset?: number) => Promise<ConversationResult[]>;
+      conversationGet: (id: string) => Promise<ConversationResult | null>;
+      conversationUpdate: (id: string, input: Partial<ConversationInput>) => Promise<ConversationResult | null>;
+      conversationDelete: (id: string) => Promise<boolean>;
+
+      // Message Management
+      messageCreate: (input: MessageInput) => Promise<MessageResult>;
+      messageList: (conversationId: string) => Promise<MessageResult[]>;
+      messageUpdate: (id: string, input: MessageUpdateInput) => Promise<MessageResult | null>;
+      messageDelete: (id: string) => Promise<boolean>;
 
       // Event Listeners
       onChatUpdate: (listener: (update: ChatUpdateEvent) => void) => () => void;

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { loadAppConfig, type AppConfig, type RuntimeRole } from "../config";
+import { type AppConfig, type RuntimeRole } from "../config";
+import { normalizeConfig } from "../config/normalize-config";
 import type {
   GlobalSettingsState,
   SaveSettingsInput,
@@ -20,8 +21,6 @@ const RUNTIME_ROLES: RuntimeRole[] = [
   "sub.writer",
   "memory.fact_extractor"
 ];
-
-const cloneConfig = (config: AppConfig): AppConfig => JSON.parse(JSON.stringify(config)) as AppConfig;
 
 const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
   return {
@@ -202,14 +201,65 @@ export class SettingsService {
     await fs.mkdir(path.dirname(userConfigPath), { recursive: true });
     await fs.writeFile(userConfigPath, JSON.stringify(userLayer, null, 2), "utf8");
 
-    const nextConfig = loadAppConfig({
-      cwd: this.options.config.paths.projectRoot,
-      userHome: path.dirname(this.options.config.paths.bandryHome)
-    });
-
     const currentConfig = this.options.config;
-    const clonedNext = cloneConfig(nextConfig);
-    Object.assign(currentConfig, clonedNext);
+    currentConfig.llm.defaultProvider = chatProfile?.provider ?? currentConfig.llm.defaultProvider;
+    currentConfig.llm.defaultModel = chatProfile?.model ?? currentConfig.llm.defaultModel;
+
+    currentConfig.providers.openai = {
+      ...currentConfig.providers.openai,
+      enabled: input.state.providers.openai.enabled,
+      apiKey: input.state.providers.openai.apiKey,
+      baseUrl: input.state.providers.openai.baseUrl,
+      model: input.state.providers.openai.model,
+      orgId: input.state.providers.openai.orgId
+    };
+    currentConfig.providers.deepseek = {
+      ...currentConfig.providers.deepseek,
+      enabled: input.state.providers.deepseek.enabled,
+      apiKey: input.state.providers.deepseek.apiKey,
+      baseUrl: input.state.providers.deepseek.baseUrl,
+      model: input.state.providers.deepseek.model
+    };
+    currentConfig.providers.volcengine = {
+      ...currentConfig.providers.volcengine,
+      enabled: input.state.providers.volcengine.enabled,
+      apiKey: input.state.providers.volcengine.apiKey,
+      baseUrl: input.state.providers.volcengine.baseUrl,
+      model: input.state.providers.volcengine.model
+    };
+
+    currentConfig.features.enableMemory = input.state.memory.enableMemory;
+    currentConfig.openviking = {
+      ...input.state.memory.openviking
+    };
+
+    currentConfig.modelProfiles = input.state.modelProfiles.map((profile) => ({
+      ...profile
+    }));
+    currentConfig.routing.assignments = {
+      ...input.state.routing
+    };
+
+    currentConfig.tools.webSearch = {
+      ...currentConfig.tools.webSearch,
+      enabled: input.state.tools.webSearch.enabled,
+      provider: "tavily",
+      apiKey: input.state.tools.webSearch.apiKey,
+      baseUrl: input.state.tools.webSearch.baseUrl,
+      timeoutMs: input.state.tools.webSearch.timeoutMs,
+      maxResults: input.state.tools.webSearch.maxResults
+    };
+    currentConfig.tools.webFetch = {
+      ...currentConfig.tools.webFetch,
+      enabled: input.state.tools.webFetch.enabled,
+      provider: "jina",
+      apiKey: input.state.tools.webFetch.apiKey,
+      baseUrl: input.state.tools.webFetch.baseUrl,
+      timeoutMs: input.state.tools.webFetch.timeoutMs
+    };
+
+    normalizeConfig(currentConfig);
+    this.ensureRuntimeAssignments();
 
     return {
       ok: true,

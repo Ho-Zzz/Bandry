@@ -2,9 +2,11 @@
  * Copilot View Component
  *
  * Single-column ChatGPT-like interface for interacting with the AI agent.
+ * Supports conversation persistence via route params.
  */
 
 import { useState, useRef, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   Card,
   Button,
@@ -13,26 +15,15 @@ import {
   Dropdown,
   DropdownTrigger,
   DropdownMenu,
-  DropdownItem,
+  DropdownItem
 } from "@heroui/react";
-import {
-  Send,
-  Settings,
-  Trash2,
-  Loader2,
-  User,
-  Bot,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
+import { Send, Settings, Trash2, Loader2, User, Bot, ChevronDown, ChevronUp } from "lucide-react";
 import { clsx } from "clsx";
 import { ModelSelector } from "../../components/chat/model-selector";
 import { useCopilotChat } from "../../features/copilot/use-copilot-chat";
+import { useConversationStore } from "../../store/use-conversation-store";
 import type { Message } from "../../features/copilot/use-copilot-chat";
 
-/**
- * Message Component
- */
 const MessageBubble = ({ message }: { message: Message }) => {
   const [showTrace, setShowTrace] = useState(false);
   const isUser = message.role === "user";
@@ -50,21 +41,15 @@ const MessageBubble = ({ message }: { message: Message }) => {
 
   return (
     <div className={clsx("flex gap-3 mb-6", isUser ? "flex-row-reverse" : "flex-row")}>
-      {/* Avatar */}
       <div
         className={clsx(
           "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
           isUser ? "bg-blue-500" : "bg-gray-200"
         )}
       >
-        {isUser ? (
-          <User size={16} className="text-white" />
-        ) : (
-          <Bot size={16} className="text-gray-600" />
-        )}
+        {isUser ? <User size={16} className="text-white" /> : <Bot size={16} className="text-gray-600" />}
       </div>
 
-      {/* Message Content */}
       <div className={clsx("flex flex-col gap-2 max-w-[70%]", isUser ? "items-end" : "items-start")}>
         <div
           className={clsx(
@@ -72,8 +57,8 @@ const MessageBubble = ({ message }: { message: Message }) => {
             isUser
               ? "bg-blue-500 text-white"
               : message.status === "error"
-              ? "bg-red-50 text-red-900 border border-red-200"
-              : "bg-gray-100 text-gray-900"
+                ? "bg-red-50 text-red-900 border border-red-200"
+                : "bg-gray-100 text-gray-900"
           )}
         >
           {message.status === "pending" && !message.content ? (
@@ -86,7 +71,6 @@ const MessageBubble = ({ message }: { message: Message }) => {
           )}
         </div>
 
-        {/* Trace (for assistant messages) */}
         {!isUser && message.trace && message.trace.length > 0 && (
           <div className="w-full">
             <Button
@@ -115,28 +99,33 @@ const MessageBubble = ({ message }: { message: Message }) => {
           </div>
         )}
 
-        {/* Status indicator */}
-        {message.status === "error" && (
-          <span className="text-xs text-red-500">Failed to send</span>
-        )}
+        {message.status === "error" && <span className="text-xs text-red-500">Failed to send</span>}
       </div>
     </div>
   );
 };
 
-/**
- * Copilot View Component
- */
 export const Copilot = () => {
+  const { conversationId: routeConversationId } = useParams<{ conversationId?: string }>();
+  const navigate = useNavigate();
   const [inputValue, setInputValue] = useState("");
   const [selectedProvider, setSelectedProvider] = useState<string>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { deleteConversation, fetchConversations } = useConversationStore();
 
-  const { messages, sendMessage, clearMessages, isLoading } = useCopilotChat({
-    modelProfileId: selectedProvider,
+  const { messages, sendMessage, clearMessages, isLoading, conversationId } = useCopilotChat({
+    conversationId: routeConversationId,
+    modelProfileId: selectedProvider
   });
 
-  // Auto-scroll to bottom when new messages arrive
+  // Update URL when conversation is created
+  useEffect(() => {
+    if (conversationId && !routeConversationId) {
+      navigate(`/copilot/${conversationId}`, { replace: true });
+      fetchConversations();
+    }
+  }, [conversationId, routeConversationId, navigate, fetchConversations]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -155,17 +144,21 @@ export const Copilot = () => {
     }
   };
 
+  const handleClearConversation = async () => {
+    if (conversationId) {
+      await deleteConversation(conversationId);
+      await fetchConversations();
+    }
+    clearMessages();
+    navigate("/copilot");
+  };
+
   return (
     <div className="flex flex-col h-full w-full bg-white">
-      {/* Header */}
       <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between bg-white shrink-0">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-bold text-gray-900">Bandry Assistant</h1>
-          <ModelSelector
-            value={selectedProvider}
-            onChange={setSelectedProvider}
-            className="w-48"
-          />
+          <ModelSelector value={selectedProvider} onChange={setSelectedProvider} className="w-48" />
         </div>
         <div className="flex items-center gap-2">
           <Dropdown>
@@ -175,18 +168,10 @@ export const Copilot = () => {
               </Button>
             </DropdownTrigger>
             <DropdownMenu aria-label="Chat actions">
-              <DropdownItem
-                key="clear"
-                startContent={<Trash2 size={14} />}
-                onPress={clearMessages}
-              >
-                Clear conversation
+              <DropdownItem key="clear" startContent={<Trash2 size={14} />} onPress={handleClearConversation}>
+                Delete conversation
               </DropdownItem>
-              <DropdownItem
-                key="settings"
-                startContent={<Settings size={14} />}
-                href="/settings"
-              >
+              <DropdownItem key="settings" startContent={<Settings size={14} />} href="/settings">
                 Settings
               </DropdownItem>
             </DropdownMenu>
@@ -194,7 +179,6 @@ export const Copilot = () => {
         </div>
       </div>
 
-      {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-6 py-6">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
@@ -203,8 +187,7 @@ export const Copilot = () => {
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">How can I help you today?</h2>
             <p className="text-gray-500 max-w-md">
-              Describe what you want to accomplish and I'll break it down into tasks and execute
-              them for you.
+              Describe what you want to accomplish and I'll break it down into tasks and execute them for you.
             </p>
           </div>
         ) : (
@@ -217,7 +200,6 @@ export const Copilot = () => {
         )}
       </div>
 
-      {/* Input Area */}
       <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 shrink-0">
         <div className="max-w-4xl mx-auto flex items-end gap-3">
           <Textarea
@@ -230,7 +212,7 @@ export const Copilot = () => {
             className="flex-1"
             classNames={{
               input: "text-sm",
-              inputWrapper: "bg-white",
+              inputWrapper: "bg-white"
             }}
             isDisabled={isLoading}
           />
@@ -244,9 +226,7 @@ export const Copilot = () => {
             {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
           </Button>
         </div>
-        <p className="text-xs text-gray-400 text-center mt-2">
-          Press Enter to send, Shift+Enter for new line
-        </p>
+        <p className="text-xs text-gray-400 text-center mt-2">Press Enter to send, Shift+Enter for new line</p>
       </div>
     </div>
   );

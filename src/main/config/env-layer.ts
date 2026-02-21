@@ -7,8 +7,46 @@ import {
   toStringValue
 } from "./value-parsers";
 
+const isValidUrl = (value: string | undefined): value is string => {
+  if (typeof value !== "string" || value.length === 0) {
+    return false;
+  }
+  try {
+    // URL parser accepts absolute URLs for provider base endpoints.
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const toBaseUrlValue = (raw: unknown): string | undefined => {
+  const value = toStringValue(raw);
+  if (value === undefined || value === "") {
+    return value;
+  }
+  return isValidUrl(value) ? value : undefined;
+};
+
 export const envToLayer = (env: NodeJS.ProcessEnv): ConfigLayer => {
   type LlmLayer = NonNullable<ConfigLayer["llm"]>;
+  const volcengineApiKeyRaw = toStringValue(env.BYTEDANCE_API_KEY ?? env.VOLCENGINE_API_KEY);
+  const volcengineBaseUrlRaw = toStringValue(env.BYTEDANCE_BASE_URL ?? env.VOLCENGINE_BASE_URL);
+  let volcengineApiKey = volcengineApiKeyRaw;
+  let volcengineBaseUrl = toBaseUrlValue(volcengineBaseUrlRaw);
+
+  // Compatibility for common misconfiguration:
+  // BYTEDANCE_API_KEY was set to URL and BYTEDANCE_BASE_URL was set to key-like string.
+  // In this case only repair API key; keep baseUrl undefined to avoid overriding saved Settings value.
+  if (
+    volcengineApiKey &&
+    isValidUrl(volcengineApiKey) &&
+    volcengineBaseUrlRaw &&
+    !isValidUrl(volcengineBaseUrlRaw)
+  ) {
+    volcengineApiKey = volcengineBaseUrlRaw;
+    volcengineBaseUrl = undefined;
+  }
 
   return {
     llm: {
@@ -69,7 +107,7 @@ export const envToLayer = (env: NodeJS.ProcessEnv): ConfigLayer => {
         enabled: toBooleanValue(env.WEB_SEARCH_ENABLED),
         provider: "tavily",
         apiKey: toStringValue(env.TAVILY_API_KEY),
-        baseUrl: toStringValue(env.TAVILY_BASE_URL),
+        baseUrl: toBaseUrlValue(env.TAVILY_BASE_URL),
         timeoutMs: toNumberValue(env.WEB_SEARCH_TIMEOUT_MS),
         maxResults: toNumberValue(env.WEB_SEARCH_MAX_RESULTS)
       },
@@ -77,25 +115,25 @@ export const envToLayer = (env: NodeJS.ProcessEnv): ConfigLayer => {
         enabled: toBooleanValue(env.WEB_FETCH_ENABLED),
         provider: "jina",
         apiKey: toStringValue(env.JINA_API_KEY),
-        baseUrl: toStringValue(env.JINA_BASE_URL),
+        baseUrl: toBaseUrlValue(env.JINA_BASE_URL),
         timeoutMs: toNumberValue(env.WEB_FETCH_TIMEOUT_MS)
       }
     },
     providers: {
       openai: {
         apiKey: toStringValue(env.OPENAI_API_KEY),
-        baseUrl: toStringValue(env.OPENAI_BASE_URL),
+        baseUrl: toBaseUrlValue(env.OPENAI_BASE_URL),
         orgId: toStringValue(env.OPENAI_ORG_ID),
         model: toStringValue(env.OPENAI_MODEL)
       },
       deepseek: {
         apiKey: toStringValue(env.DEEPSEEK_API_KEY),
-        baseUrl: toStringValue(env.DEEPSEEK_BASE_URL),
+        baseUrl: toBaseUrlValue(env.DEEPSEEK_BASE_URL),
         model: toStringValue(env.DEEPSEEK_MODEL)
       },
       volcengine: {
-        apiKey: toStringValue(env.BYTEDANCE_API_KEY ?? env.VOLCENGINE_API_KEY),
-        baseUrl: toStringValue(env.BYTEDANCE_BASE_URL ?? env.VOLCENGINE_BASE_URL),
+        apiKey: volcengineApiKey,
+        baseUrl: volcengineBaseUrl,
         model: toStringValue(env.BYTEDANCE_MODEL ?? env.VOLCENGINE_MODEL)
       }
     }

@@ -9,7 +9,7 @@ import { SandboxService } from "./sandbox";
 import { SettingsService } from "./settings";
 import { ChatAgentV2 } from "./v2/chat-agent-v2";
 import { LeadAgent } from "./v2/agents";
-import { EmployeeStore, ProviderStore } from "./v2/database";
+import { EmployeeStore, ProviderStore, ConversationStore } from "./v2/database";
 import type {
   ChatSendInput,
   ChatSendResult,
@@ -18,10 +18,15 @@ import type {
   ChatMultiAgentSendInput,
   ChatMultiAgentSendResult,
   ChatUpdateEvent,
+  ConversationInput,
+  ConversationResult,
   EmployeeInput,
   EmployeeResult,
   GlobalSettingsState,
   HITLApprovalResponse,
+  MessageInput,
+  MessageResult,
+  MessageUpdateInput,
   ProviderInput,
   ProviderResult,
   SandboxExecInput,
@@ -47,6 +52,7 @@ const leadAgent = new LeadAgent(config, modelsFactory);
 const orchestrator = new LocalOrchestrator(config, sandboxService, modelsFactory);
 const employeeStore = new EmployeeStore(config.paths.databasePath);
 const providerStore = new ProviderStore(config.paths.databasePath);
+const conversationStore = new ConversationStore(config.paths.databasePath);
 const runningTasks = new Map<string, Promise<void>>();
 let openVikingProcessManager: OpenVikingProcessManager | null = null;
 let openVikingMemoryProvider: OpenVikingMemoryProvider | null = null;
@@ -305,6 +311,44 @@ const registerIpcHandlers = (): void => {
 
   ipcMain.handle("employee:delete", async (_event, id: string): Promise<boolean> => {
     return employeeStore.deleteEmployee(id);
+  });
+
+  // Conversation IPC handlers
+  ipcMain.handle("conversation:create", async (_event, input: ConversationInput): Promise<ConversationResult> => {
+    return conversationStore.createConversation(input);
+  });
+
+  ipcMain.handle("conversation:list", async (_event, limit?: number, offset?: number): Promise<ConversationResult[]> => {
+    return conversationStore.listConversations(limit, offset);
+  });
+
+  ipcMain.handle("conversation:get", async (_event, id: string): Promise<ConversationResult | null> => {
+    return conversationStore.getConversation(id);
+  });
+
+  ipcMain.handle("conversation:update", async (_event, id: string, input: Partial<ConversationInput>): Promise<ConversationResult | null> => {
+    return conversationStore.updateConversation(id, input);
+  });
+
+  ipcMain.handle("conversation:delete", async (_event, id: string): Promise<boolean> => {
+    return conversationStore.deleteConversation(id);
+  });
+
+  // Message IPC handlers
+  ipcMain.handle("message:create", async (_event, input: MessageInput): Promise<MessageResult> => {
+    return conversationStore.createMessage(input);
+  });
+
+  ipcMain.handle("message:list", async (_event, conversationId: string): Promise<MessageResult[]> => {
+    return conversationStore.listMessages(conversationId);
+  });
+
+  ipcMain.handle("message:update", async (_event, id: string, input: MessageUpdateInput): Promise<MessageResult | null> => {
+    return conversationStore.updateMessage(id, input);
+  });
+
+  ipcMain.handle("message:delete", async (_event, id: string): Promise<boolean> => {
+    return conversationStore.deleteMessage(id);
   });
 
   ipcMain.handle("task:start", async (_event, input: TaskStartInput): Promise<TaskStartResult> => {

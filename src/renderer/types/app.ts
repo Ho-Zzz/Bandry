@@ -157,7 +157,8 @@ export type NavigationItem =
   | { type: 'view'; id: 'home' | 'workflows' | 'assets' | 'directory' | 'settings' }
   | { type: 'channel'; id: string }
   | { type: 'dm'; id: string }
-  | { type: 'task'; id: string };
+  | { type: 'task'; id: string }
+  | { type: 'conversation'; id: string };
 
 /**
  * Sidebar Collapsed State

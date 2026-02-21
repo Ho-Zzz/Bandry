@@ -7,10 +7,15 @@ import type {
   ChatMultiAgentSendInput,
   ChatMultiAgentSendResult,
   ChatUpdateEvent,
+  ConversationInput,
+  ConversationResult,
   EmployeeInput,
   EmployeeResult,
   HITLApprovalRequest,
   HITLApprovalResponse,
+  MessageInput,
+  MessageResult,
+  MessageUpdateInput,
   PingResult,
   GlobalSettingsState,
   ProviderInput,
@@ -97,7 +102,27 @@ const api = {
   employeeGet: (id: string): Promise<EmployeeResult | null> => ipcRenderer.invoke("employee:get", id),
   employeeUpdate: (id: string, input: Partial<EmployeeInput>): Promise<EmployeeResult | null> =>
     ipcRenderer.invoke("employee:update", id, input),
-  employeeDelete: (id: string): Promise<boolean> => ipcRenderer.invoke("employee:delete", id)
+  employeeDelete: (id: string): Promise<boolean> => ipcRenderer.invoke("employee:delete", id),
+  // Conversation API
+  conversationCreate: (input: ConversationInput): Promise<ConversationResult> =>
+    ipcRenderer.invoke("conversation:create", input),
+  conversationList: (limit?: number, offset?: number): Promise<ConversationResult[]> =>
+    ipcRenderer.invoke("conversation:list", limit, offset),
+  conversationGet: (id: string): Promise<ConversationResult | null> =>
+    ipcRenderer.invoke("conversation:get", id),
+  conversationUpdate: (id: string, input: Partial<ConversationInput>): Promise<ConversationResult | null> =>
+    ipcRenderer.invoke("conversation:update", id, input),
+  conversationDelete: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke("conversation:delete", id),
+  // Message API
+  messageCreate: (input: MessageInput): Promise<MessageResult> =>
+    ipcRenderer.invoke("message:create", input),
+  messageList: (conversationId: string): Promise<MessageResult[]> =>
+    ipcRenderer.invoke("message:list", conversationId),
+  messageUpdate: (id: string, input: MessageUpdateInput): Promise<MessageResult | null> =>
+    ipcRenderer.invoke("message:update", id, input),
+  messageDelete: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke("message:delete", id)
 };
 
 contextBridge.exposeInMainWorld("api", api);

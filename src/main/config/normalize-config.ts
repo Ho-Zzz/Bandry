@@ -2,6 +2,10 @@ import path from "node:path";
 import type { AppConfig } from "./types";
 
 const normalizePath = (value: string): string => path.resolve(value.trim() || ".");
+const normalizeProviderBaseUrl = (baseUrl: string): string => {
+  const trimmed = baseUrl.replace(/\/+$/, "");
+  return trimmed.replace(/\/chat\/completions$/i, "");
+};
 const RUNTIME_ROLES: Array<keyof AppConfig["routing"]["assignments"]> = [
   "chat.default",
   "lead.planner",
@@ -85,7 +89,7 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   }
 
   for (const provider of Object.values(config.providers)) {
-    provider.baseUrl = provider.baseUrl.replace(/\/+$/, "");
+    provider.baseUrl = normalizeProviderBaseUrl(provider.baseUrl);
   }
 
   const normalizedProfiles = new Map<string, AppConfig["modelProfiles"][number]>();

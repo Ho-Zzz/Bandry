@@ -193,6 +193,72 @@ describe("loadAppConfig", () => {
     expect(config.providers.volcengine.baseUrl).toBe("https://ark.test/api/v3");
   });
 
+  it("ignores invalid bytedance base url values from env", async () => {
+    const fixture = await createFixture();
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {
+        BYTEDANCE_API_KEY: "https://ark.test/api/v3",
+        BYTEDANCE_BASE_URL: "endpoint-id-1234"
+      }
+    });
+
+    expect(config.providers.volcengine.baseUrl).toBe("https://ark.cn-beijing.volces.com/api/v3");
+    expect(config.providers.volcengine.apiKey).toBe("endpoint-id-1234");
+  });
+
+  it("keeps user volcengine base url when env key/base are swapped", async () => {
+    const fixture = await createFixture();
+    const userConfigPath = path.join(fixture.userHome, ".bandry", "config", "config.json");
+
+    await fs.writeFile(
+      userConfigPath,
+      JSON.stringify(
+        {
+          providers: {
+            volcengine: {
+              baseUrl: "https://custom.ark.example/api/v3/"
+            }
+          }
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {
+        BYTEDANCE_API_KEY: "https://ark.test/api/v3",
+        BYTEDANCE_BASE_URL: "endpoint-id-1234"
+      }
+    });
+
+    expect(config.providers.volcengine.baseUrl).toBe("https://custom.ark.example/api/v3");
+    expect(config.providers.volcengine.apiKey).toBe("endpoint-id-1234");
+  });
+
+  it("normalizes provider base url when chat/completions suffix is included", async () => {
+    const fixture = await createFixture();
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {
+        OPENAI_BASE_URL: "https://api.openai.com/v1/chat/completions/"
+      }
+    });
+
+    expect(config.providers.openai.baseUrl).toBe("https://api.openai.com/v1");
+  });
+
   it("falls back default model to provider model when LLM_DEFAULT_MODEL is empty", async () => {
     const fixture = await createFixture();
 
