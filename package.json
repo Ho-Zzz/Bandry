@@ -16,6 +16,8 @@
     "build:main": "tsup",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:core": "vitest run --exclude \"src/main/experimental/**/*.test.ts\"",
+    "test:experimental": "vitest run --config vitest.experimental.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
     "clean": "rimraf dist dist-electron"

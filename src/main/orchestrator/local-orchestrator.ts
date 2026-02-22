@@ -2,6 +2,7 @@ import path from "node:path";
 import type { AppConfig } from "../config";
 import type { ModelsFactory } from "../models";
 import type { SandboxService } from "../sandbox";
+import { normalizeSpaces, truncate } from "../utils/text";
 import type {
   OrchestratorResult,
   OrchestratorTaskInput,
@@ -21,17 +22,6 @@ const asVirtualPath = (inputPath: string, virtualRoot: string): string => {
     return normalized;
   }
   return path.posix.join(virtualRoot, normalized);
-};
-
-const normalizeSpaces = (value: string): string => {
-  return value.replace(/\s+/g, " ").trim();
-};
-
-const truncate = (value: string, max: number): string => {
-  if (value.length <= max) {
-    return value;
-  }
-  return `${value.slice(0, max)}...`;
 };
 
 const extractVirtualPaths = (prompt: string, virtualRoot: string): string[] => {

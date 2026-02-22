@@ -1,15 +1,15 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
-import { DeepSeekToolChatAgent } from "./chat";
+import { ToolPlanningChatAgent } from "./chat";
 import { loadAppConfig, toPublicConfigSummary } from "./config";
 import { ModelsFactory } from "./models";
 import { OpenVikingMemoryProvider, OpenVikingProcessManager } from "./openviking";
 import { LocalOrchestrator } from "./orchestrator";
 import { SandboxService } from "./sandbox";
 import { SettingsService } from "./settings";
-import { ChatAgentV2 } from "./v2/chat-agent-v2";
-import { LeadAgent } from "./v2/agents";
-import { EmployeeStore, ProviderStore, ConversationStore } from "./v2/database";
+import { MiddlewareChatAgent } from "./chat/middleware-chat-agent";
+import { LeadAgent } from "./orchestrator/multi-agent/agents";
+import { EmployeeStore, ProviderStore, ConversationStore } from "./storage";
 import type {
   ChatCancelInput,
   ChatCancelResult,
@@ -49,8 +49,8 @@ const devServerUrl = config.runtime.devServerUrl;
 const isDev = Boolean(devServerUrl);
 const modelsFactory = new ModelsFactory(config);
 const sandboxService = new SandboxService(config);
-const deepSeekChatAgent = new DeepSeekToolChatAgent(config, modelsFactory, sandboxService);
-let chatAgentV2: ChatAgentV2;
+const toolPlanningChatAgent = new ToolPlanningChatAgent(config, modelsFactory, sandboxService);
+let middlewareChatAgent: MiddlewareChatAgent;
 const leadAgent = new LeadAgent(config, modelsFactory);
 const orchestrator = new LocalOrchestrator(config, sandboxService, modelsFactory);
 const employeeStore = new EmployeeStore(config.paths.databasePath);
@@ -182,7 +182,7 @@ const createMainWindow = async (): Promise<BrowserWindow> => {
 
 const registerIpcHandlers = (): void => {
   // Set up HITL event broadcasting
-  chatAgentV2.getEventEmitter().on("hitl:approval-required", (request) => {
+  middlewareChatAgent.getEventEmitter().on("hitl:approval-required", (request) => {
     broadcastHITLRequest(request);
   });
 
@@ -196,7 +196,7 @@ const registerIpcHandlers = (): void => {
     activeChatRequests.set(requestId, controller);
 
     try {
-      return await deepSeekChatAgent.send(
+      return await toolPlanningChatAgent.send(
         input,
         (stage, message) => {
           broadcastChatUpdate({
@@ -251,15 +251,15 @@ const registerIpcHandlers = (): void => {
     };
   });
 
-  // V2 chat handler with middleware pipeline
+  // Middleware chat handler
   ipcMain.handle("chat:v2:send", async (_event, input: ChatV2SendInput): Promise<ChatV2SendResult> => {
     // Check if middleware is enabled
     const enableMiddleware = input.enableMiddleware ?? config.features.enableMiddleware;
 
     if (!enableMiddleware) {
-      // Fall back to legacy agent
+      // Fall back to base chat agent
       const requestId = input.requestId?.trim() || `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const result = await deepSeekChatAgent.send(
+      const result = await toolPlanningChatAgent.send(
         input,
         (stage, message) => {
           broadcastChatUpdate({
@@ -285,8 +285,8 @@ const registerIpcHandlers = (): void => {
       };
     }
 
-    // Use v2 agent with middleware
-    return await chatAgentV2.send(input);
+    // Use middleware chat agent
+    return await middlewareChatAgent.send(input);
   });
 
   // Multi-agent handler with DAG scheduling
@@ -454,13 +454,13 @@ const registerIpcHandlers = (): void => {
   ipcMain.handle("hitl:submit-approval", async (_event, response: HITLApprovalResponse): Promise<void> => {
     // Emit approval response event
     // This will be picked up by HITLMiddleware
-    chatAgentV2.submitHITLApproval(response);
+    middlewareChatAgent.submitHITLApproval(response);
   });
 };
 
 app.whenReady().then(async () => {
   await initializeOpenViking();
-  chatAgentV2 = new ChatAgentV2(config, deepSeekChatAgent, openVikingMemoryProvider ?? undefined);
+  middlewareChatAgent = new MiddlewareChatAgent(config, toolPlanningChatAgent, openVikingMemoryProvider ?? undefined);
   registerIpcHandlers();
   await createMainWindow();
 

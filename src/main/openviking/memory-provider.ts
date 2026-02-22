@@ -1,4 +1,4 @@
-import type { ContextChunk, Conversation, MemoryProvider } from "../v2/memory/types";
+import type { ContextChunk, Conversation, MemoryProvider } from "../memory/types";
 import type { OpenVikingFindResult, OpenVikingMatchedContext } from "./types";
 import { OpenVikingHttpClient } from "./http-client";
 

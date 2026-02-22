@@ -1,1 +1,2 @@
-export { DeepSeekToolChatAgent } from "./deepseek-tool-chat-agent";
+export { ToolPlanningChatAgent } from "./tool-planning-chat-agent";
+export { MiddlewareChatAgent } from "./middleware-chat-agent";
