@@ -3,6 +3,7 @@ import * as path from "path";
 import { BaseAgent } from "../base-agent";
 import { resolveModelTarget } from "../../../config";
 import type { AgentRole, AgentResult, AgentExecutionInput } from "../types";
+import { WRITER_AGENT_PROMPT } from "./prompts";
 
 /**
  * Writer Agent
@@ -19,28 +20,7 @@ export class WriterAgent extends BaseAgent {
   }
 
   protected getDefaultSystemPrompt(): string {
-    return `You are a writer agent. Your role is to:
-- Consolidate information from multiple sources
-- Format data according to requirements
-- Write well-structured output files
-- Generate reports and documentation
-
-You can:
-- Read files from workspace
-- Write files to workspace output directory
-- Format content (Markdown, JSON, CSV, etc.)
-
-You cannot:
-- Execute commands
-- Make network requests
-- Access files outside workspace
-
-Available tools:
-- write_to_file: Write formatted content
-- read_local_file: Read source files
-- list_dir: List directories
-
-Focus on clear, well-formatted output.`;
+    return WRITER_AGENT_PROMPT;
   }
 
   async execute(input: AgentExecutionInput): Promise<AgentResult> {

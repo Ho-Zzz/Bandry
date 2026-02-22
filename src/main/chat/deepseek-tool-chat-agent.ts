@@ -6,7 +6,7 @@ import { MAX_TOOL_STEPS } from "./chat-constants";
 import { normalizeHistory } from "./history-utils";
 import { parsePlannerAction } from "./planner-parser";
 import type { ToolObservation } from "./planner-types";
-import { buildFinalSystemPrompt, buildPlannerSystemPrompt } from "./prompt-builders";
+import { buildFinalSystemPrompt, buildPlannerSystemPrompt } from "./prompts";
 import { executePlannerTool } from "./tool-executor";
 import { normalizeSpaces, truncate } from "./text-utils";
 

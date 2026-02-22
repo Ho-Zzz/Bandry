@@ -1,6 +1,7 @@
 import { BaseAgent } from "../base-agent";
 import { resolveModelTarget } from "../../../config";
 import type { AgentRole, AgentResult, AgentExecutionInput } from "../types";
+import { buildBashOperatorAgentPrompt } from "./prompts";
 
 /**
  * Bash Operator Agent
@@ -17,24 +18,7 @@ export class BashOperatorAgent extends BaseAgent {
   }
 
   protected getDefaultSystemPrompt(): string {
-    return `You are a bash operator agent. Your role is to:
-- Execute shell commands safely
-- Perform file operations
-- Run scripts and utilities
-- Report command outputs
-
-You are restricted to:
-- Workspace directory only
-- Allowed commands: ${this.appConfig.sandbox.allowedCommands.join(", ")}
-- No network access outside workspace
-
-Available tools:
-- execute_bash: Run shell commands
-- read_local_file: Read files
-- list_dir: List directories
-- write_to_file: Write files
-
-Always validate commands before execution. Report errors clearly.`;
+    return buildBashOperatorAgentPrompt(this.appConfig.sandbox.allowedCommands);
   }
 
   async execute(input: AgentExecutionInput): Promise<AgentResult> {

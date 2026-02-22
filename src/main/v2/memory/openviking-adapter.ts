@@ -11,6 +11,7 @@ import type {
   MemoryStorageOptions
 } from "./types";
 import { FactExtractor } from "./fact-extractor";
+import { buildSummaryPrompt } from "./prompts";
 
 /**
  * OpenViking memory adapter
@@ -189,10 +190,7 @@ export class OpenVikingMemory implements MemoryProvider {
    * Summarize content for higher layers
    */
   private async summarize(content: string, type: "outline" | "summary"): Promise<string> {
-    const prompt =
-      type === "outline"
-        ? "Create a concise outline of the key points:"
-        : "Create a brief summary (2-3 sentences):";
+    const prompt = buildSummaryPrompt(type);
 
     try {
       const target = resolveModelTarget(this.config, "memory.fact_extractor");
