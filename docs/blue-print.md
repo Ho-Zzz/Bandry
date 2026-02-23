@@ -1,418 +1,332 @@
-# Bandry MVP 技术架构总览
+# Bandry Blueprint（核心方案与落地状态）
 
-**核心定位**：基于 Electron 的本地优先 Mac App，由云端大模型 API 驱动推理，本地引擎负责编排、沙盒执行与资源记忆管理。
+> 本文是 Bandry 的架构蓝图文档，面向“核心设计方案 + 当前落地状态 + Roadmap”。
+> 以 2026-02-23 的代码状态为快照，后续按迭代更新。
 
-## 1. 核心技术栈选型
+## 0. 项目定位
 
-| **模块**         | **技术选型**                              | **工程说明**                                 |
-| -------------- | ------------------------------------- | ---------------------------------------- |
-| **底层框架**       | Electron + React                      | 负责跨进程通信 (IPC)、原生系统交互和可视化 UI              |
-| **大模型接入**      | 云端 API (OpenAI / Claude / DeepSeek 等) | 专注本地化工作流编排与上下文管理                         |
-| **多 Agent 引擎** | 中心化路由 (自研轻量级 Supervisor)              | Lead Agent 负责 DAG 任务拆解与分发，Sub-Agent 负责执行 |
-| **工具与通信**      | MCP (Model Context Protocol)          | 标准化本地工具接入（数据库、Git、文件系统等）                 |
-| **记忆与资源**      | OpenViking (字节开源框架)                   | 基于纯 Markdown 的 L0/L1/L2 三层文件范式记忆，免去复杂向量库 |
-| **自动化编排**      | Node.js EventEmitter + node-cron      | 实现任务状态机、A -> B 触发器和定时任务派发                |
+Bandry 是一个个人探索性项目。
 
----
+项目灵感来自 OpenClaw 与 CAMEL-AI，并认同 `one-person company` 理念：
+通过一套可长期演进的本地智能体系统，让个人获得接近小团队的协作与执行能力。
 
-## 2. 核心模块与运行机制
+`Bandry` 取自 `Band`（乐队）：
 
-**模块一：中心化调度中心 (Lead Agent Router)**
+- Lead Agent 像指挥，负责目标理解、任务拆解与节奏控制。
+- Sub-Agents 像乐手，按角色分工协作执行。
+- Memory 像乐谱与排练记录，沉淀长期知识。
+- Filesystem 像舞台与录音棚，保证过程可追溯、可复盘。
+- Automation 像节拍器与排期系统，推动任务持续运行。
+- User 也就是你，像制作人，始终拥有最终决策权。
 
-- **职责**：接收用户自然语言意图，拆解为有向无环图 (DAG) 任务队列，分配给具备特定 Skills 的 Sub-Agent。
-    
-- **工作区隔离**：为每个根任务生成独立的物理工作区（如 `task_170845`），包含 `input/`、`staging/`、`output/` 目录。
-    
-- **历史审计**：在工作区生成 `trace.jsonl`，记录所有 API 请求、工具调用和状态流转，用于 UI 展示和失败重试。
-    
+### AI 原生开发模式
 
-**模块二：沙盒化执行引擎 (Sandbox & Execution)**
+当前项目约 99% 由开发者借助多种 AI coding agent 完成。
+目标是在 Bandry beta 版完成后，由 Bandry 基于本蓝图进行自主迭代。
 
-- **职责**：安全地执行 Bash 命令和 MCP 工具。
-    
-- **路径锁定**：使用 Node.js `child_process`，将运行时的 `cwd` 强制绑定在当前任务工作区内。
-    
-- **混合 HITL (Human-in-the-loop) 机制**：
-    
-    - **白名单静默执行**：`ls`, `cat`, 工作区内的 `ffmpeg` 转换等安全操作自动通过。
-        
-    - **正则拦截与 IPC 阻断**：检测到 `rm`、越权写文件、网络请求等高危操作时，暂停线程，通过 Electron IPC 唤起前端弹窗，等待用户点击“授权”或“拒绝”。
-        
+### 致谢 / Acknowledgements
 
-**模块三：本地资源与记忆中枢 (Memory & Context)**
+Bandry 向以下开源项目与社区致谢：
 
-- **职责**：管理用户沉淀的知识和 Agent 的长期记忆。
-    
-- **OpenViking 挂载**：将应用本地的 `~/.bandry/resources/` 挂载为知识空间。
-    
-- **动态上下文**：Agent 需要提取历史知识时，先读取极简的 L0 (摘要) 或 L1 (大纲)，按需再读取 L2 (原文件)，避免 Context Window 爆炸。
-    
+- OpenClaw
+- CAMEL-AI
+- OpenCode（`opencode`）
+- DeerFlow
 
-**模块四：自动化与状态机 (Automation Engine)**
+部分实现思路与产品方向受其启发，感谢所有贡献者。
 
-- **职责**：管理任务的生命周期与后台静默运行。
-    
-- **核心状态**：`PENDING` (排队中) -> `RUNNING` (执行中) -> `PAUSED_FOR_HITL` (等待授权) -> `COMPLETED` (完成) / `FAILED` (失败)。
-    
-- **触发器**：监听状态变更事件，当任务 A 状态变为 `COMPLETED`，提取其 `output/` 路径作为参数，触发后续任务 B。
-    
+## 1. 文档边界
 
----
+本文分为两个层次：
 
-## 3. 本地目录结构设计 (Data Flow)
+1. `Core Design`：长期有效的架构原则与模块职责。
+2. `Delivery Status`：当前已落地能力与未完成项（Roadmap）。
 
-作为本地优先的 App，清晰的文件系统是产品的灵魂。建议的本地目录结构如下：
+说明：本文重点描述架构与方案，不展开具体代码实现细节。
 
-Plaintext
+## 2. 核心设计原则
 
+1. `Local-first`：关键状态、工作区与数据在本地可控范围内运行。
+2. `Orchestration over Monolith`：多 Agent 协作优于单一黑盒模型。
+3. `Memory compounds`：长期记忆是可检索、可复用的能力资产。
+4. `Safety by default`：沙箱约束、命令限制、风险审批优先。
+5. `Typed boundaries`：跨进程与跨模块通过类型契约收敛复杂度。
+
+## 3. 总体架构（方案）
+
+```mermaid
+flowchart TD
+  User["User"] <--> UI["Renderer (React)"]
+  UI <--> Preload["Preload (window.api)"]
+  Preload <--> IPC["Typed IPC Contract"]
+
+  subgraph Main["Main Process"]
+    App["app"]
+    Orch["orchestration"]
+    LLM["llm"]
+    Memory["memory"]
+    Sandbox["sandbox"]
+    MCP["mcp"]
+    Persist["persistence/sqlite"]
+    Config["config + settings"]
+    Auto["automation"]
+    FS["filesystem"]
+  end
+
+  IPC --> App
+  App --> Config
+  App --> Orch
+
+  Orch --> LLM
+  Orch --> Sandbox
+  Orch --> Memory
+  Orch --> MCP
+  Orch --> Persist
+  Orch --> FS
+
+  Memory --> Persist
+  Memory --> FS
+  Sandbox --> FS
+  Auto --> Orch
 ```
+
+闭环目标：
+`用户意图 -> 编排执行 -> 工具操作 -> 记忆沉淀 -> 下一轮更优决策`。
+
+## 4. 核心子系统设计与状态
+
+### 4.1 Orchestration（编排层）
+
+设计目标：
+
+- 由 Lead 负责规划，Sub-Agents 按角色执行，支持 DAG 依赖与并发控制。
+- 对用户保持统一会话体验，对内部按任务拆解执行。
+
+当前状态：
+
+- `已实现`：基于 Tool Planning 的主链路（chat 与 task 两条执行路径）。
+- `已实现（未接主链）`：DAG 调度、Worker Pool、Sub-Agent 框架代码已存在。
+- `规划中`：将 DAG 多 Agent 主链路与现有 chat 主链统一。
+
+### 4.2 Sandbox & Risk Control（沙箱与风险控制）
+
+设计目标：
+
+- 文件系统访问与命令执行必须受路径与策略约束。
+- 高风险操作支持人工确认（HITL）能力。
+
+当前状态：
+
+- `已实现`：路径守卫、命令白名单、执行超时、输出限制、审计日志能力。
+- `已实现（能力原型）`：HITL 相关中间件原型存在。
+- `规划中`：将 HITL 策略完整接入主链路并细化策略分级。
+
+### 4.3 Memory（长期记忆）
+
+设计目标：
+
+- 提供可沉淀、可检索的长期记忆体系（L0/L1/L2 思路）。
+- 将对话事实提取为可复用知识，避免上下文重复消耗。
+
+当前状态：
+
+- `已实现`：Fact Extractor、Layered Memory Provider、OpenViking 集成骨架。
+- `已实现`：Memory 相关配置层与路由角色（如 fact extractor 角色）。
+- `规划中`：更细粒度的记忆检索策略与跨流程复用能力。
+
+### 4.4 Filesystem（本地数据平面）
+
+设计目标：
+
+- 工作区数据可追溯、可复盘、可迁移。
+- 资源、日志、追踪、任务中间产物职责分离。
+
+当前状态：
+
+- `已实现`：Bandry Home 路径规划、配置化路径覆盖、工作区与追踪目录能力。
+- `规划中`：更完善的任务资产治理与清理策略。
+
+### 4.5 Automation（自动化与任务推进）
+
+设计目标：
+
+- 支持事件驱动触发（A -> B）与计划调度并存。
+- 后台持续推进任务，不依赖单次会话生命周期。
+
+当前状态：
+
+- `已实现`：Task State Machine、Trigger Engine 基础能力。
+- `规划中`：`node-cron` 调度器（将补充为定时任务派发能力）。
+- `TODO`：任务状态模型将重新梳理（见第 8 节）。
+
+### 4.6 MCP（工具协议层）
+
+设计目标：
+
+- 统一 MCP Server 接入、发现、调用与治理。
+- 将外部工具能力以标准接口纳入编排系统。
+
+当前状态：
+
+- `已实现（骨架）`：MCP Registry 与 Adapter 结构。
+- `未落地`：Server 启停、工具发现、工具执行链路尚未完成。
+
+### 4.7 Config & Settings（配置与模型接入）
+
+设计目标：
+
+- 单一配置入口，分层合并，避免业务模块直接依赖环境变量。
+- 支持模型目录、接入、默认路由与全局设置统一管理。
+
+当前状态：
+
+- `已实现`：default -> project -> user -> env 分层加载。
+- `已实现`：模型目录、模型连接、默认模型切换、凭据更新相关能力。
+- `已实现`：配置持久化与摘要输出能力。
+
+### 4.8 IPC（跨进程协议层）
+
+设计目标：
+
+- 通过 typed contract 统一主进程与渲染进程通信。
+- preload 暴露稳定的 `window.api`，避免渲染层直接接触敏感能力。
+
+当前状态：
+
+- `已实现`：chat/task/sandbox/models/settings/conversation/message 等主通道体系。
+- `规划中`：随着编排与自动化升级，扩展更细粒度事件协议。
+
+### 4.9 Persistence（持久化）
+
+设计目标：
+
+- 以 SQLite 作为本地可靠存储，承载会话、消息与相关元数据。
+
+当前状态：
+
+- `已实现`：SQLite schema、会话/消息存储、IPC 对接。
+- `已实现（基础）`：模型/员工相关表结构已纳入 schema。
+
+### 4.10 Skills（能力包协议层）
+
+设计目标：
+
+- 提供可复用的 Skill 能力包体系（提示词、模板、工作流约束、可选脚本资产）。
+- 建立统一的 Skills Registry，与 MCP 一样具备“发现、注册、装配、治理”能力。
+- 与编排层深度集成：按任务/角色动态装配 Skills，提升子智能体稳定性与一致性。
+
+当前状态：
+
+- `规划中`：Skill Manifest 规范（元数据、版本、依赖、能力边界）设计。
+- `规划中`：Skills 加载与优先级机制（内置 / 项目 / 用户）设计。
+- `规划中`：Skills 与 MCP 的协同策略（技能负责“认知与流程”，MCP 负责“外部工具执行”）落地。
+
+## 5. 本地目录结构（按现状）
+
+```text
 ~/.bandry/
-├── config/                 # 存放用户 API Keys、全局设置、自动化 cron 配置
-├── resources/              # OpenViking 接管的知识库目录 (Markdown 沉淀)
-├── plugins/                # MCP Servers 和自定义 Skills 脚本
-└── workspaces/             # 任务执行沙盒
-    ├── task_1001/          # 具体的任务实例
-    │   ├── input/          # 任务输入 (用户拖拽的文件)
-    │   ├── staging/        # Sub-Agent 中间态处理文件
-    │   ├── output/         # 最终交付物 (后续沉淀到 resources 目录)
-    │   └── trace.jsonl     # 结构化执行日志
-    └── task_1002/
+├── config/
+│   ├── config.json                # 用户配置（推荐路径）
+│   └── bandry.db                  # SQLite 数据库
+├── logs/
+│   ├── model-audit.log            # 模型调用审计日志
+│   └── sandbox-audit.log          # 沙箱审计日志
+├── resources/                     # 记忆资源与知识沉淀
+├── plugins/                       # 插件/MCP 扩展目录
+├── traces/                        # 任务追踪与状态记录
+└── workspaces/                    # 任务工作区
+    └── task_*/
+        ├── input/
+        ├── staging/
+        └── output/
 ```
 
+项目侧配置路径：
 
-## 方案细化设计
-### 一、Lead Agent 与 Sub-Agent 调度系统
+- 推荐：`<project>/.bandry/config.json`
+- 兼容：`<project>/config.json`
 
-整个调度系统分为两个核心子系统：**中间件管道（Middleware Pipeline）**负责处理数据的流入流出与状态拦截；**异步委派引擎（Delegation Engine）**负责任务的拆解与多进程沙盒执行。
+用户侧兼容路径：
 
-#### 一、 中间件管道设计 (The Middleware Pipeline)
+- 兼容：`~/.config/bandry/config.json`
 
-在 Node.js 中，我们采用类似 Koa.js 的“洋葱模型”或“生命周期钩子（Lifecycle Hooks）”来设计中间件。所有用户请求、大模型响应、工具调用，都必须流经一个统一的 `SessionContext`（会话上下文）对象。
+## 6. `src/main` 模块布局（已落地）
 
-**1. 生命周期钩子定义**
-
-每个中间件可以挂载在以下四个生命周期节点：
-
-- `onRequest`: 收到用户输入，准备发给 Lead Agent 前。
-    
-- `beforeLLM`: 组装完 Prompt，马上要发起 API 网络请求前。
-    
-- `afterLLM`: 收到大模型 API 返回的 Raw Data 后。
-    
-- `onResponse`: 结果处理完毕，准备返回给前端 UI 或进行下一步行动前。
-    
-
-**2. 核心中间件链配置 (按执行顺序)**
-
-|**中间件名称**|**挂载节点**|**核心职责与工程实现细节**|
-|---|---|---|
-|**Workspace Middleware**|`onRequest`|**沙盒环境分配**：为当前任务生成或定位到本地路径（如 `~/.bandry/workspaces/task_123/`）。将其绝对路径注入 `SessionContext.env`，确保后续所有工具调用都锁定在此目录下。|
-|**OpenViking Memory Middleware**|`beforeLLM`<br><br>  <br><br>`onResponse`|**记忆注入与异步沉淀**：<br><br>  <br><br>- _读 (`beforeLLM`)_：去本地 `resources/` 读取 OpenViking 的 L0/L1 摘要，作为 `SystemMessage` 注入，提供长期记忆。<br><br>  <br><br>- _写 (`onResponse`)_：将本轮对话推入 Node.js 异步队列。利用 `lodash.debounce` 设 30 秒防抖，后台悄悄调用小模型提取 Facts 并写入 Markdown，绝不阻塞当前 UI 渲染。|
-|**Local Resource Middleware**|`beforeLLM`|**本地文件预读**：扫描用户拖入 `input/` 目录的文件。若是图片转为 Base64；若是纯文本提取前 2000 个 Token 注入 Context。避免 Agent 反复调用“读文件”工具浪费时间。|
-|**Output Validation Middleware**|`afterLLM`|**JSON 强校验（防腐层）**：Lead Agent 的输出必须是严格的 DAG (有向无环图) JSON。如果模型输出格式损坏，此层直接拦截，并利用 Zod 等库生成错误提示，**内部自动发起重试**，不让脏数据流入执行器。|
-|**Concurrency Limit Middleware**|`afterLLM`|**并发熔断器**：解析 JSON 中的 Sub-Agent 调用数量。为了保护 Mac 本地 CPU/内存，硬编码限制单次并发上限（如 `MAX_WORKERS = 3`）。超出部分做截断或放入 `PENDING` 队列。|
-|**Clarification / HITL Middleware**|`afterLLM`|**人类介入（中断机制）**：检测到 Agent 试图执行高危 Bash 命令，或主动调用了 `ask_user` 工具。立即调用 `Command(goto=END)` 中止流转，通过 Electron IPC 管道向渲染进程（前端 Vue/React）发送事件，弹出确认对话框。|
-
-
-#### 二、 Sub-Agent 异步委派系统 (The Delegation Engine)
-
-Lead Agent 只是“大脑”（规划 DAG），真正干活的手脚是 Sub-Agents。在 Node.js 环境下，我们绝不能在主线程里跑耗时的 Agent 任务（会卡死整个 Electron App）。
-
-**1. 委派协议与工具触发**
-
-Lead Agent 唯一能调用的核心工具是 `delegate_sub_tasks`。它通过 API 输出如下结构的指令：
-
-```json
-{
-  "tool": "delegate_sub_tasks",
-  "payload": {
-    "tasks": [
-      {
-        "sub_task_id": "sub_01",
-        "agent_role": "WebResearcher",
-        "prompt": "搜索 2026 RAG 框架最新方案...",
-        "dependencies": [],
-        "write_path": "staging/research.md"
-      },
-      {
-        "sub_task_id": "sub_02",
-        "agent_role": "BashExpert",
-        "prompt": "根据 research.md 生成一段 python 抓取脚本并执行",
-        "dependencies": ["sub_01"],
-        "write_path": "output/code.py"
-      }
-    ]
-  }
-}
+```text
+src/main/
+├── app/
+├── automation/
+├── common/
+├── config/
+├── ipc/
+├── llm/
+├── mcp/
+├── memory/
+├── orchestration/
+├── persistence/sqlite/
+├── sandbox/
+└── settings/
 ```
 
-**2. 调度器与独立执行环境 (Worker Threads/Child Process)**
+说明：上述模块化结构已完成重组，测试约定为模块内 `tests/` 目录。
 
-当中间件放行了这个工具调用，Bandry 后台调度引擎接管：
+## 7. IPC 架构说明（方案级）
 
-- **非阻塞返回**：调度器立刻给 Lead Agent 返回一条消息：“_任务已收到，正在后台并行处理。_” 此时 Lead Agent 的本次思考周期结束。
-    
-- **依赖图解析**：调度引擎解析 DAG，发现 `sub_01` 无依赖，立刻启动；`sub_02` 压入等待队列。
-    
-- **进程级沙盒隔离 (核心)**：对于每一个启动的 Sub-Agent，系统使用 Node.js 的 `child_process.fork()` 或 `worker_threads` 启动一个**完全独立的执行环境**。
-    
-    - _权限剥夺_：在传给 Worker 的初始化参数中，严格限制它的 `cwd` 为当前任务工作区，并且**只注入符合其 Role 的 MCP 工具集**（例如 `BashExpert` 才有权调用终端，`WebResearcher` 只能联网）。
-        
+Bandry 的 IPC 采用三层分工：
 
-**3. 事件驱动的状态反馈 (Event-Driven State Machine)**
+1. `shared`：协议与类型定义（单一事实来源）。
+2. `preload`：以 `window.api` 暴露受控接口。
+3. `main/ipc`：统一注册通道、执行业务编排并广播事件。
 
-子进程和主进程之间通过 IPC 消息（或 Event Emitter）通信：
+设计要求：
 
-- 当 `sub_01` (Worker 线程) 跑完，把结果写入了 `staging/research.md`，它向主进程发送一个事件：`{ event: "TASK_COMPLETED", task_id: "sub_01" }`。
-    
-- 主进程监听器收到后，更新任务状态机。检查发现 `sub_02` 的前置依赖满足了，立刻启动 `sub_02` 的 Worker。
-    
-- 当所有子任务都 `COMPLETED`，调度引擎重新唤醒 Lead Agent，通过注入一条内部系统消息：“_所有委派的子任务已完成，请检查工作区 output 目录并向用户汇报。_”
+- 协议稳定优先，尽量保持向后兼容。
+- 对渲染进程只暴露必要能力与必要参数。
+- 事件更新与请求响应分离，便于演进长任务与流式过程。
 
-#### 三、 Bandry 内置的 Sub-agent 类型建议
+## 8. 任务状态模型（TODO）
 
-为了让 Lead Agent 知道该把任务派给谁，系统启动时会向 Lead Agent 注册以下几种本地原生的“电子员工”：
+> 本节先留空，后续统一梳理状态模型。
 
-| **子智能体角色**       | **核心挂载工具**                       | **适用场景**                                              | 描述                                                                 |
-| ---------------- | -------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------ |
-| **Researcher**   | `read_local_file`                | 负责查资料、阅读长文档并生成摘要（不具备写文件权限，结果通过内存返回）。                  | 不干脏活。拥有全局记忆，负责意图理解、DAG 规划、最终交付物验收、与用户对话。                           |
-| WebResearcher    | `web_search`, `fetch_url`        | 需要执行网络调研任务                                            | 挂载 `web_search`, `fetch_url` 工具。专门负责高 Token 消耗的网页阅读和信息摘要提取。        |
-| **BashOperator** | `execute_bash` (受严格白名单与路径沙盒限制)   | 专门执行终端命令，如 `git clone`, `npm install`, 调用 `ffmpeg` 等。 | 挂载 `bash_executor`（带正则白名单）和本地环境变量。负责执行 Git、文件重命名、脚本运行等系统级操作。       |
-| **Writer**       | `write_to_file`, `edit_markdown` | 负责将中间数据汇总，按要求格式化，并保存到工作区的 `output/` 目录下。              | 纯粹的逻辑推理 Agent，不挂载外部网络和终端工具。只给它读写工作区 Markdown/CSV 的权限，专心做数据归纳和报告撰写。 |
-### 二、数字员工与LLM
-这份设计稿彻底理清了 Bandry 中“数字员工”的物理结构。现在有了一个非常坚固的地基：
+TODO：
 
-1. **数据层**通过 SQLite 持久化了 `Provider -> Employee` 的解耦关系。
-    
-2. **逻辑层**通过 `AgentType` 锁定了模型的行为边界。
-    
-3. **架构层**通过 Adapter 模式将外部 API 的不确定性隔离在了系统之外。
-    
+- 定义“内部状态机”与“对外 IPC 状态”的边界与映射关系。
+- 统一 chat/task/automation 三条路径的状态语义。
+- 明确可恢复状态、可重试状态与终态定义。
 
-有了这个基石，我们可以开始真正让这些员工“动起来”了！
+## 9. Roadmap（分层视图）
 
-#### 1. 核心类型定义 (TypeScript Interfaces)
+### 9.1 已实现（可用能力）
 
-在 Bandry 的代码库中，我们需要定义三层核心数据结构：**厂商/凭证 (Provider) -> 支持的模型 (Model) -> 实例化的员工 (Agent)**。
+- 主进程模块化重组（app/ipc/orchestration/llm/memory/sandbox/persistence/settings/config/mcp/automation）。
+- Typed IPC + preload 桥接主链路。
+- 模型接入与设置管理基础能力。
+- 工具规划型 chat 与本地任务执行能力。
+- SQLite 会话与消息存储。
+- 配置分层与路径系统。
 
-```TypeScript
-// src/common/types/agent.ts
+### 9.2 已实现但未完全接入主链
 
-/**
- * 1. 员工类型（核心抽象）
- * 由它决定了后续传递给 Adapter 时的默认参数（Temperature、Tools支持等）
- */
-export type AgentType = 
-  | "planner"     // 规划型：需要 thinking/reasoning 能力 (如 o3-mini, R1)
-  | "generalist"  // 综合型：需要极强的 function calling 和多轮对话 (如 Claude 3.5 Sonnet)
-  | "executor"    // 执行型：快速、低成本、死板执行 (如 Haiku, Flash)
-  | "specialist"; // 专家型：针对特定领域的多模态生成 (如 Nano Banana, Veo)
+- DAG 多 Agent 调度与 Worker 执行框架。
+- HITL 中间件能力原型。
+- 自动化状态机与触发引擎基础实现。
+- MCP Registry/Adapter 架构骨架。
 
-/**
- * 2. 全局厂商凭证 (Provider Configuration)
- * 对应 UI 第一步：全局设置 -> 模型接入
- */
-export interface ProviderConfig {
-  id: string;              // uuid
-  provider_name: string;   // 'openai' | 'anthropic' | 'google' | 'custom_api'
-  api_key: string;         // 加密存储的 API Key
-  base_url?: string;       // 方便接入第三方中转或本地 Ollama/vLLM
-  is_active: boolean;
-  created_at: number;
-}
+### 9.3 规划中（下一阶段）
 
-/**
- * 3. 实例化的数字员工 (The Digital Employee / Agent)
- * 对应 UI 第二步：创建员工
- */
-export interface EmployeeConfig {
-  id: string;              // uuid，例如 'agent_frontend_dev_01'
-  name: string;            // 员工名称，如 "资深前端工程师"
-  avatar?: string;         // 头像（本地路径或 Base64）
-  type: AgentType;         // 员工类型，决定其在 DAG 图中的站位
-  
-  // 关联的物理模型
-  provider_id: string;     // 绑定上方的 ProviderConfig ID
-  model_id: string;        // 具体的模型名称，如 'claude-3-5-sonnet-20241022'
-  
-  // 角色与能力
-  system_prompt: string;   // 人设与边界指令
-  mcp_tools: string[];     // 该员工被授权使用的本地工具/MCP Server 列表，如 ['local_fs_read', 'bash_executor']
-  
-  // 高级参数（通常被 AgentType 隐藏，但允许高阶用户覆盖）
-  override_params?: {
-    temperature?: number;
-    max_tokens?: number;
-  };
-  
-  created_at: number;
-  updated_at: number;
-}
-```
+- `node-cron` 定时调度能力接入。
+- DAG 主链路接入与统一编排入口。
+- MCP Server 生命周期与工具执行链路落地。
+- Skills Registry 与 Skill Manifest 规范落地。
+- Skills 装配机制接入编排层，并与 MCP 形成协同执行链路。
+- 任务状态模型统一与可观测性增强。
+- 记忆检索/压缩策略进一步工程化。
 
----
+## 10. 更新策略
 
-#### 2. 本地数据库选型与存储设计
+每次架构调整时，按以下顺序更新本文：
 
-**选型建议：SQLite + `better-sqlite3`**
-
-作为 Electron Mac App，绝对不要让用户安装 MySQL 或 MongoDB。
-
-SQLite 是本地桌面端唯一的王者。配合 Node.js 的 `better-sqlite3` 库，它是同步执行的，性能极高，且整个数据库就是一个位于 `~/.bandry/config/bandry.db` 的文件，极其便于用户备份和迁移。
-
-**数据库表结构设计 (SQL Schema)**：
-
-```sql
--- 1. 厂商凭证表
-CREATE TABLE providers (
-    id TEXT PRIMARY KEY,
-    provider_name TEXT NOT NULL,
-    api_key TEXT NOT NULL, -- 建议在存入前用系统密钥链进行简单的 AES 加密
-    base_url TEXT,
-    is_active INTEGER DEFAULT 1,
-    created_at INTEGER
-);
-
--- 2. 数字员工表
-CREATE TABLE employees (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    avatar TEXT,
-    type TEXT NOT NULL, -- 'planner', 'generalist', 'specialist', 'executor'
-    provider_id TEXT NOT NULL,
-    model_id TEXT NOT NULL,
-    system_prompt TEXT,
-    mcp_tools TEXT, -- JSON 字符串，例如 '["web_search", "bash"]'
-    override_params TEXT, -- JSON 字符串
-    created_at INTEGER,
-    updated_at INTEGER,
-    FOREIGN KEY(provider_id) REFERENCES providers(id)
-);
-```
-
----
-
-#### 3. 前后端通信开发指南 (Electron IPC)
-
-在 Electron 中，前端 (React) 是不能直接读写 SQLite 或调用本地 Bash 的。一切必须通过 IPC (Inter-Process Communication) 桥接。
-
-**后端 (Main Process - Node.js)**：
-
-暴露 CRUD 接口给前端调用。
-
-```typescript
-// main/ipc/employeeHandler.ts
-import { ipcMain } from 'electron';
-import Database from 'better-sqlite3';
-
-const db = new Database('~/.bandry/config/bandry.db');
-
-export function registerEmployeeHandlers() {
-  // 获取员工列表
-  ipcMain.handle('get-employees', () => {
-    return db.prepare('SELECT * FROM employees').all();
-  });
-
-  // 创建新员工
-  ipcMain.handle('create-employee', (event, employeeData: EmployeeConfig) => {
-    const stmt = db.prepare(`
-      INSERT INTO employees (id, name, type, provider_id, model_id, system_prompt, mcp_tools, created_at, updated_at)
-      VALUES (@id, @name, @type, @provider_id, @model_id, @system_prompt, @mcp_tools, @created_at, @updated_at)
-    `);
-    // 需要把 mcp_tools 序列化为 JSON 字符串再存入
-    stmt.run({ ...employeeData, mcp_tools: JSON.stringify(employeeData.mcp_tools) });
-    return { success: true };
-  });
-}
-```
-
-**前端 (Renderer Process - React)**：
-
-在页面上调用这些桥接方法。
-
-```TypeScript
-// renderer/api/index.ts
-export const fetchEmployees = async () => {
-  return await window.electronAPI.invoke('get-employees');
-};
-
-export const createEmployee = async (data) => {
-  return await window.electronAPI.invoke('create-employee', data);
-};
-```
-
----
-
-#### 4. LLM API Adapter 架构指引 (Blueprint)
-
-这是最核心也最脏的活儿，你需要用**适配器模式 (Adapter Pattern)** 将各大厂商千奇百怪的 API 抹平。
-
-**1. 统一的内部协议 (Bandry Standard Protocol)**
-
-无论外部模型是什么，Bandry 系统内部的 Lead Agent 调度和存储都只认一种格式。
-
-```TypeScript
-// Bandry 发给 Adapter 的标准请求
-interface BandryRequest {
-  messages: { role: "system" | "user" | "assistant", content: string }[];
-  tools?: BandryTool[]; // 统一的工具格式
-  agentType: AgentType; // 适配器据此注入默认参数！
-}
-
-// Adapter 返回给 Bandry 的标准响应
-interface BandryResponse {
-  content: string;
-  tool_calls?: { name: string, arguments: any }[]; // 抹平不同厂商的工具调用返回格式
-  media_paths?: string[]; // specialist 专用的本地多媒体路径返回
-}
-```
-
-**2. Adapter 工厂模式 (The Router)**
-
-根据分配给该员工的 `provider_name` 和 `type`，动态路由到对应的处理类。
-
-```TypeScript
-// 伪代码示例
-class ModelAdapterFactory {
-  static async execute(employee: EmployeeConfig, request: BandryRequest): Promise<BandryResponse> {
-    const provider = getProvider(employee.provider_id);
-    
-    // 1. 如果是专家型 (Specialist) - 处理多模态
-    if (employee.type === 'specialist') {
-       if (employee.model_id.includes('nano-banana')) {
-           return new NanoBananaAdapter(provider.api_key).generateImage(request);
-       }
-       if (employee.model_id.includes('veo')) {
-           return new VeoVideoAdapter(provider.api_key).generateVideo(request);
-       }
-       // ... 其他 Specialist
-    }
-
-    // 2. 文本/执行型 - 处理标准对话与 Function Calling
-    const baseParams = this.getDefaultParams(employee.type); // 根据类型获取默认 temperature 等
-    
-    switch (provider.provider_name) {
-      case 'anthropic':
-        return new AnthropicAdapter(provider.api_key).chat({...request, ...baseParams});
-      case 'openai':
-        return new OpenAIAdapter(provider.api_key).chat({...request, ...baseParams});
-      default:
-        throw new Error("Unsupported provider");
-    }
-  }
-
-  // 这里的默认参数就是我们前面讨论的精华
-  private static getDefaultParams(type: AgentType) {
-    if (type === 'executor') return { temperature: 0.0 };
-    if (type === 'planner') return { temperature: 0.7 };
-    return { temperature: 0.2 }; // generalist
-  }
-}
-```
-
-**为什么 Specialist 需要特殊的 Adapter？**
-
-因为像 Nano Banana（图像）或 Veo（视频）这类模型，它们的 API 流程通常是：发送 Prompt -> 获取 Task ID -> 轮询等待生成完成 -> 下载媒体文件到本地。
-
-`SpecialistAdapter` 的职责就是**把这段漫长的异步下载过程封装起来**，最后只返回一个 `media_paths: ["/workspaces/task_1/output/gen_image.png"]` 给调度中心。
-
+1. 更新“核心子系统设计与状态”。
+2. 更新“本地目录结构（按现状）”。
+3. 更新“Roadmap（已实现/未实现）”。
+4. 若状态模型变更，更新第 8 节 TODO 为正式定义。
