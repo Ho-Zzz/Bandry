@@ -78,8 +78,6 @@ export const createDefaultConfig = (
     },
     providers: defaultProviders,
     features: {
-      enableMiddleware: false,
-      enableMultiAgent: false,
       enableMemory: false,
       enableMCP: false,
     },

@@ -13,7 +13,7 @@ import type {
 } from "../../shared/ipc";
 import type { ModelProvider } from "../../shared/ipc";
 import { MODEL_PROVIDER_NAME_MAP } from "../../shared/model-providers";
-import { ModelsCatalogService } from "../ai";
+import { ModelsCatalogService } from "../llm";
 import { hasUsableProviderApiKey } from "../config/provider-credential";
 import { SettingsService } from "./settings-service";
 

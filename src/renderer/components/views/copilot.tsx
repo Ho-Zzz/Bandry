@@ -31,7 +31,6 @@ import {
   CheckCircle2,
   ChevronDown,
   Loader2,
-  ListTodo,
   Maximize2,
   Minimize2,
   Paperclip,
@@ -680,7 +679,6 @@ export const Copilot = () => {
   const navigate = useNavigate();
   const [isComposerToolsOpen, setIsComposerToolsOpen] = useState(false);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
-  const [isPlanModeEnabled, setIsPlanModeEnabled] = useState(false);
   const [selectedFileCount, setSelectedFileCount] = useState(0);
   const [leadRouteReady, setLeadRouteReady] = useState(true);
   const [profilesLoading, setProfilesLoading] = useState(true);
@@ -845,30 +843,6 @@ export const Copilot = () => {
                           <span className="ml-auto rounded-full bg-zinc-700 px-2 py-0.5 text-xs">{selectedFileCount}</span>
                         ) : null}
                       </button>
-
-                      <div className="flex items-center justify-between rounded-xl px-3 py-2 hover:bg-zinc-700/70">
-                        <div className="flex items-center gap-3 text-[17px] font-medium">
-                          <ListTodo size={18} className="text-zinc-300" />
-                          <span>Plan mode</span>
-                        </div>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={isPlanModeEnabled}
-                          onClick={() => setIsPlanModeEnabled((prev) => !prev)}
-                          className={clsx(
-                            "relative h-7 w-12 rounded-full transition-colors",
-                            isPlanModeEnabled ? "bg-emerald-500" : "bg-zinc-600"
-                          )}
-                        >
-                          <span
-                            className={clsx(
-                              "absolute left-1 top-1 h-5 w-5 rounded-full bg-white transition-transform",
-                              isPlanModeEnabled ? "translate-x-5" : "translate-x-0"
-                            )}
-                          />
-                        </button>
-                      </div>
                     </div>
                   </div>
                 ) : null}

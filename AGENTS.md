@@ -21,7 +21,7 @@ pnpm build
 pnpm test
 
 # Run single test file
-pnpm test <file-pattern>  # e.g., pnpm test sandbox-service.test.ts
+pnpm test <file-pattern>  # e.g., pnpm test src/main/sandbox/tests/sandbox-service.test.ts
 
 # Type checking
 pnpm typecheck
@@ -40,11 +40,15 @@ Electron multi-process app:
 
 ### Domain Organization
 
-- `src/main/chat/`: Chat agent with planner-based tool calling
+- `src/main/orchestration/`: Chat planning + workflow orchestration (local + DAG workers)
+- `src/main/llm/`: Model runtime, providers, and model catalog
+- `src/main/memory/`: OpenViking integration, extraction, and layered memory
+- `src/main/automation/`: Trigger engine and task state machine
+- `src/main/mcp/`: MCP registry and adapters
+- `src/main/persistence/sqlite/`: SQLite stores and schema
 - `src/main/config/`: Layered configuration (project → user → env)
-- `src/main/models/`: LLM provider abstraction (OpenAI, DeepSeek, Volcengine)
 - `src/main/sandbox/`: Sandboxed file/command execution with path guarding
-- `src/main/orchestrator/`: Task planning and execution
+- `src/main/settings/`: Global settings and model onboarding services
 
 ## Code Style
 
@@ -92,7 +96,7 @@ import { MAX_TOOL_STEPS } from "./chat-constants";        // relative
 ## Testing
 
 - Framework: Vitest
-- Test files: `src/**/*.test.ts`
+- Test files: `src/**/tests/**/*.test.ts` (module-local `tests/` directories only)
 - Environment: Node.js
 - Use `vi.fn()` for mocks
 - Run single test: `pnpm test <pattern>`

@@ -131,8 +131,6 @@ export type LlmLayerConfig = Partial<{
 }>;
 
 export type FeaturesLayerConfig = Partial<{
-  enableMiddleware: boolean;
-  enableMultiAgent: boolean;
   enableMemory: boolean;
   enableMCP: boolean;
 }>;
@@ -215,8 +213,6 @@ export type AppConfig = {
   };
   providers: Record<LlmProvider, ProviderConfig>;
   features: {
-    enableMiddleware: boolean;
-    enableMultiAgent: boolean;
     enableMemory: boolean;
     enableMCP: boolean;
   };

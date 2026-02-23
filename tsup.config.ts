@@ -6,7 +6,7 @@ export default defineConfig((options) => ({
   entry: {
     main: "src/main/index.ts",
     preload: "src/preload/index.ts",
-    "sub-agent-worker": "src/main/orchestrator/multi-agent/workers/sub-agent-worker.ts"
+    "sub-agent-worker": "src/main/orchestration/workflow/dag/workers/sub-agent-worker.ts"
   },
   outDir: "dist-electron",
   format: ["cjs"],
@@ -21,7 +21,7 @@ export default defineConfig((options) => ({
     };
   },
   onSuccess: async () => {
-    const src = path.join(process.cwd(), "src/main/storage/schema.sql");
+    const src = path.join(process.cwd(), "src/main/persistence/sqlite/schema.sql");
     const dest = path.join(process.cwd(), "dist-electron/schema.sql");
     fs.copyFileSync(src, dest);
   }

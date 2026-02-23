@@ -5,10 +5,6 @@ import type {
   ChatSendResult,
   ChatDeltaEvent,
   ChatUpdateEvent,
-  ChatV2SendInput,
-  ChatV2SendResult,
-  ChatMultiAgentSendInput,
-  ChatMultiAgentSendResult,
   ConversationInput,
   ConversationResult,
   ModelsCatalogListInput,
@@ -38,9 +34,7 @@ import type {
   SandboxWriteFileResult,
   TaskStartInput,
   TaskStartResult,
-  TaskUpdateEvent,
-  HITLApprovalRequest,
-  HITLApprovalResponse
+  TaskUpdateEvent
 } from "../../shared/ipc";
 
 declare global {
@@ -61,8 +55,6 @@ declare global {
       // Chat APIs
       chatSend: (input: ChatSendInput) => Promise<ChatSendResult>;
       chatCancel: (input: ChatCancelInput) => Promise<ChatCancelResult>;
-      chatV2Send: (input: ChatV2SendInput) => Promise<ChatV2SendResult>;
-      chatMultiAgentSend: (input: ChatMultiAgentSendInput) => Promise<ChatMultiAgentSendResult>;
 
       // Task Management
       startTask: (input: TaskStartInput) => Promise<TaskStartResult>;
@@ -90,8 +82,6 @@ declare global {
       onChatUpdate: (listener: (update: ChatUpdateEvent) => void) => () => void;
       onChatDelta: (listener: (update: ChatDeltaEvent) => void) => () => void;
       onTaskUpdate: (listener: (update: TaskUpdateEvent) => void) => () => void;
-      onHITLApprovalRequired: (listener: (request: HITLApprovalRequest) => void) => () => void;
-      submitHITLApproval: (response: HITLApprovalResponse) => Promise<void>;
     };
   }
 }

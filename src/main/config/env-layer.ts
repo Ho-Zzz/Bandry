@@ -70,8 +70,6 @@ export const envToLayer = (env: NodeJS.ProcessEnv): ConfigLayer => {
       auditLogEnabled: toBooleanValue(env.SANDBOX_AUDIT_LOG_ENABLED)
     },
     features: {
-      enableMiddleware: toBooleanValue(env.ENABLE_MIDDLEWARE),
-      enableMultiAgent: toBooleanValue(env.ENABLE_MULTI_AGENT),
       enableMemory: toBooleanValue(env.ENABLE_MEMORY),
       enableMCP: toBooleanValue(env.ENABLE_MCP)
     },

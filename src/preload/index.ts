@@ -5,15 +5,9 @@ import type {
   ChatSendInput,
   ChatSendResult,
   ChatDeltaEvent,
-  ChatV2SendInput,
-  ChatV2SendResult,
-  ChatMultiAgentSendInput,
-  ChatMultiAgentSendResult,
   ChatUpdateEvent,
   ConversationInput,
   ConversationResult,
-  HITLApprovalRequest,
-  HITLApprovalResponse,
   MessageInput,
   MessageResult,
   MessageUpdateInput,
@@ -48,8 +42,6 @@ const api = {
   ping: (): Promise<PingResult> => ipcRenderer.invoke("app:ping"),
   chatSend: (input: ChatSendInput): Promise<ChatSendResult> => ipcRenderer.invoke("chat:send", input),
   chatCancel: (input: ChatCancelInput): Promise<ChatCancelResult> => ipcRenderer.invoke("chat:cancel", input),
-  chatV2Send: (input: ChatV2SendInput): Promise<ChatV2SendResult> => ipcRenderer.invoke("chat:v2:send", input),
-  chatMultiAgentSend: (input: ChatMultiAgentSendInput): Promise<ChatMultiAgentSendResult> => ipcRenderer.invoke("chat:multi-agent:send", input),
   startTask: (input: TaskStartInput): Promise<TaskStartResult> => ipcRenderer.invoke("task:start", input),
   getConfigSummary: (): Promise<RuntimeConfigSummary> => ipcRenderer.invoke("config:get-summary"),
   getSettingsState: (): Promise<GlobalSettingsState> => ipcRenderer.invoke("config:get-settings-state"),
@@ -107,19 +99,6 @@ const api = {
       ipcRenderer.removeListener("task:update", wrappedListener);
     };
   },
-  onHITLApprovalRequired: (listener: (request: HITLApprovalRequest) => void): (() => void) => {
-    const wrappedListener = (_event: IpcRendererEvent, request: HITLApprovalRequest): void => {
-      listener(request);
-    };
-
-    ipcRenderer.on("hitl:approval-required", wrappedListener);
-
-    return () => {
-      ipcRenderer.removeListener("hitl:approval-required", wrappedListener);
-    };
-  },
-  submitHITLApproval: (response: HITLApprovalResponse): Promise<void> =>
-    ipcRenderer.invoke("hitl:submit-approval", response),
   // Conversation API
   conversationCreate: (input: ConversationInput): Promise<ConversationResult> =>
     ipcRenderer.invoke("conversation:create", input),

@@ -46,46 +46,6 @@ export type ChatDeltaEvent = {
   timestamp: number;
 };
 
-// V2 Chat types (middleware-based)
-export type ChatV2SendInput = {
-  requestId?: string;
-  message: string;
-  history: ChatHistoryMessage[];
-  enableMiddleware?: boolean;
-};
-
-export type ChatV2SendResult = {
-  reply: string;
-  provider: ModelProvider;
-  model: string;
-  latencyMs: number;
-  middlewareUsed: string[];
-  workspacePath?: string;
-};
-
-// Multi-Agent types
-export type ChatMultiAgentSendInput = {
-  requestId?: string;
-  message: string;
-  history: ChatHistoryMessage[];
-};
-
-export type ChatMultiAgentSendResult = {
-  reply: string;
-  provider: ModelProvider;
-  model: string;
-  latencyMs: number;
-  workspacePath: string;
-  tasksExecuted: number;
-  plan: {
-    tasks: Array<{
-      subTaskId: string;
-      agentRole: string;
-      status: string;
-    }>;
-  };
-};
-
 export type TaskStatus = "queued" | "running" | "completed" | "failed";
 
 export type TaskStartInput = {
@@ -361,26 +321,6 @@ export type SandboxExecResult = {
   durationMs: number;
   timedOut: boolean;
   outputTruncated: boolean;
-};
-
-// HITL (Human-in-the-Loop) types
-export type RiskLevel = "low" | "medium" | "high";
-
-export type HITLApprovalRequest = {
-  taskId: string;
-  operation: string;
-  risk: RiskLevel;
-  details: string;
-  toolCalls?: Array<{
-    name: string;
-    args: unknown;
-  }>;
-};
-
-export type HITLApprovalResponse = {
-  taskId: string;
-  approved: boolean;
-  reason?: string;
 };
 
 // Conversation types

@@ -56,8 +56,6 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
   };
 
   const featuresLayer: ConfigLayer["features"] = {
-    enableMiddleware: toBooleanValue(featuresRaw.enableMiddleware),
-    enableMultiAgent: toBooleanValue(featuresRaw.enableMultiAgent),
     enableMemory: toBooleanValue(featuresRaw.enableMemory),
     enableMCP: toBooleanValue(featuresRaw.enableMCP)
   };

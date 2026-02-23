@@ -83,12 +83,6 @@ export const applyLayer = (target: AppConfig, layer: ConfigLayer): void => {
   if (layer.features) {
     const featuresLayer = layer.features;
 
-    if (featuresLayer.enableMiddleware !== undefined) {
-      target.features.enableMiddleware = featuresLayer.enableMiddleware;
-    }
-    if (featuresLayer.enableMultiAgent !== undefined) {
-      target.features.enableMultiAgent = featuresLayer.enableMultiAgent;
-    }
     if (featuresLayer.enableMemory !== undefined) {
       target.features.enableMemory = featuresLayer.enableMemory;
     }
