@@ -6,7 +6,7 @@ The Fact Extractor is a component of the memory system that uses LLM to extract 
 
 ## Location
 
-`src/main/v2/memory/fact-extractor.ts`
+`src/main/memory/extraction/fact-extractor.ts`
 
 ## Features
 
@@ -23,8 +23,8 @@ The Fact Extractor is a component of the memory system that uses LLM to extract 
 ### Basic Fact Extraction
 
 ```typescript
-import { FactExtractor } from "./v2/memory";
-import type { Conversation } from "./v2/memory";
+import { FactExtractor } from "./memory/extraction/fact-extractor";
+import type { Conversation } from "./memory/contracts";
 
 const extractor = new FactExtractor(modelsFactory, config);
 
@@ -235,7 +235,7 @@ The fact extractor has comprehensive test coverage:
 
 ```bash
 # Run fact extractor tests
-pnpm test src/main/v2/memory/fact-extractor.test.ts
+pnpm test src/main/memory/extraction/tests/fact-extractor.test.ts
 ```
 
 **Test Coverage**:
