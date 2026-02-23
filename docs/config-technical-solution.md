@@ -229,9 +229,9 @@ flowchart TD
 
 已改造模块：
 
-1. `/Users/hozzz/workspace/agent/src/main/index.ts`
-2. `/Users/hozzz/workspace/agent/src/main/sandbox/sandbox-service.ts`
-3. `/Users/hozzz/workspace/agent/src/main/openviking/process-manager.ts`
+1. `/Users/bytedance/Workspace/hozzz/Bandry/src/main/index.ts`
+2. `/Users/bytedance/Workspace/hozzz/Bandry/src/main/sandbox/sandbox-service.ts`
+3. `/Users/bytedance/Workspace/hozzz/Bandry/src/main/memory/openviking/process-manager.ts`
 
 ## 11. 迁移策略
 

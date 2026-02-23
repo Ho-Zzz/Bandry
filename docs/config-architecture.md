@@ -10,7 +10,7 @@
 
 - `src/main/index.ts`
 - `src/main/sandbox/sandbox-service.ts`
-- `src/main/openviking/process-manager.ts`
+- `src/main/memory/openviking/process-manager.ts`
 
 禁止在业务模块直接读取 `process.env`。
 
