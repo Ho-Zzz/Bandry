@@ -9,9 +9,19 @@ import type { AppConfig } from "../../../../config";
  */
 export class DAGScheduler extends EventEmitter {
   private taskGraph: Map<string, TaskNode> = new Map();
+  private readonly workerProgressListener: (workerId: unknown, message: unknown, progress: unknown) => void;
 
   constructor(private workerPool: WorkerPool) {
     super();
+    this.workerProgressListener = (workerId: unknown, message: unknown, progress: unknown) => {
+      if (typeof workerId !== "string" || typeof message !== "string") {
+        return;
+      }
+      this.emit("task:progress", workerId, message, typeof progress === "number" ? progress : undefined);
+    };
+    if (typeof this.workerPool.on === "function") {
+      this.workerPool.on("progress", this.workerProgressListener);
+    }
   }
 
   /**
@@ -20,13 +30,14 @@ export class DAGScheduler extends EventEmitter {
   async scheduleDAG(
     plan: DAGPlan,
     workspacePath: string,
-    appConfig: AppConfig
+    appConfig: AppConfig,
+    shouldAbort?: () => boolean
   ): Promise<Map<string, AgentResult>> {
     // Build task graph
     this.buildTaskGraph(plan);
 
     // Start execution
-    await this.executeDAG(workspacePath, appConfig);
+    await this.executeDAG(workspacePath, appConfig, shouldAbort);
 
     // Collect results
     const results = new Map<string, AgentResult>();
@@ -65,50 +76,59 @@ export class DAGScheduler extends EventEmitter {
   /**
    * Execute DAG with dependency resolution
    */
-  private async executeDAG(workspacePath: string, appConfig: AppConfig): Promise<void> {
-    const executing = new Set<string>();
-    const completed = new Set<string>();
+  private async executeDAG(
+    workspacePath: string,
+    appConfig: AppConfig,
+    shouldAbort?: () => boolean
+  ): Promise<void> {
+    const successful = new Set<string>();
+    const failed = new Set<string>();
+    const executing = new Map<string, Promise<void>>();
 
-    while (completed.size < this.taskGraph.size) {
-      // Find ready tasks (no pending dependencies)
-      const readyTasks = this.getReadyTasks(completed, executing);
+    while (successful.size + failed.size < this.taskGraph.size) {
+      if (shouldAbort?.()) {
+        throw new Error("Delegation aborted");
+      }
 
-      if (readyTasks.length === 0) {
-        // Check if we're stuck (circular dependency or all tasks failed)
-        if (executing.size === 0) {
-          const failedTasks = Array.from(this.taskGraph.values())
-            .filter((node) => node.status === "failed")
-            .map((node) => node.task.subTaskId);
+      this.markBlockedTasks(failed);
 
-          if (failedTasks.length > 0) {
-            throw new Error(`Tasks failed: ${failedTasks.join(", ")}`);
-          }
-
-          throw new Error("Circular dependency detected or no tasks can proceed");
+      const availableSlots = this.workerPool.getAvailableSlots();
+      if (availableSlots > 0) {
+        const readyTasks = this.getReadyTasks(successful).slice(0, availableSlots);
+        for (const taskId of readyTasks) {
+          const promise = this.executeTask(taskId, workspacePath, appConfig, successful, failed).finally(() => {
+            executing.delete(taskId);
+          });
+          executing.set(taskId, promise);
         }
-
-        // Wait for running tasks
-        await this.waitForAnyTask(executing);
-        continue;
       }
 
-      // Start ready tasks
-      for (const taskId of readyTasks) {
-        executing.add(taskId);
-        this.executeTask(taskId, workspacePath, appConfig, executing, completed);
+      if (successful.size + failed.size >= this.taskGraph.size) {
+        break;
       }
+
+      if (executing.size === 0) {
+        const pendingTasks = Array.from(this.taskGraph.values())
+          .filter((node) => node.status === "pending")
+          .map((node) => node.task.subTaskId);
+        if (pendingTasks.length > 0) {
+          throw new Error(`Circular dependency detected or no runnable tasks: ${pendingTasks.join(", ")}`);
+        }
+        break;
+      }
+
+      await Promise.race(executing.values());
     }
   }
 
   /**
    * Get tasks that are ready to execute
    */
-  private getReadyTasks(completed: Set<string>, executing: Set<string>): string[] {
+  private getReadyTasks(completed: Set<string>): string[] {
     const ready: string[] = [];
 
     for (const [taskId, node] of this.taskGraph.entries()) {
       if (node.status !== "pending") continue;
-      if (executing.has(taskId)) continue;
 
       // Check if all dependencies are completed
       const allDepsCompleted = node.task.dependencies.every((depId) =>
@@ -123,6 +143,29 @@ export class DAGScheduler extends EventEmitter {
     return ready;
   }
 
+  private markBlockedTasks(failed: Set<string>): void {
+    for (const [taskId, node] of this.taskGraph.entries()) {
+      if (node.status !== "pending") {
+        continue;
+      }
+
+      const blockedBy = node.task.dependencies.filter((depId) => failed.has(depId));
+      if (blockedBy.length === 0) {
+        continue;
+      }
+
+      node.status = "failed";
+      node.completedAt = Date.now();
+      node.result = {
+        success: false,
+        output: "",
+        error: `Blocked by failed dependencies: ${blockedBy.join(", ")}`
+      };
+      failed.add(taskId);
+      this.emit("task:failed", taskId, node.result.error);
+    }
+  }
+
   /**
    * Execute a single task
    */
@@ -130,8 +173,8 @@ export class DAGScheduler extends EventEmitter {
     taskId: string,
     workspacePath: string,
     appConfig: AppConfig,
-    executing: Set<string>,
-    completed: Set<string>
+    successful: Set<string>,
+    failed: Set<string>
   ): Promise<void> {
     const node = this.taskGraph.get(taskId)!;
     node.status = "running";
@@ -154,6 +197,7 @@ export class DAGScheduler extends EventEmitter {
       node.status = "completed";
       node.result = result;
       node.completedAt = Date.now();
+      successful.add(taskId);
 
       this.emit("task:completed", taskId, result);
     } catch (error) {
@@ -164,28 +208,10 @@ export class DAGScheduler extends EventEmitter {
         error: error instanceof Error ? error.message : String(error)
       };
       node.completedAt = Date.now();
+      failed.add(taskId);
 
       this.emit("task:failed", taskId, node.result.error);
-    } finally {
-      executing.delete(taskId);
-      completed.add(taskId);
     }
-  }
-
-  /**
-   * Wait for any task to complete
-   */
-  private async waitForAnyTask(_executing: Set<string>): Promise<void> {
-    return new Promise((resolve) => {
-      const handler = () => {
-        this.removeListener("task:completed", handler);
-        this.removeListener("task:failed", handler);
-        resolve();
-      };
-
-      this.once("task:completed", handler);
-      this.once("task:failed", handler);
-    });
   }
 
   /**

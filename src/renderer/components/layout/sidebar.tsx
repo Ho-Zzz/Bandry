@@ -302,7 +302,7 @@ export const Sidebar = ({
             label="Home"
             isActive={isNavActive({ type: "view", id: "home" })}
             onClick={() => handleNavClick({ type: "view", id: "home" })}
-            badge={activeTaskCount}
+            // badge={activeTaskCount}
             isCollapsed={isCollapsed}
           />
           <NavItem

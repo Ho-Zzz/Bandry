@@ -111,7 +111,7 @@ describe("ValidationMiddleware", () => {
           {
             name: "",
             arguments: {}
-          } as any
+          } as { name: string; arguments: Record<string, unknown> }
         ]
       }
     };

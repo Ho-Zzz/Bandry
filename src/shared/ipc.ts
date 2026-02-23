@@ -10,6 +10,7 @@ export type ChatHistoryMessage = {
 
 export type ChatSendInput = {
   requestId?: string;
+  conversationId?: string;
   message: string;
   history: ChatHistoryMessage[];
   modelProfileId?: string;
@@ -31,13 +32,29 @@ export type ChatCancelResult = {
   cancelled: boolean;
 };
 
-export type ChatUpdateStage = "planning" | "tool" | "model" | "final" | "error";
+export type ChatUpdateStage = "planning" | "tool" | "model" | "final" | "error" | "clarification";
+
+export type ChatClarificationOption = {
+  label: string;
+  value: string;
+  recommended?: boolean;
+};
+
+export type ChatClarificationPayload = {
+  question: string;
+  options: ChatClarificationOption[];
+};
+
+export type ChatUpdatePayload = {
+  clarification?: ChatClarificationPayload;
+};
 
 export type ChatUpdateEvent = {
   requestId: string;
   stage: ChatUpdateStage;
   message: string;
   timestamp: number;
+  payload?: ChatUpdatePayload;
 };
 
 export type ChatDeltaEvent = {

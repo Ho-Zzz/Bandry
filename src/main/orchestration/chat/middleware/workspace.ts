@@ -17,6 +17,10 @@ export class WorkspaceMiddleware implements Middleware {
 
   constructor(private baseWorkspacePath: string) {}
 
+  async beforeAgent(ctx: MiddlewareContext): Promise<MiddlewareContext> {
+    return this.onRequest(ctx);
+  }
+
   async onRequest(ctx: MiddlewareContext): Promise<MiddlewareContext> {
     // Generate workspace path for this task
     const workspacePath = path.join(this.baseWorkspacePath, `task_${ctx.taskId}`);

@@ -1,4 +1,10 @@
-import type { Middleware, MiddlewareContext, LlmExecutor } from "./types";
+import type {
+  Middleware,
+  MiddlewareContext,
+  LlmExecutor,
+  ToolCallHandler
+} from "./types";
+import type { PlannerActionTool, ToolObservation } from "../planner-types";
 
 /**
  * Middleware pipeline orchestrator
@@ -35,24 +41,10 @@ export class MiddlewarePipeline {
     let ctx = { ...initialContext };
 
     try {
-      // Phase 1: onRequest hooks
-      ctx.state = "request";
-      ctx = await this.runHooks(ctx, "onRequest");
-
-      // Phase 2: beforeLLM hooks
-      ctx.state = "before_llm";
-      ctx = await this.runHooks(ctx, "beforeLLM");
-
-      // Phase 3: Execute LLM
-      ctx = await llmExecutor(ctx);
-
-      // Phase 4: afterLLM hooks
-      ctx.state = "after_llm";
-      ctx = await this.runHooks(ctx, "afterLLM");
-
-      // Phase 5: onResponse hooks
-      ctx.state = "response";
-      ctx = await this.runHooks(ctx, "onResponse");
+      // Full one-shot lifecycle for backward compatibility.
+      ctx = await this.runBeforeAgent(ctx);
+      ctx = await this.executeModel(ctx, llmExecutor);
+      ctx = await this.runAfterAgent(ctx);
 
       return ctx;
     } catch (error) {
@@ -67,7 +59,15 @@ export class MiddlewarePipeline {
    */
   private async runHooks(
     ctx: MiddlewareContext,
-    hookName: keyof Middleware
+    hookName:
+      | "beforeAgent"
+      | "beforeModel"
+      | "afterModel"
+      | "afterAgent"
+      | "onRequest"
+      | "beforeLLM"
+      | "afterLLM"
+      | "onResponse"
   ): Promise<MiddlewareContext> {
     let currentCtx = ctx;
 
@@ -75,7 +75,7 @@ export class MiddlewarePipeline {
       const hook = middleware[hookName];
       if (typeof hook === "function") {
         try {
-          currentCtx = await hook(currentCtx);
+          currentCtx = await hook.call(middleware, currentCtx);
         } catch (error) {
           // Log middleware error and re-throw
           console.error(`[MiddlewarePipeline] Error in ${middleware.name}.${hookName}:`, error);
@@ -89,6 +89,79 @@ export class MiddlewarePipeline {
     }
 
     return currentCtx;
+  }
+
+  async runBeforeAgent(ctx: MiddlewareContext): Promise<MiddlewareContext> {
+    let next: MiddlewareContext = { ...ctx, state: "before_agent" };
+    next = await this.runHooks(next, "beforeAgent");
+    // Legacy compatibility.
+    next.state = "request";
+    next = await this.runHooks(next, "onRequest");
+    return next;
+  }
+
+  async runBeforeModel(ctx: MiddlewareContext): Promise<MiddlewareContext> {
+    let next: MiddlewareContext = { ...ctx, state: "before_model" };
+    next = await this.runHooks(next, "beforeModel");
+    // Legacy compatibility.
+    next.state = "before_llm";
+    next = await this.runHooks(next, "beforeLLM");
+    return next;
+  }
+
+  async runAfterModel(ctx: MiddlewareContext): Promise<MiddlewareContext> {
+    let next: MiddlewareContext = { ...ctx, state: "after_model" };
+    next = await this.runHooks(next, "afterModel");
+    // Legacy compatibility.
+    next.state = "after_llm";
+    next = await this.runHooks(next, "afterLLM");
+    return next;
+  }
+
+  async runAfterAgent(ctx: MiddlewareContext): Promise<MiddlewareContext> {
+    let next: MiddlewareContext = { ...ctx, state: "after_agent" };
+    next = await this.runHooks(next, "afterAgent");
+    // Legacy compatibility.
+    next.state = "response";
+    next = await this.runHooks(next, "onResponse");
+    return next;
+  }
+
+  async executeModel(
+    initialContext: MiddlewareContext,
+    llmExecutor: LlmExecutor
+  ): Promise<MiddlewareContext> {
+    let ctx = await this.runBeforeModel(initialContext);
+    ctx = await llmExecutor(ctx);
+    ctx = await this.runAfterModel(ctx);
+    return ctx;
+  }
+
+  async executeToolCall(
+    ctx: MiddlewareContext,
+    action: PlannerActionTool,
+    executor: ToolCallHandler
+  ): Promise<ToolObservation> {
+    const wrappers = this.middlewares
+      .map((middleware) => {
+        const wrapper = middleware.wrapToolCall;
+        if (typeof wrapper !== "function") {
+          return null;
+        }
+        return {
+          wrapper,
+          middleware
+        };
+      })
+      .filter((item): item is { wrapper: NonNullable<Middleware["wrapToolCall"]>; middleware: Middleware } => Boolean(item));
+
+    const composed = wrappers.reduceRight<ToolCallHandler>((next, item) => {
+      return async (currentCtx, currentAction) => {
+        return await item.wrapper.call(item.middleware, currentCtx, currentAction, next);
+      };
+    }, executor);
+
+    return await composed(ctx, action);
   }
 
   /**

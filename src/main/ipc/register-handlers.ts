@@ -108,12 +108,13 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
     try {
       return await input.toolPlanningChatAgent.send(
         chatInput,
-        (stage, message) => {
+        (stage, message, payload) => {
           const update: ChatUpdateEvent = {
             requestId,
             stage,
             message,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            payload
           };
           input.eventBus.broadcastChatUpdate(update);
         },

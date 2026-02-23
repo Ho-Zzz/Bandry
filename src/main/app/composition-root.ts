@@ -27,9 +27,14 @@ export const createCompositionRoot = (): MainCompositionRoot => {
   const config = loadAppConfig();
   const modelsFactory = new ModelsFactory(config);
   const sandboxService = new SandboxService(config);
-  const toolPlanningChatAgent = new ToolPlanningChatAgent(config, modelsFactory, sandboxService);
-  const orchestrator = new LocalOrchestrator(config, sandboxService, modelsFactory);
   const conversationStore = new ConversationStore(config.paths.databasePath);
+  const toolPlanningChatAgent = new ToolPlanningChatAgent(
+    config,
+    modelsFactory,
+    sandboxService,
+    conversationStore
+  );
+  const orchestrator = new LocalOrchestrator(config, sandboxService, modelsFactory);
 
   const settingsService = new SettingsService({ config });
   const modelsCatalogService = new ModelsCatalogService(config);

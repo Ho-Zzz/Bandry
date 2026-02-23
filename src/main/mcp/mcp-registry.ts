@@ -127,38 +127,43 @@ export class MCPRegistry extends EventEmitter {
   /**
    * Start MCP server process
    */
-  private async startServer(_server: MCPServer): Promise<void> {
+  private async startServer(server: MCPServer): Promise<void> {
     // TODO: Implement MCP server process spawning
     // This would use child_process.spawn() to start the server
     // and establish stdio-based communication
+    void server;
     console.log("[MCPRegistry] Server start not yet implemented");
   }
 
   /**
    * Stop MCP server process
    */
-  private async stopServer(_server: MCPServer): Promise<void> {
+  private async stopServer(server: MCPServer): Promise<void> {
     // TODO: Implement MCP server process termination
+    void server;
     console.log("[MCPRegistry] Server stop not yet implemented");
   }
 
   /**
    * Discover tools from MCP server
    */
-  private async discoverTools(_server: MCPServer): Promise<void> {
+  private async discoverTools(server: MCPServer): Promise<void> {
     // TODO: Implement MCP tools/list request
     // This would send a tools/list request via MCP protocol
     // and populate server.tools
+    void server;
     console.log("[MCPRegistry] Tool discovery not yet implemented");
   }
 
   /**
    * Send tool execution request to MCP server
    */
-  private async sendToolRequest(_server: MCPServer, _request: MCPToolRequest): Promise<MCPToolResponse> {
+  private async sendToolRequest(server: MCPServer, request: MCPToolRequest): Promise<MCPToolResponse> {
     // TODO: Implement MCP tools/call request
     // This would send a tools/call request via MCP protocol
     // and return the response
+    void server;
+    void request;
     throw new Error("MCP tool execution not yet implemented");
   }
 }

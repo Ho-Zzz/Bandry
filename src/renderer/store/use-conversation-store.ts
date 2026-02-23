@@ -20,6 +20,7 @@ interface ConversationState {
   updateConversationTitle: (id: string, title: string) => Promise<void>;
   updateConversationModelProfile: (id: string, modelProfileId?: string) => Promise<void>;
   getConversation: (id: string) => ConversationResult | undefined;
+  upsertConversation: (conversation: ConversationResult) => void;
 }
 
 export const useConversationStore = create<ConversationState>()((set, get) => ({
@@ -95,5 +96,25 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
 
   getConversation: (id: string) => {
     return get().conversations.find((c) => c.id === id);
+  },
+
+  upsertConversation: (conversation: ConversationResult) => {
+    set((state) => {
+      const index = state.conversations.findIndex((item) => item.id === conversation.id);
+      if (index === -1) {
+        return {
+          conversations: [conversation, ...state.conversations]
+        };
+      }
+
+      const next = [...state.conversations];
+      next[index] = {
+        ...next[index],
+        ...conversation
+      };
+      return {
+        conversations: next
+      };
+    });
   }
 }));

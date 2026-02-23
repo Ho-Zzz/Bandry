@@ -14,6 +14,15 @@ export class ToolRegistry {
     this.registerBuiltInTools();
   }
 
+  private readPathArg(args: unknown): string {
+    const record = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>;
+    const value = record.path;
+    if (typeof value !== "string" || value.trim().length === 0) {
+      throw new Error("Tool argument 'path' must be a non-empty string");
+    }
+    return value;
+  }
+
   /**
    * Register built-in tools
    */
@@ -23,9 +32,10 @@ export class ToolRegistry {
       name: "read_local_file",
       description: "Read a file from the workspace",
       allowedRoles: ["researcher", "lead", "bash_operator", "writer"],
-      execute: async (args: any, _context) => {
+      execute: async (args, context) => {
+        void context;
         const result = await this.sandboxService.readFile({
-          path: args.path
+          path: this.readPathArg(args)
         });
         return result.content;
       }
@@ -35,9 +45,10 @@ export class ToolRegistry {
       name: "list_dir",
       description: "List directory contents",
       allowedRoles: ["researcher", "lead", "bash_operator", "writer"],
-      execute: async (args: any, _context) => {
+      execute: async (args, context) => {
+        void context;
         const result = await this.sandboxService.listDir({
-          path: args.path
+          path: this.readPathArg(args)
         });
         return result.entries;
       }
@@ -48,12 +59,17 @@ export class ToolRegistry {
       name: "write_to_file",
       description: "Write content to a file",
       allowedRoles: ["writer", "bash_operator"],
-      execute: async (args: any, _context) => {
+      execute: async (args, context) => {
+        void context;
+        const record = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>;
+        const path = this.readPathArg(record);
+        const content =
+          typeof record.content === "string" ? record.content : JSON.stringify(record.content ?? "", null, 2);
         const result = await this.sandboxService.writeFile({
-          path: args.path,
-          content: args.content,
+          path,
+          content,
           createDirs: true,
-          overwrite: args.overwrite ?? false
+          overwrite: record.overwrite === true
         });
         return { path: result.path };
       }
@@ -64,11 +80,16 @@ export class ToolRegistry {
       name: "execute_bash",
       description: "Execute a bash command",
       allowedRoles: ["bash_operator"],
-      execute: async (args: any, context) => {
+      execute: async (args, context) => {
+        const record = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>;
+        const command = typeof record.command === "string" ? record.command : "ls";
+        const rawArgs = Array.isArray(record.args) ? record.args : [];
+        const parsedArgs = rawArgs.filter((item): item is string => typeof item === "string");
+        const cwd = typeof record.cwd === "string" ? record.cwd : context.workspacePath;
         const result = await this.sandboxService.exec({
-          command: args.command,
-          args: args.args || [],
-          cwd: args.cwd || context.workspacePath
+          command,
+          args: parsedArgs,
+          cwd
         });
         return {
           stdout: result.stdout,

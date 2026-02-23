@@ -9,6 +9,7 @@ import type { WorkerConfig, AgentResult, WorkerMessage } from "../agents/types";
 export class WorkerPool {
   private workers: Map<string, Worker> = new Map();
   private maxWorkers: number;
+  private listeners: Map<string, Array<(...args: unknown[]) => void>> = new Map();
 
   constructor(maxWorkers: number = 3) {
     this.maxWorkers = maxWorkers;
@@ -90,6 +91,10 @@ export class WorkerPool {
     return this.workers.size;
   }
 
+  getAvailableSlots(): number {
+    return Math.max(0, this.maxWorkers - this.workers.size);
+  }
+
   /**
    * Get worker IDs
    */
@@ -100,16 +105,25 @@ export class WorkerPool {
   /**
    * Simple event emitter for progress updates
    */
-  private listeners: Map<string, Array<(...args: any[]) => void>> = new Map();
-
-  on(event: string, listener: (...args: any[]) => void): void {
+  on(event: string, listener: (...args: unknown[]) => void): void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
     this.listeners.get(event)!.push(listener);
   }
 
-  private emit(event: string, ...args: any[]): void {
+  off(event: string, listener: (...args: unknown[]) => void): void {
+    const eventListeners = this.listeners.get(event);
+    if (!eventListeners) {
+      return;
+    }
+    this.listeners.set(
+      event,
+      eventListeners.filter((item) => item !== listener)
+    );
+  }
+
+  private emit(event: string, ...args: unknown[]): void {
     const eventListeners = this.listeners.get(event);
     if (eventListeners) {
       for (const listener of eventListeners) {

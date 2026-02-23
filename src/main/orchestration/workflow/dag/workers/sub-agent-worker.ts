@@ -1,5 +1,6 @@
 import { parentPort, workerData } from "worker_threads";
 import { ModelsFactory } from "../../../../llm/runtime";
+import { SandboxService } from "../../../../sandbox";
 import { ResearcherAgent, BashOperatorAgent, WriterAgent } from "../agents/sub-agents";
 import type { WorkerConfig, WorkerMessage, AgentResult } from "../agents/types";
 
@@ -17,6 +18,7 @@ async function runSubAgent(): Promise<void> {
   try {
     const appConfig = config.appConfig;
     const modelsFactory = new ModelsFactory(appConfig);
+    const sandboxService = new SandboxService(appConfig);
 
     // Create agent based on role
     let agent;
@@ -32,7 +34,7 @@ async function runSubAgent(): Promise<void> {
         agent = new BashOperatorAgent(appConfig, modelsFactory, {
           workspacePath: config.workspacePath,
           allowedTools: config.allowedTools
-        });
+        }, sandboxService);
         break;
 
       case "writer":

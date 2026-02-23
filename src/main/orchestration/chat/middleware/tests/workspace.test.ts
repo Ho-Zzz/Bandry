@@ -69,7 +69,11 @@ describe("WorkspaceMiddleware", () => {
     expect(result.metadata.workspaceCreated).toBe(true);
     expect(result.metadata.workspaceStructure).toBeDefined();
 
-    const structure = result.metadata.workspaceStructure as any;
+    const structure = result.metadata.workspaceStructure as {
+      input: string;
+      staging: string;
+      output: string;
+    };
     expect(structure.input).toContain("input");
     expect(structure.staging).toContain("staging");
     expect(structure.output).toContain("output");

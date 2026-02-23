@@ -315,4 +315,98 @@ describe("ToolPlanningChatAgent", () => {
       "[lead.synthesizer profile=profile_deepseek_default model=deepseek/deepseek-chat] model call failed: provider timeout"
     );
   });
+
+  it("emits clarification payload and stops execution when planner asks clarification", async () => {
+    const config = createConfig();
+    const modelsFactory = {
+      isProviderConfigured: vi.fn(() => true),
+      generateText: vi
+        .fn()
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"tool","tool":"ask_clarification","input":{"question":"请确认报告语言"}}',
+          latencyMs: 30
+        })
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '[{"label":"中文（推荐）","value":"请用中文输出"},{"label":"英文","value":"Please answer in English"},{"label":"双语","value":"请中英双语输出"}]',
+          latencyMs: 20
+        }),
+      generateTextStream: vi.fn()
+    };
+
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(),
+      exec: vi.fn()
+    };
+
+    const agent = new ToolPlanningChatAgent(config, modelsFactory as never, sandboxService as never);
+    const updates: Array<{ stage: string; message: string; payload?: unknown }> = [];
+
+    const result = await agent.send(
+      {
+        message: "帮我生成一份报告",
+        history: []
+      },
+      (stage, detail, payload) => {
+        updates.push({ stage, message: detail, payload });
+      }
+    );
+
+    expect(result.reply).toContain("需要进一步确认");
+    expect(modelsFactory.generateTextStream).not.toHaveBeenCalled();
+    const clarificationUpdate = updates.find((item) => item.stage === "clarification");
+    expect(clarificationUpdate?.message).toContain("请确认报告语言");
+    const clarificationPayload = (clarificationUpdate?.payload as { clarification?: { options?: Array<{ recommended?: boolean }> } })?.clarification;
+    expect(clarificationPayload?.options).toHaveLength(3);
+    expect(clarificationPayload?.options?.[0]?.recommended).toBe(true);
+  });
+
+  it("does not inject raw planner JSON-like text into final prompt when parsing fails", async () => {
+    const config = createConfig();
+    const generateTextStream = vi.fn(async () => ({
+      provider: "deepseek",
+      model: "deepseek-chat",
+      text: "final summary",
+      latencyMs: 40
+    }));
+    const modelsFactory = {
+      isProviderConfigured: vi.fn(() => true),
+      generateText: vi.fn(async () => ({
+        provider: "deepseek",
+        model: "deepseek-chat",
+        text: '{"action":"tool","tool":"list_dir","input":{"path":"/mnt/workspace"}',
+        latencyMs: 30
+      })),
+      generateTextStream
+    };
+
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(),
+      exec: vi.fn()
+    };
+
+    const agent = new ToolPlanningChatAgent(config, modelsFactory as never, sandboxService as never);
+
+    const result = await agent.send({
+      message: "检查目录",
+      history: []
+    });
+
+    expect(result.reply).toBe("final summary");
+    const mockCalls = generateTextStream.mock.calls as unknown as unknown[][];
+    const streamInput = mockCalls[0]?.[0] as {
+      messages?: Array<{ content: string }>;
+    };
+    const hasPlannerDraft = (streamInput?.messages ?? []).some((message) =>
+      message.content.includes("Planner draft answer")
+    );
+    expect(hasPlannerDraft).toBe(false);
+  });
 });

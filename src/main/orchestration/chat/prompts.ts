@@ -13,6 +13,8 @@ export const buildPlannerSystemPrompt = (config: AppConfig): string => {
     "list_dir",
     "read_file",
     "exec",
+    "delegate_sub_tasks",
+    "ask_clarification",
     ...(config.tools.webSearch.enabled ? ["web_search"] : []),
     ...(config.tools.webFetch.enabled ? ["web_fetch"] : [])
   ];
@@ -25,6 +27,8 @@ export const buildPlannerSystemPrompt = (config: AppConfig): string => {
     '- {"action":"tool","tool":"list_dir","input":{"path":"/mnt/workspace"}}',
     '- {"action":"tool","tool":"read_file","input":{"path":"/mnt/workspace/README.md"}}',
     '- {"action":"tool","tool":"exec","input":{"command":"ls","args":["-la","/mnt/workspace"],"cwd":"/mnt/workspace"}}',
+    '- {"action":"tool","tool":"delegate_sub_tasks","input":{"tasks":[{"subTaskId":"sub_1","agentRole":"researcher","prompt":"Inspect docs and summarize key findings","dependencies":[],"writePath":"staging/research.md"},{"subTaskId":"sub_2","agentRole":"writer","prompt":"Generate final report from staging/research.md","dependencies":["sub_1"],"writePath":"output/report.md"}]}}',
+    '- {"action":"tool","tool":"ask_clarification","input":{"question":"您希望输出中文还是英文？"}}',
     ...dynamicToolLines,
     "Rules:",
     `- Virtual root is ${config.sandbox.virtualRoot}.`,
@@ -36,6 +40,9 @@ export const buildPlannerSystemPrompt = (config: AppConfig): string => {
     "- Do NOT rely on model self-claimed browsing/search capabilities; use explicit web_search/web_fetch tool results.",
     "- Only call tools when user explicitly asks for file/workspace/command/network operations or when data must be retrieved from tools.",
     "- If a previous tool call failed with path/permission errors, do not blindly retry another tool; prefer action=answer with a clear explanation.",
+    "- Use delegate_sub_tasks for complex multi-step tasks that benefit from sub-agent execution.",
+    "- delegate_sub_tasks allows at most 3 tasks per response; excess tasks are truncated by system middleware.",
+    "- If required info is missing and execution depends on user choice, prefer ask_clarification instead of guessing.",
     "- Use at most one tool per step.",
     "- Never request dangerous commands."
   ].join("\n");
@@ -47,6 +54,7 @@ export const buildFinalSystemPrompt = (): string => {
     "Provide concise, practical, actionable response.",
     "When using tool observations, cite key findings first, then recommendation.",
     "If tool output contains errors, explain likely fix.",
-    "Never claim you searched/browsed/fetched external data unless web_search/web_fetch observations are present."
+    "Never claim you searched/browsed/fetched external data unless web_search/web_fetch observations are present.",
+    "Do not echo raw planner action JSON. Convert observations into readable Markdown with concise structure."
   ].join("\n");
 };

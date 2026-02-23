@@ -42,8 +42,10 @@ export class LayeredMemoryProvider implements MemoryProvider {
   /**
    * Inject context from memory into session
    */
-  async injectContext(_sessionId: string, _query?: string): Promise<ContextChunk[]> {
+  async injectContext(sessionId: string, query?: string): Promise<ContextChunk[]> {
     const chunks: ContextChunk[] = [];
+    void sessionId;
+    void query;
 
     try {
       // Ensure resources directory exists
@@ -99,7 +101,8 @@ export class LayeredMemoryProvider implements MemoryProvider {
       }
     } catch (error) {
       // Layer directory doesn't exist yet, that's ok
-      if ((error as any).code !== "ENOENT") {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") {
         console.error(`[LayeredMemoryProvider] Failed to read layer ${layer}:`, error);
       }
     }

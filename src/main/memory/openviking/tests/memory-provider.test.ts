@@ -1,6 +1,27 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OpenVikingMemoryProvider } from "../memory-provider";
 
+type MockOpenVikingClient = {
+  createSession: (sessionId: string) => Promise<{ sessionId: string }>;
+  search: (params: {
+    sessionId: string;
+    query: string;
+    targetUris: string[];
+    topK: number;
+  }) => Promise<{
+    memories: unknown[];
+    resources: unknown[];
+    skills: unknown[];
+  }>;
+  addSessionMessage: (params: {
+    sessionId: string;
+    role: "user" | "assistant";
+    content: string;
+    timestamp: number;
+  }) => Promise<void>;
+  commitSession: (params: { sessionId: string; targetUris: string[] }) => Promise<void>;
+};
+
 const createConversation = () => ({
   sessionId: "session_1",
   messages: [
@@ -17,7 +38,7 @@ afterEach(() => {
 
 describe("OpenVikingMemoryProvider", () => {
   it("injects context from search results", async () => {
-    const mockClient = {
+    const mockClient: MockOpenVikingClient = {
       createSession: vi.fn(async () => ({ sessionId: "ov_session_1" })),
       search: vi.fn(async () => ({
         memories: [
@@ -30,10 +51,12 @@ describe("OpenVikingMemoryProvider", () => {
         ],
         resources: [],
         skills: []
-      }))
-    } as any;
+      })),
+      addSessionMessage: vi.fn(async () => undefined),
+      commitSession: vi.fn(async () => undefined)
+    };
 
-    const provider = new OpenVikingMemoryProvider(mockClient, {
+    const provider = new OpenVikingMemoryProvider(mockClient as never, {
       targetUris: ["viking://user/memories"],
       topK: 5,
       scoreThreshold: 0.3,
@@ -53,13 +76,18 @@ describe("OpenVikingMemoryProvider", () => {
   it("debounces conversation persistence and avoids duplicate commits", async () => {
     vi.useFakeTimers();
 
-    const mockClient = {
+    const mockClient: MockOpenVikingClient = {
       createSession: vi.fn(async () => ({ sessionId: "ov_session_1" })),
       addSessionMessage: vi.fn(async () => undefined),
-      commitSession: vi.fn(async () => undefined)
-    } as any;
+      commitSession: vi.fn(async () => undefined),
+      search: vi.fn(async () => ({
+        memories: [],
+        resources: [],
+        skills: []
+      }))
+    };
 
-    const provider = new OpenVikingMemoryProvider(mockClient, {
+    const provider = new OpenVikingMemoryProvider(mockClient as never, {
       targetUris: ["viking://user/memories"],
       topK: 5,
       scoreThreshold: 0.3,

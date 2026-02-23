@@ -125,6 +125,15 @@ const stageMeta = (stage?: string): { label: string; icon: typeof Brain; dotClas
     };
   }
 
+  if (stage === "clarification") {
+    return {
+      label: "Clarification",
+      icon: AlertCircle,
+      dotClass: "bg-amber-400",
+      toneClass: "text-amber-700"
+    };
+  }
+
   if (stage === "error") {
     return {
       label: "Error",
@@ -421,6 +430,8 @@ const HiddenTraceGroup = (group: PropsWithChildren<{ startIndex: number; endInde
 };
 
 const ToolResultLayer = ({ summaries }: { summaries: ToolResultSummary[] }) => {
+  const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
+
   if (summaries.length === 0) {
     return null;
   }
@@ -430,10 +441,15 @@ const ToolResultLayer = ({ summaries }: { summaries: ToolResultSummary[] }) => {
       <p className="text-xs font-medium text-zinc-500">生成资源与工具结果</p>
       {summaries.map((summary) => {
         const formattedJson = tryFormatJson(summary.output);
-        const renderedOutput = truncateText(summary.output, 800);
+        const key = `${summary.source}-${summary.timestamp ?? "0"}`;
+        const isExpanded = expandedMap[key] ?? false;
+        const rawOutput = summary.output;
+        const jsonText = formattedJson ?? rawOutput;
+        const shouldCollapse = jsonText.length > 520;
+        const renderedOutput = isExpanded || !shouldCollapse ? rawOutput : truncateText(rawOutput, 520);
 
         return (
-          <div key={`${summary.source}-${summary.timestamp ?? "0"}`} className="max-w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
+          <div key={key} className="max-w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
             <div className="flex items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-zinc-800">{summary.source}</span>
@@ -450,11 +466,25 @@ const ToolResultLayer = ({ summaries }: { summaries: ToolResultSummary[] }) => {
             </div>
             {formattedJson ? (
               <pre className="mt-2 max-w-full overflow-x-auto rounded-md bg-zinc-900 p-2 text-[11px] text-zinc-100">
-                <code>{formattedJson}</code>
+                <code>{isExpanded || !shouldCollapse ? formattedJson : truncateText(formattedJson, 520)}</code>
               </pre>
             ) : (
               <p className="mt-1 whitespace-pre-wrap break-all text-xs leading-5 text-zinc-700">{renderedOutput}</p>
             )}
+            {shouldCollapse ? (
+              <button
+                type="button"
+                className="mt-2 text-[11px] font-medium text-blue-600 hover:text-blue-700"
+                onClick={() =>
+                  setExpandedMap((previous) => ({
+                    ...previous,
+                    [key]: !isExpanded
+                  }))
+                }
+              >
+                {isExpanded ? "收起" : "展开"}
+              </button>
+            ) : null}
           </div>
         );
       })}
@@ -680,6 +710,7 @@ export const Copilot = () => {
   const [isComposerToolsOpen, setIsComposerToolsOpen] = useState(false);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
   const [selectedFileCount, setSelectedFileCount] = useState(0);
+  const [clarificationInput, setClarificationInput] = useState("");
   const [leadRouteReady, setLeadRouteReady] = useState(true);
   const [profilesLoading, setProfilesLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -688,7 +719,16 @@ export const Copilot = () => {
     fetchConversations
   } = useConversationStore();
 
-  const { runtime, clearMessages, isLoading, conversationId, cancelCurrentRequest } = useCopilotRuntime({
+  const {
+    runtime,
+    clearMessages,
+    isLoading,
+    conversationId,
+    pendingClarification,
+    cancelCurrentRequest,
+    submitClarificationCustom,
+    submitClarificationOption
+  } = useCopilotRuntime({
     conversationId: routeConversationId
   });
 
@@ -723,6 +763,12 @@ export const Copilot = () => {
     void loadModelProfiles();
   }, []);
 
+  useEffect(() => {
+    if (!pendingClarification) {
+      setClarificationInput("");
+    }
+  }, [pendingClarification]);
+
   // Update URL when conversation is created
   useEffect(() => {
     if (conversationId && !routeConversationId) {
@@ -742,6 +788,19 @@ export const Copilot = () => {
 
   const handleCancelGeneration = async () => {
     await cancelCurrentRequest();
+  };
+
+  const handleClarificationOption = async (value: string) => {
+    await submitClarificationOption(value);
+  };
+
+  const handleClarificationCustomSubmit = async () => {
+    const input = clarificationInput.trim();
+    if (!input) {
+      return;
+    }
+    await submitClarificationCustom(input);
+    setClarificationInput("");
   };
 
   const handleChooseFiles = () => {
@@ -826,6 +885,53 @@ export const Copilot = () => {
 
           <div className="shrink-0 border-t border-gray-200 bg-gray-50 px-6 py-4">
             <div className="mx-auto max-w-4xl">
+              {pendingClarification ? (
+                <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-sm font-medium text-amber-900">需要澄清后继续</p>
+                  <p className="mt-1 text-sm text-amber-800">{pendingClarification.question}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {pendingClarification.options.slice(0, 3).map((option, index) => (
+                      <button
+                        key={`${option.label}-${index}`}
+                        type="button"
+                        className={clsx(
+                          "rounded-lg border px-3 py-1.5 text-xs font-medium",
+                          option.recommended
+                            ? "border-blue-200 bg-blue-50 text-blue-700"
+                            : "border-zinc-200 bg-white text-zinc-700"
+                        )}
+                        onClick={() => {
+                          void handleClarificationOption(option.value);
+                        }}
+                        disabled={isLoading}
+                      >
+                        {option.label}
+                        {option.recommended ? "（推荐）" : ""}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={clarificationInput}
+                      onChange={(event) => setClarificationInput(event.target.value)}
+                      placeholder="输入自定义回答"
+                      className="h-9 flex-1 rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none ring-0 placeholder:text-zinc-400"
+                      disabled={isLoading}
+                    />
+                    <Button
+                      size="sm"
+                      color="primary"
+                      onPress={() => {
+                        void handleClarificationCustomSubmit();
+                      }}
+                      isDisabled={isLoading || clarificationInput.trim().length === 0}
+                    >
+                      发送
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
               <ComposerPrimitive.Root className="relative">
                 <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFilesChange} />
 

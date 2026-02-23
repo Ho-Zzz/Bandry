@@ -5,8 +5,13 @@
  * Supports conversation persistence via IPC.
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import type { ChatUpdateEvent, ChatHistoryMessage, MessageResult } from "../../../shared/ipc";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import type {
+  ChatClarificationOption,
+  ChatHistoryMessage,
+  ChatUpdateEvent,
+  MessageResult
+} from "../../../shared/ipc";
 import { useConversationStore } from "../../store/use-conversation-store";
 
 export type MessageStatus = "pending" | "completed" | "error";
@@ -19,6 +24,13 @@ export type Message = {
   timestamp: number;
   trace?: ChatUpdateEvent[];
   requestId?: string;
+};
+
+export type PendingClarification = {
+  requestId: string;
+  conversationId: string;
+  question: string;
+  options: ChatClarificationOption[];
 };
 
 type UseCopilotChatOptions = {
@@ -38,30 +50,97 @@ const getRequestIdFromTrace = (trace?: ChatUpdateEvent[]): string | undefined =>
   return requestId?.trim() ? requestId : undefined;
 };
 
+export const isConversationLoading = (
+  activeRequestByConversation: Record<string, string>,
+  conversationId?: string
+): boolean => {
+  if (!conversationId) {
+    return false;
+  }
+  return Boolean(activeRequestByConversation[conversationId]);
+};
+
+export const resolvePendingClarificationFromUpdate = (
+  update: ChatUpdateEvent,
+  mappedConversationId: string | undefined,
+  currentConversationId: string | undefined
+): PendingClarification | null => {
+  if (update.stage !== "clarification" || !mappedConversationId || mappedConversationId !== currentConversationId) {
+    return null;
+  }
+
+  const clarification = update.payload?.clarification;
+  if (!clarification) {
+    return null;
+  }
+
+  return {
+    requestId: update.requestId,
+    conversationId: mappedConversationId,
+    question: clarification.question,
+    options: clarification.options
+  };
+};
+
+export const normalizeClarificationInput = (value: string): string => value.trim();
+
 export function useCopilotChat(options: UseCopilotChatOptions = {}) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | undefined>(options.conversationId);
-  const titleGeneratedRef = useRef(false);
+  const [activeRequestByConversation, setActiveRequestByConversation] = useState<Record<string, string>>({});
+  const [pendingClarification, setPendingClarification] = useState<PendingClarification | null>(null);
   const traceByRequestIdRef = useRef<Record<string, ChatUpdateEvent[]>>({});
-  const activeRequestIdRef = useRef<string | null>(null);
-  const { updateConversationTitle } = useConversationStore();
+  const requestToConversationRef = useRef<Record<string, string>>({});
+  const messagesRef = useRef<Message[]>([]);
+  const conversationIdRef = useRef<string | undefined>(options.conversationId);
+  const { upsertConversation } = useConversationStore();
 
-  // Load existing messages when conversationId changes
+  const isLoading = useMemo(() => {
+    return isConversationLoading(activeRequestByConversation, conversationId);
+  }, [activeRequestByConversation, conversationId]);
+
   useEffect(() => {
-    if (options.conversationId) {
-      setConversationId(options.conversationId);
-      titleGeneratedRef.current = true; // Existing conversation already has title
-      void loadMessages(options.conversationId);
-    } else {
-      setConversationId(undefined);
-      setMessages([]);
-      traceByRequestIdRef.current = {};
-      titleGeneratedRef.current = false;
-    }
-  }, [options.conversationId]);
+    messagesRef.current = messages;
+  }, [messages]);
 
-  const loadMessages = async (convId: string) => {
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
+
+  const setConversationActiveRequest = useCallback((convId: string, requestId: string | null) => {
+    setActiveRequestByConversation((previous) => {
+      if (!requestId) {
+        if (!(convId in previous)) {
+          return previous;
+        }
+        const next = { ...previous };
+        delete next[convId];
+        return next;
+      }
+
+      if (previous[convId] === requestId) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        [convId]: requestId
+      };
+    });
+  }, []);
+
+  const clearConversationRequestIfMatch = useCallback((convId: string, requestId: string) => {
+    setActiveRequestByConversation((previous) => {
+      if (previous[convId] !== requestId) {
+        return previous;
+      }
+      const next = { ...previous };
+      delete next[convId];
+      return next;
+    });
+  }, []);
+
+  const loadMessages = useCallback(async (convId: string) => {
     try {
       const dbMessages = await window.api.messageList(convId);
       const loadedMessages: Message[] = dbMessages.map((m: MessageResult) => {
@@ -82,6 +161,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
       for (const message of loadedMessages) {
         if (message.requestId && message.trace) {
           traces[message.requestId] = message.trace;
+          requestToConversationRef.current[message.requestId] = convId;
         }
       }
 
@@ -90,7 +170,23 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
     } catch (error) {
       console.error("Failed to load messages:", error);
     }
-  };
+  }, []);
+
+  // Load existing messages when conversationId changes
+  useEffect(() => {
+    if (options.conversationId) {
+      setConversationId(options.conversationId);
+      setMessages([]);
+      setPendingClarification(null);
+      traceByRequestIdRef.current = {};
+      void loadMessages(options.conversationId);
+    } else {
+      setConversationId(undefined);
+      setMessages([]);
+      setPendingClarification(null);
+      traceByRequestIdRef.current = {};
+    }
+  }, [loadMessages, options.conversationId]);
 
   // Subscribe to chat updates
   useEffect(() => {
@@ -98,6 +194,16 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
       const previousTrace = traceByRequestIdRef.current[update.requestId] || [];
       const nextTrace = [...previousTrace, update];
       traceByRequestIdRef.current[update.requestId] = nextTrace;
+
+      const mappedConversationId = requestToConversationRef.current[update.requestId];
+      const pending = resolvePendingClarificationFromUpdate(
+        update,
+        mappedConversationId,
+        conversationIdRef.current
+      );
+      if (pending) {
+        setPendingClarification(pending);
+      }
 
       setMessages((prev) =>
         prev.map((message) => {
@@ -146,28 +252,11 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
     };
   }, []);
 
-  const generateTitle = useCallback(
-    async (userMessage: string, convId: string) => {
-      if (titleGeneratedRef.current) return;
-      titleGeneratedRef.current = true;
-
-      // Generate a simple title from the first message (first 50 chars)
-      const title = userMessage.length > 50 ? userMessage.slice(0, 47) + "..." : userMessage;
-      try {
-        await updateConversationTitle(convId, title);
-      } catch (error) {
-        console.error("Failed to generate title:", error);
-      }
-    },
-    [updateConversationTitle]
-  );
-
   const sendMessage = useCallback(
     async (content: string) => {
       const requestId = makeRequestId();
       const userMessageId = `user-${Date.now()}`;
       const assistantMessageId = `assistant-${Date.now()}`;
-      activeRequestIdRef.current = requestId;
 
       // Create conversation if needed
       let currentConvId: string;
@@ -180,11 +269,21 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           });
           currentConvId = conv.id;
           setConversationId(currentConvId);
+          upsertConversation(conv);
         } catch (error) {
           console.error("Failed to create conversation:", error);
           return;
         }
       }
+
+      requestToConversationRef.current[requestId] = currentConvId;
+      setConversationActiveRequest(currentConvId, requestId);
+      setPendingClarification((previous) => {
+        if (!previous) {
+          return previous;
+        }
+        return previous.conversationId === currentConvId ? null : previous;
+      });
 
       // Add user message
       const userMessage: Message = {
@@ -226,7 +325,6 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
 
       traceByRequestIdRef.current[requestId] = [];
       setMessages((prev) => [...prev, pendingMessage]);
-      setIsLoading(true);
 
       // Create pending assistant message in database
       let savedAssistantMsgId: string | undefined;
@@ -254,8 +352,10 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
       }
 
       try {
-        // Build history (exclude the pending message)
-        const history: ChatHistoryMessage[] = messages.map((m) => ({
+        const historySource = [...messagesRef.current, userMessage].filter(
+          (message) => !(message.role === "assistant" && message.requestId === requestId)
+        );
+        const history: ChatHistoryMessage[] = historySource.map((m) => ({
           role: m.role === "system" ? "system" : m.role,
           content: m.content
         }));
@@ -263,6 +363,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         // Call backend API
         const result = await window.api.chatSend({
           requestId,
+          conversationId: currentConvId,
           message: content,
           history
         });
@@ -292,8 +393,10 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           });
         }
 
-        // Generate title after first exchange
-        await generateTitle(content, currentConvId);
+        const latestConversation = await window.api.conversationGet(currentConvId);
+        if (latestConversation) {
+          upsertConversation(latestConversation);
+        }
       } catch (error) {
         console.error("Chat error:", error);
 
@@ -337,17 +440,19 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           });
         }
       } finally {
-        setIsLoading(false);
-        if (activeRequestIdRef.current === requestId) {
-          activeRequestIdRef.current = null;
-        }
+        clearConversationRequestIfMatch(currentConvId, requestId);
       }
     },
-    [messages, conversationId, generateTitle]
+    [clearConversationRequestIfMatch, conversationId, setConversationActiveRequest, upsertConversation]
   );
 
   const cancelCurrentRequest = useCallback(async (): Promise<boolean> => {
-    const requestId = activeRequestIdRef.current;
+    const currentConversationId = conversationIdRef.current;
+    if (!currentConversationId) {
+      return false;
+    }
+
+    const requestId = activeRequestByConversation[currentConversationId];
     if (!requestId) {
       return false;
     }
@@ -355,29 +460,57 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
     try {
       const result = await window.api.chatCancel({ requestId });
       if (result.cancelled) {
-        activeRequestIdRef.current = null;
+        clearConversationRequestIfMatch(currentConversationId, requestId);
       }
       return result.cancelled;
     } catch (error) {
       console.error("Failed to cancel request:", error);
       return false;
     }
-  }, []);
+  }, [activeRequestByConversation, clearConversationRequestIfMatch]);
+
+  const submitClarificationOption = useCallback(
+    async (value: string) => {
+      const normalized = normalizeClarificationInput(value);
+      if (!normalized) {
+        return;
+      }
+      await sendMessage(normalized);
+      setPendingClarification(null);
+    },
+    [sendMessage]
+  );
+
+  const submitClarificationCustom = useCallback(
+    async (value: string) => {
+      const normalized = normalizeClarificationInput(value);
+      if (!normalized) {
+        return;
+      }
+      await sendMessage(normalized);
+      setPendingClarification(null);
+    },
+    [sendMessage]
+  );
 
   const clearMessages = useCallback(() => {
     setMessages([]);
     setConversationId(undefined);
+    setPendingClarification(null);
+    setActiveRequestByConversation({});
     traceByRequestIdRef.current = {};
-    activeRequestIdRef.current = null;
-    titleGeneratedRef.current = false;
+    requestToConversationRef.current = {};
   }, []);
 
   return {
     messages,
     sendMessage,
     cancelCurrentRequest,
+    submitClarificationOption,
+    submitClarificationCustom,
     clearMessages,
     isLoading,
-    conversationId
+    conversationId,
+    pendingClarification
   };
 }

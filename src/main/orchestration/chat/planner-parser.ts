@@ -1,4 +1,4 @@
-import type { PlannerAction, PlannerActionTool } from "./planner-types";
+import type { PlannerAction, PlannerActionTool, PlannerDelegatedTask } from "./planner-types";
 
 const extractJsonObject = (text: string): string | null => {
   const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -58,6 +58,46 @@ const parsePlannerInput = (inputRaw: unknown): PlannerActionTool["input"] => {
   }
 
   const obj = inputRaw as Record<string, unknown>;
+  const parseDelegatedTasks = (rawTasks: unknown): PlannerDelegatedTask[] | undefined => {
+    if (!Array.isArray(rawTasks)) {
+      return undefined;
+    }
+
+    const tasks: PlannerDelegatedTask[] = [];
+    for (const item of rawTasks) {
+      if (typeof item !== "object" || item === null || Array.isArray(item)) {
+        continue;
+      }
+
+      const node = item as Record<string, unknown>;
+      const subTaskIdRaw = node.subTaskId ?? node.sub_task_id;
+      const agentRoleRaw = node.agentRole ?? node.agent_role;
+      const promptRaw = node.prompt;
+      const dependenciesRaw = node.dependencies;
+      const writePathRaw = node.writePath ?? node.write_path;
+
+      if (typeof subTaskIdRaw !== "string" || typeof agentRoleRaw !== "string" || typeof promptRaw !== "string") {
+        continue;
+      }
+
+      if (agentRoleRaw !== "researcher" && agentRoleRaw !== "bash_operator" && agentRoleRaw !== "writer") {
+        continue;
+      }
+
+      tasks.push({
+        subTaskId: subTaskIdRaw,
+        agentRole: agentRoleRaw,
+        prompt: promptRaw,
+        dependencies: Array.isArray(dependenciesRaw)
+          ? dependenciesRaw.filter((dep): dep is string => typeof dep === "string")
+          : [],
+        writePath: typeof writePathRaw === "string" ? writePathRaw : undefined
+      });
+    }
+
+    return tasks;
+  };
+
   return {
     path: typeof obj.path === "string" ? obj.path : undefined,
     command: typeof obj.command === "string" ? obj.command : undefined,
@@ -65,7 +105,9 @@ const parsePlannerInput = (inputRaw: unknown): PlannerActionTool["input"] => {
     cwd: typeof obj.cwd === "string" ? obj.cwd : undefined,
     timeoutMs: typeof obj.timeoutMs === "number" && Number.isFinite(obj.timeoutMs) ? obj.timeoutMs : undefined,
     query: typeof obj.query === "string" ? obj.query : undefined,
-    url: typeof obj.url === "string" ? obj.url : undefined
+    url: typeof obj.url === "string" ? obj.url : undefined,
+    question: typeof obj.question === "string" ? obj.question : undefined,
+    tasks: parseDelegatedTasks(obj.tasks)
   };
 };
 
@@ -97,7 +139,9 @@ export const parsePlannerAction = (rawText: string): PlannerAction | null => {
         root.tool === "read_file" ||
         root.tool === "exec" ||
         root.tool === "web_search" ||
-        root.tool === "web_fetch")
+        root.tool === "web_fetch" ||
+        root.tool === "delegate_sub_tasks" ||
+        root.tool === "ask_clarification")
     ) {
       return {
         action: "tool",
