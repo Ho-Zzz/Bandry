@@ -1,54 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
-import {
-  Button,
-  Card,
-  CardBody,
-  CardHeader,
-  Input,
-  Select,
-  SelectItem,
-  Switch
-} from "@heroui/react";
-import type {
-  GlobalSettingsState,
-  ModelProvider,
-  SettingsRuntimeRole
-} from "../../../shared/ipc";
-
-const PROVIDERS: ModelProvider[] = ["openai", "deepseek", "volcengine"];
-const ROLE_LABELS: Array<{ role: SettingsRuntimeRole; label: string }> = [
-  { role: "chat.default", label: "Chat 默认模型" },
-  { role: "lead.planner", label: "LeadAgent 规划模型" },
-  { role: "lead.synthesizer", label: "LeadAgent 汇总模型" },
-  { role: "sub.researcher", label: "Researcher 模型" },
-  { role: "sub.bash_operator", label: "BashOperator 模型" },
-  { role: "sub.writer", label: "Writer 模型" },
-  { role: "memory.fact_extractor", label: "记忆事实提取模型" }
-];
-
-const createNewProfile = (provider: ModelProvider): GlobalSettingsState["modelProfiles"][number] => {
-  const now = Date.now();
-  return {
-    id: `profile_${provider}_${now}`,
-    name: `${provider}-profile-${now.toString().slice(-4)}`,
-    provider,
-    model: "",
-    enabled: true,
-    temperature: 0.2
-  };
-};
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Button, Card, CardBody, CardHeader, Input, Switch } from "@heroui/react";
+import type { GlobalSettingsState } from "../../../shared/ipc";
 
 export const GlobalConfigManager = () => {
+  const navigate = useNavigate();
   const [state, setState] = useState<GlobalSettingsState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string>("");
   const [visibleApiKeys, setVisibleApiKeys] = useState<Record<string, boolean>>({});
-
-  const profiles = useMemo(() => state?.modelProfiles ?? [], [state]);
-  const getProfileLabel = (profile: GlobalSettingsState["modelProfiles"][number]) =>
-    `${profile.name} (${profile.provider}/${profile.model || "未设置模型"})`;
 
   const isApiKeyVisible = (fieldId: string) => Boolean(visibleApiKeys[fieldId]);
   const toggleApiKeyVisibility = (fieldId: string) => {
@@ -84,77 +46,14 @@ export const GlobalConfigManager = () => {
   }, []);
 
   if (loading) {
-    return <div className="text-sm text-gray-500 p-6">Loading settings...</div>;
+    return <div className="p-6 text-sm text-gray-500">Loading settings...</div>;
   }
 
   if (!state) {
-    return <div className="text-sm text-red-500 p-6">Settings state unavailable.</div>;
+    return <div className="p-6 text-sm text-red-500">Settings state unavailable.</div>;
   }
 
-  const updateProviderField = (
-    provider: ModelProvider,
-    field: keyof GlobalSettingsState["providers"][ModelProvider],
-    value: string | boolean
-  ) => {
-    setState((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        providers: {
-          ...current.providers,
-          [provider]: {
-            ...current.providers[provider],
-            [field]: value
-          }
-        }
-      };
-    });
-  };
-
-  const updateProfileField = (
-    profileId: string,
-    field: keyof GlobalSettingsState["modelProfiles"][number],
-    value: string | number | boolean
-  ) => {
-    setState((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        modelProfiles: current.modelProfiles.map((profile) =>
-          profile.id === profileId
-            ? {
-                ...profile,
-                [field]: value
-              }
-            : profile
-        )
-      };
-    });
-  };
-
-  const removeProfile = (profileId: string) => {
-    setState((current) => {
-      if (!current) return current;
-      const nextProfiles = current.modelProfiles.filter((profile) => profile.id !== profileId);
-      const fallback = nextProfiles[0]?.id ?? "";
-      const nextRouting = { ...current.routing };
-      for (const role of Object.keys(nextRouting) as SettingsRuntimeRole[]) {
-        if (nextRouting[role] === profileId) {
-          nextRouting[role] = fallback;
-        }
-      }
-      return {
-        ...current,
-        modelProfiles: nextProfiles,
-        routing: nextRouting
-      };
-    });
-  };
-
   const handleSave = async () => {
-    if (!state) {
-      return;
-    }
     setSaving(true);
     setMessage("");
     try {
@@ -174,170 +73,21 @@ export const GlobalConfigManager = () => {
   return (
     <div className="space-y-6 p-6 max-w-6xl">
       <Card>
-        <CardHeader>
-          <h3 className="text-lg font-semibold">模型接入（OpenAI Compatible）</h3>
+        <CardHeader className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">模型接入</h3>
+          <Button
+            color="primary"
+            variant="flat"
+            endContent={<ArrowRight size={14} />}
+            onPress={() => navigate("/model-studio")}
+          >
+            打开 Model Studio
+          </Button>
         </CardHeader>
-        <CardBody className="space-y-4">
-          {PROVIDERS.map((provider) => {
-            const cfg = state.providers[provider];
-            return (
-              <div key={provider} className="rounded-lg border p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium">{provider}</div>
-                  <Switch
-                    isSelected={cfg.enabled}
-                    onValueChange={(value) => updateProviderField(provider, "enabled", value)}
-                  />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Input
-                    label="Base URL"
-                    value={cfg.baseUrl}
-                    onValueChange={(value) => updateProviderField(provider, "baseUrl", value)}
-                  />
-                  <Input
-                    label="Default Model"
-                    value={cfg.model}
-                    onValueChange={(value) => updateProviderField(provider, "model", value)}
-                  />
-                  <Input
-                    label="API Key"
-                    type={isApiKeyVisible(`provider.${provider}.apiKey`) ? "text" : "password"}
-                    value={cfg.apiKey}
-                    endContent={renderApiKeyToggle(`provider.${provider}.apiKey`)}
-                    onValueChange={(value) => updateProviderField(provider, "apiKey", value)}
-                  />
-                  {provider === "openai" ? (
-                    <Input
-                      label="Org ID (optional)"
-                      value={cfg.orgId ?? ""}
-                      onValueChange={(value) => updateProviderField(provider, "orgId", value)}
-                    />
-                  ) : (
-                    <div />
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex justify-between items-center">
-          <h3 className="text-lg font-semibold">模型档案（Model Profiles）</h3>
-          <div className="flex gap-2">
-            {PROVIDERS.map((provider) => (
-              <Button
-                key={provider}
-                size="sm"
-                variant="flat"
-                onPress={() => {
-                  setState((current) => {
-                    if (!current) return current;
-                    return {
-                      ...current,
-                      modelProfiles: [...current.modelProfiles, createNewProfile(provider)]
-                    };
-                  });
-                }}
-              >
-                + {provider}
-              </Button>
-            ))}
-          </div>
-        </CardHeader>
-        <CardBody className="space-y-4">
-          {profiles.map((profile) => (
-            <div key={profile.id} className="rounded-lg border p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="font-medium">{profile.id}</div>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    isSelected={profile.enabled}
-                    onValueChange={(value) => updateProfileField(profile.id, "enabled", value)}
-                  />
-                  <Button size="sm" color="danger" variant="light" onPress={() => removeProfile(profile.id)}>
-                    删除
-                  </Button>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <Input
-                  label="Profile Name"
-                  value={profile.name}
-                  onValueChange={(value) => updateProfileField(profile.id, "name", value)}
-                />
-                <Select
-                  label="Provider"
-                  selectedKeys={[profile.provider]}
-                  onChange={(event) =>
-                    updateProfileField(profile.id, "provider", event.target.value as ModelProvider)
-                  }
-                >
-                  {PROVIDERS.map((provider) => (
-                    <SelectItem key={provider}>{provider}</SelectItem>
-                  ))}
-                </Select>
-                <Input
-                  label="Model"
-                  value={profile.model}
-                  onValueChange={(value) => updateProfileField(profile.id, "model", value)}
-                />
-              </div>
-            </div>
-          ))}
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <h3 className="text-lg font-semibold">角色模型绑定</h3>
-        </CardHeader>
-        <CardBody className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {ROLE_LABELS.map((item) => {
-            const selectedProfileId = state.routing[item.role];
-            const selectedKeys =
-              selectedProfileId && profiles.some((profile) => profile.id === selectedProfileId)
-                ? [selectedProfileId]
-                : [];
-            const boundProfile = profiles.find((profile) => profile.id === selectedProfileId);
-
-            return (
-              <div key={item.role} className="space-y-2">
-                <Select
-                  label={item.label}
-                  placeholder={profiles.length ? "选择模型档案" : "暂无可用模型档案"}
-                  selectedKeys={selectedKeys}
-                  onSelectionChange={(keys) => {
-                    if (keys === "all") return;
-                    const [profileId] = Array.from(keys, String);
-                    setState((current) => {
-                      if (!current) return current;
-                      return {
-                        ...current,
-                        routing: {
-                          ...current.routing,
-                          [item.role]: profileId ?? ""
-                        }
-                      };
-                    });
-                  }}
-                >
-                  {profiles.map((profile) => (
-                    <SelectItem key={profile.id}>{getProfileLabel(profile)}</SelectItem>
-                  ))}
-                </Select>
-                <p className="text-xs text-gray-500">
-                  {boundProfile
-                    ? `当前绑定：${getProfileLabel(boundProfile)}`
-                    : selectedProfileId
-                      ? `当前绑定：${selectedProfileId}（档案不存在）`
-                      : "当前绑定：未绑定"}
-                </p>
-              </div>
-            );
-          })}
+        <CardBody>
+          <p className="text-sm text-gray-600">
+            模型连接、模型选择与默认路由已迁移到 Model Studio。Settings 页面不再编辑 provider/profile。
+          </p>
         </CardBody>
       </Card>
 
@@ -351,16 +101,17 @@ export const GlobalConfigManager = () => {
             <Switch
               isSelected={state.memory.enableMemory}
               onValueChange={(value) =>
-                setState((current) => {
-                  if (!current) return current;
-                  return {
-                    ...current,
-                    memory: {
-                      ...current.memory,
-                      enableMemory: value
-                    }
-                  };
-                })
+                setState((current) => (
+                  current
+                    ? {
+                        ...current,
+                        memory: {
+                          ...current.memory,
+                          enableMemory: value
+                        }
+                      }
+                    : current
+                ))
               }
             />
           </div>
@@ -369,57 +120,60 @@ export const GlobalConfigManager = () => {
               label="OpenViking Host"
               value={state.memory.openviking.host}
               onValueChange={(value) =>
-                setState((current) => {
-                  if (!current) return current;
-                  return {
-                    ...current,
-                    memory: {
-                      ...current.memory,
-                      openviking: {
-                        ...current.memory.openviking,
-                        host: value
+                setState((current) => (
+                  current
+                    ? {
+                        ...current,
+                        memory: {
+                          ...current.memory,
+                          openviking: {
+                            ...current.memory.openviking,
+                            host: value
+                          }
+                        }
                       }
-                    }
-                  };
-                })
+                    : current
+                ))
               }
             />
             <Input
               label="Port"
               value={String(state.memory.openviking.port)}
               onValueChange={(value) =>
-                setState((current) => {
-                  if (!current) return current;
-                  return {
-                    ...current,
-                    memory: {
-                      ...current.memory,
-                      openviking: {
-                        ...current.memory.openviking,
-                        port: Number(value) || 0
+                setState((current) => (
+                  current
+                    ? {
+                        ...current,
+                        memory: {
+                          ...current.memory,
+                          openviking: {
+                            ...current.memory.openviking,
+                            port: Number(value) || 0
+                          }
+                        }
                       }
-                    }
-                  };
-                })
+                    : current
+                ))
               }
             />
             <Input
               label="Top K"
               value={String(state.memory.openviking.memoryTopK)}
               onValueChange={(value) =>
-                setState((current) => {
-                  if (!current) return current;
-                  return {
-                    ...current,
-                    memory: {
-                      ...current.memory,
-                      openviking: {
-                        ...current.memory.openviking,
-                        memoryTopK: Number(value) || 0
+                setState((current) => (
+                  current
+                    ? {
+                        ...current,
+                        memory: {
+                          ...current.memory,
+                          openviking: {
+                            ...current.memory.openviking,
+                            memoryTopK: Number(value) || 0
+                          }
+                        }
                       }
-                    }
-                  };
-                })
+                    : current
+                ))
               }
             />
           </div>
@@ -437,19 +191,20 @@ export const GlobalConfigManager = () => {
               <Switch
                 isSelected={state.tools.webSearch.enabled}
                 onValueChange={(value) =>
-                  setState((current) => {
-                    if (!current) return current;
-                    return {
-                      ...current,
-                      tools: {
-                        ...current.tools,
-                        webSearch: {
-                          ...current.tools.webSearch,
-                          enabled: value
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            webSearch: {
+                              ...current.tools.webSearch,
+                              enabled: value
+                            }
+                          }
                         }
-                      }
-                    };
-                  })
+                      : current
+                  ))
                 }
               />
             </div>
@@ -460,57 +215,60 @@ export const GlobalConfigManager = () => {
                 value={state.tools.webSearch.apiKey}
                 endContent={renderApiKeyToggle("tools.webSearch.apiKey")}
                 onValueChange={(value) =>
-                  setState((current) => {
-                    if (!current) return current;
-                    return {
-                      ...current,
-                      tools: {
-                        ...current.tools,
-                        webSearch: {
-                          ...current.tools.webSearch,
-                          apiKey: value
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            webSearch: {
+                              ...current.tools.webSearch,
+                              apiKey: value
+                            }
+                          }
                         }
-                      }
-                    };
-                  })
+                      : current
+                  ))
                 }
               />
               <Input
                 label="Base URL"
                 value={state.tools.webSearch.baseUrl}
                 onValueChange={(value) =>
-                  setState((current) => {
-                    if (!current) return current;
-                    return {
-                      ...current,
-                      tools: {
-                        ...current.tools,
-                        webSearch: {
-                          ...current.tools.webSearch,
-                          baseUrl: value
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            webSearch: {
+                              ...current.tools.webSearch,
+                              baseUrl: value
+                            }
+                          }
                         }
-                      }
-                    };
-                  })
+                      : current
+                  ))
                 }
               />
               <Input
                 label="Max Results"
                 value={String(state.tools.webSearch.maxResults)}
                 onValueChange={(value) =>
-                  setState((current) => {
-                    if (!current) return current;
-                    return {
-                      ...current,
-                      tools: {
-                        ...current.tools,
-                        webSearch: {
-                          ...current.tools.webSearch,
-                          maxResults: Number(value) || 1
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            webSearch: {
+                              ...current.tools.webSearch,
+                              maxResults: Number(value) || 1
+                            }
+                          }
                         }
-                      }
-                    };
-                  })
+                      : current
+                  ))
                 }
               />
             </div>
@@ -522,19 +280,20 @@ export const GlobalConfigManager = () => {
               <Switch
                 isSelected={state.tools.webFetch.enabled}
                 onValueChange={(value) =>
-                  setState((current) => {
-                    if (!current) return current;
-                    return {
-                      ...current,
-                      tools: {
-                        ...current.tools,
-                        webFetch: {
-                          ...current.tools.webFetch,
-                          enabled: value
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            webFetch: {
+                              ...current.tools.webFetch,
+                              enabled: value
+                            }
+                          }
                         }
-                      }
-                    };
-                  })
+                      : current
+                  ))
                 }
               />
             </div>
@@ -545,38 +304,40 @@ export const GlobalConfigManager = () => {
                 value={state.tools.webFetch.apiKey}
                 endContent={renderApiKeyToggle("tools.webFetch.apiKey")}
                 onValueChange={(value) =>
-                  setState((current) => {
-                    if (!current) return current;
-                    return {
-                      ...current,
-                      tools: {
-                        ...current.tools,
-                        webFetch: {
-                          ...current.tools.webFetch,
-                          apiKey: value
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            webFetch: {
+                              ...current.tools.webFetch,
+                              apiKey: value
+                            }
+                          }
                         }
-                      }
-                    };
-                  })
+                      : current
+                  ))
                 }
               />
               <Input
                 label="Base URL"
                 value={state.tools.webFetch.baseUrl}
                 onValueChange={(value) =>
-                  setState((current) => {
-                    if (!current) return current;
-                    return {
-                      ...current,
-                      tools: {
-                        ...current.tools,
-                        webFetch: {
-                          ...current.tools.webFetch,
-                          baseUrl: value
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            webFetch: {
+                              ...current.tools.webFetch,
+                              baseUrl: value
+                            }
+                          }
                         }
-                      }
-                    };
-                  })
+                      : current
+                  ))
                 }
               />
             </div>
@@ -586,7 +347,7 @@ export const GlobalConfigManager = () => {
 
       <div className="flex items-center gap-3">
         <Button color="primary" onPress={handleSave} isLoading={saving}>
-          保存全局配置
+          保存设置
         </Button>
         {message ? <span className="text-sm text-gray-600">{message}</span> : null}
       </div>

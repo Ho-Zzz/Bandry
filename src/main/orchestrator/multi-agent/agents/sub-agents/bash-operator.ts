@@ -22,6 +22,7 @@ export class BashOperatorAgent extends BaseAgent {
   }
 
   async execute(input: AgentExecutionInput): Promise<AgentResult> {
+    let binding = "[sub.bash_operator]";
     try {
       // For now, use the LLM to process the bash request
       // In a full implementation, this would:
@@ -38,6 +39,7 @@ export class BashOperatorAgent extends BaseAgent {
         }
       ];
       const target = resolveRuntimeTarget(this.appConfig, "sub.bash_operator");
+      binding = `[sub.bash_operator profile=${target.profileId} model=${target.provider}/${target.model}]`;
 
       const result = await this.modelsFactory.generateText({
         runtimeConfig: target.runtimeConfig,
@@ -50,7 +52,7 @@ export class BashOperatorAgent extends BaseAgent {
       return this.successResult(result.text);
     } catch (error) {
       return this.errorResult(
-        `Bash execution failed: ${error instanceof Error ? error.message : String(error)}`
+        `${binding} bash execution failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }

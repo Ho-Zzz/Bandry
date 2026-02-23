@@ -1,5 +1,5 @@
 import type { AppConfig } from "../../../config";
-import type { ModelsFactory } from "../../../models";
+import type { GenerateTextResult, ModelsFactory } from "../../../models";
 import { resolveRuntimeTarget } from "../../../models/runtime-target";
 import { DAGScheduler } from "../scheduler";
 import { WorkerPool } from "../workers";
@@ -11,6 +11,13 @@ import type { DAGPlan, AgentResult } from "./types";
  * Plans DAG and delegates to sub-agents
  */
 import { DAG_PLANNER_PROMPT, RESPONSE_SYNTHESIZER_PROMPT } from "./prompts";
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+};
 
 export class LeadAgent {
   private dagScheduler: DAGScheduler;
@@ -39,7 +46,7 @@ export class LeadAgent {
     const plan = await this.generateDAGPlan(input.prompt);
 
     // Step 2: Execute DAG
-    const results = await this.dagScheduler.scheduleDAG(plan, input.workspacePath);
+    const results = await this.dagScheduler.scheduleDAG(plan, input.workspacePath, this.config);
 
     // Step 3: Synthesize final response
     const summary = await this.synthesizeResponse(input.prompt, results);
@@ -54,16 +61,23 @@ export class LeadAgent {
     const target = resolveRuntimeTarget(this.config, "lead.planner");
     const systemPrompt = DAG_PLANNER_PROMPT;
 
-    const result = await this.modelsFactory.generateText({
-      runtimeConfig: target.runtimeConfig,
-      model: target.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: prompt }
-      ],
-      temperature: target.temperature ?? 0.7,
-      maxTokens: target.maxTokens
-    });
+    let result: GenerateTextResult;
+    try {
+      result = await this.modelsFactory.generateText({
+        runtimeConfig: target.runtimeConfig,
+        model: target.model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: prompt }
+        ],
+        temperature: target.temperature ?? 0.7,
+        maxTokens: target.maxTokens
+      });
+    } catch (error) {
+      throw new Error(
+        `[lead.planner profile=${target.profileId} model=${target.provider}/${target.model}] model call failed: ${getErrorMessage(error)}`
+      );
+    }
 
     // Parse JSON response
     try {
@@ -107,19 +121,26 @@ ${result.artifacts ? `Artifacts: ${result.artifacts.join(", ")}` : ""}`;
       })
       .join("\n\n");
 
-    const result = await this.modelsFactory.generateText({
-      runtimeConfig: target.runtimeConfig,
-      model: target.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: `Original request: ${originalPrompt}\n\nResults:\n${resultsText}\n\nProvide a summary:`
-        }
-      ],
-      temperature: target.temperature ?? 0.3,
-      maxTokens: target.maxTokens
-    });
+    let result: GenerateTextResult;
+    try {
+      result = await this.modelsFactory.generateText({
+        runtimeConfig: target.runtimeConfig,
+        model: target.model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: `Original request: ${originalPrompt}\n\nResults:\n${resultsText}\n\nProvide a summary:`
+          }
+        ],
+        temperature: target.temperature ?? 0.3,
+        maxTokens: target.maxTokens
+      });
+    } catch (error) {
+      throw new Error(
+        `[lead.synthesizer profile=${target.profileId} model=${target.provider}/${target.model}] model call failed: ${getErrorMessage(error)}`
+      );
+    }
 
     return result.text;
   }

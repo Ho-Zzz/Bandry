@@ -1,4 +1,6 @@
-export type ModelProvider = "openai" | "deepseek" | "volcengine";
+import type { ModelProvider } from "./model-providers";
+
+export type { ModelProvider } from "./model-providers";
 export type ChatRole = "system" | "user" | "assistant";
 
 export type ChatHistoryMessage = {
@@ -96,57 +98,6 @@ export type TaskStartResult = {
   taskId: string;
 };
 
-// Employee & Provider types
-export type AgentType = "planner" | "generalist" | "specialist" | "executor";
-
-export type ProviderInput = {
-  provider_name: string;
-  api_key: string;
-  base_url?: string;
-  is_active?: boolean;
-};
-
-export type ProviderResult = {
-  id: string;
-  provider_name: string;
-  api_key: string;
-  base_url?: string;
-  is_active: boolean;
-  created_at: number;
-  updated_at: number;
-};
-
-export type EmployeeInput = {
-  name: string;
-  avatar?: string;
-  type: AgentType;
-  provider_id: string;
-  model_id: string;
-  system_prompt?: string;
-  mcp_tools?: string[];
-  override_params?: {
-    temperature?: number;
-    max_tokens?: number;
-  };
-};
-
-export type EmployeeResult = {
-  id: string;
-  name: string;
-  avatar?: string;
-  type: AgentType;
-  provider_id: string;
-  model_id: string;
-  system_prompt?: string;
-  mcp_tools: string[];
-  override_params?: {
-    temperature?: number;
-    max_tokens?: number;
-  };
-  created_at: number;
-  updated_at: number;
-};
-
 export type TaskUpdateEvent = {
   taskId: string;
   status: TaskStatus;
@@ -195,6 +146,90 @@ export type RuntimeConfigSummary = {
     webSearchEnabled: boolean;
     webFetchEnabled: boolean;
   };
+};
+
+export type CatalogModelCapabilities = {
+  toolCall: boolean;
+  reasoning: boolean;
+  inputModalities: string[];
+  outputModalities: string[];
+};
+
+export type CatalogModelItem = {
+  id: string;
+  name: string;
+  provider: ModelProvider;
+  capabilities: CatalogModelCapabilities;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+};
+
+export type ModelsCatalogProvider = {
+  id: ModelProvider;
+  name: string;
+  models: CatalogModelItem[];
+};
+
+export type ModelsCatalogListInput = {
+  refresh?: boolean;
+};
+
+export type ModelsCatalogListResult = {
+  sourceType: "http" | "file";
+  sourceLocation: string;
+  fetchedAt: number;
+  providers: ModelsCatalogProvider[];
+};
+
+export type ConnectedModelResult = {
+  profileId: string;
+  profileName: string;
+  provider: ModelProvider;
+  providerName: string;
+  model: string;
+  enabled: boolean;
+  isChatDefault: boolean;
+  providerConfigured: boolean;
+};
+
+export type ModelsListConnectedResult = {
+  chatDefaultProfileId?: string;
+  models: ConnectedModelResult[];
+};
+
+export type ModelsConnectInput = {
+  provider: ModelProvider;
+  modelId: string;
+  apiKey: string;
+  baseUrl?: string;
+};
+
+export type ModelsConnectResult = {
+  ok: boolean;
+  message: string;
+  requiresRestart: boolean;
+  profile: ConnectedModelResult;
+};
+
+export type ModelsSetDefaultInput = {
+  profileId: string;
+};
+
+export type ModelsRemoveInput = {
+  profileId: string;
+};
+
+export type ModelsUpdateCredentialInput = {
+  provider: ModelProvider;
+  apiKey?: string;
+  baseUrl?: string;
+  orgId?: string;
+};
+
+export type ModelsOperationResult = {
+  ok: boolean;
+  message: string;
+  requiresRestart: boolean;
 };
 
 export type SettingsRuntimeRole =

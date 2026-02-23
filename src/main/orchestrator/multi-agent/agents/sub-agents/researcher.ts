@@ -22,6 +22,7 @@ export class ResearcherAgent extends BaseAgent {
   }
 
   async execute(input: AgentExecutionInput): Promise<AgentResult> {
+    let binding = "[sub.researcher]";
     try {
       // For now, use the LLM to process the research request
       // In a full implementation, this would:
@@ -35,6 +36,7 @@ export class ResearcherAgent extends BaseAgent {
         { role: "user" as const, content: input.prompt }
       ];
       const target = resolveRuntimeTarget(this.appConfig, "sub.researcher");
+      binding = `[sub.researcher profile=${target.profileId} model=${target.provider}/${target.model}]`;
 
       const result = await this.modelsFactory.generateText({
         runtimeConfig: target.runtimeConfig,
@@ -47,7 +49,7 @@ export class ResearcherAgent extends BaseAgent {
       return this.successResult(result.text);
     } catch (error) {
       return this.errorResult(
-        `Research failed: ${error instanceof Error ? error.message : String(error)}`
+        `${binding} research failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }

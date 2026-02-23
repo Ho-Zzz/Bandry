@@ -10,7 +10,6 @@ import { useCopilotChat, type Message } from "./use-copilot-chat";
 
 type UseCopilotRuntimeOptions = {
   conversationId?: string;
-  modelProfileId?: string;
 };
 
 type TraceToolArgs = {

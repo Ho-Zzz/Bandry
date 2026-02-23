@@ -11,6 +11,15 @@ import type {
   ChatMultiAgentSendResult,
   ConversationInput,
   ConversationResult,
+  ModelsCatalogListInput,
+  ModelsCatalogListResult,
+  ModelsConnectInput,
+  ModelsConnectResult,
+  ModelsListConnectedResult,
+  ModelsOperationResult,
+  ModelsRemoveInput,
+  ModelsSetDefaultInput,
+  ModelsUpdateCredentialInput,
   GlobalSettingsState,
   MessageInput,
   MessageResult,
@@ -30,10 +39,6 @@ import type {
   TaskStartInput,
   TaskStartResult,
   TaskUpdateEvent,
-  ProviderInput,
-  ProviderResult,
-  EmployeeInput,
-  EmployeeResult,
   HITLApprovalRequest,
   HITLApprovalResponse
 } from "../../shared/ipc";
@@ -46,6 +51,12 @@ declare global {
       getConfigSummary: () => Promise<RuntimeConfigSummary>;
       getSettingsState: () => Promise<GlobalSettingsState>;
       saveSettingsState: (input: SaveSettingsInput) => Promise<SaveSettingsResult>;
+      modelsCatalogList: (input?: ModelsCatalogListInput) => Promise<ModelsCatalogListResult>;
+      modelsConnect: (input: ModelsConnectInput) => Promise<ModelsConnectResult>;
+      modelsListConnected: () => Promise<ModelsListConnectedResult>;
+      modelsSetChatDefault: (input: ModelsSetDefaultInput) => Promise<ModelsOperationResult>;
+      modelsRemove: (input: ModelsRemoveInput) => Promise<ModelsOperationResult>;
+      modelsUpdateProviderCredential: (input: ModelsUpdateCredentialInput) => Promise<ModelsOperationResult>;
 
       // Chat APIs
       chatSend: (input: ChatSendInput) => Promise<ChatSendResult>;
@@ -61,20 +72,6 @@ declare global {
       sandboxReadFile: (input: SandboxReadFileInput) => Promise<SandboxReadFileResult>;
       sandboxWriteFile: (input: SandboxWriteFileInput) => Promise<SandboxWriteFileResult>;
       sandboxExec: (input: SandboxExecInput) => Promise<SandboxExecResult>;
-
-      // Provider Management
-      providerCreate: (input: ProviderInput) => Promise<ProviderResult>;
-      providerList: () => Promise<ProviderResult[]>;
-      providerGet: (id: string) => Promise<ProviderResult | null>;
-      providerUpdate: (id: string, input: Partial<ProviderInput>) => Promise<ProviderResult>;
-      providerDelete: (id: string) => Promise<void>;
-
-      // Employee Management
-      employeeCreate: (input: EmployeeInput) => Promise<EmployeeResult>;
-      employeeList: () => Promise<EmployeeResult[]>;
-      employeeGet: (id: string) => Promise<EmployeeResult | null>;
-      employeeUpdate: (id: string, input: Partial<EmployeeInput>) => Promise<EmployeeResult>;
-      employeeDelete: (id: string) => Promise<void>;
 
       // Conversation Management
       conversationCreate: (input: ConversationInput) => Promise<ConversationResult>;
@@ -94,7 +91,7 @@ declare global {
       onChatDelta: (listener: (update: ChatDeltaEvent) => void) => () => void;
       onTaskUpdate: (listener: (update: TaskUpdateEvent) => void) => () => void;
       onHITLApprovalRequired: (listener: (request: HITLApprovalRequest) => void) => () => void;
-      sendHITLApproval: (response: HITLApprovalResponse) => Promise<void>;
+      submitHITLApproval: (response: HITLApprovalResponse) => Promise<void>;
     };
   }
 }

@@ -23,7 +23,6 @@ export type Message = {
 
 type UseCopilotChatOptions = {
   conversationId?: string;
-  modelProfileId?: string;
 };
 
 const makeRequestId = (): string => {
@@ -177,7 +176,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
       } else {
         try {
           const conv = await window.api.conversationCreate({
-            model_profile_id: options.modelProfileId
+            model_profile_id: undefined
           });
           currentConvId = conv.id;
           setConversationId(currentConvId);
@@ -265,8 +264,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         const result = await window.api.chatSend({
           requestId,
           message: content,
-          history,
-          modelProfileId: options.modelProfileId
+          history
         });
 
         const finalTrace = traceByRequestIdRef.current[requestId] || [];
@@ -345,7 +343,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         }
       }
     },
-    [messages, options.modelProfileId, conversationId, generateTitle]
+    [messages, conversationId, generateTitle]
   );
 
   const cancelCurrentRequest = useCallback(async (): Promise<boolean> => {

@@ -24,6 +24,7 @@ export class WriterAgent extends BaseAgent {
   }
 
   async execute(input: AgentExecutionInput): Promise<AgentResult> {
+    let binding = "[sub.writer]";
     try {
       // Generate content using LLM
       const messages = input.messages || [
@@ -34,6 +35,7 @@ export class WriterAgent extends BaseAgent {
         }
       ];
       const target = resolveRuntimeTarget(this.appConfig, "sub.writer");
+      binding = `[sub.writer profile=${target.profileId} model=${target.provider}/${target.model}]`;
 
       const result = await this.modelsFactory.generateText({
         runtimeConfig: target.runtimeConfig,
@@ -55,7 +57,7 @@ export class WriterAgent extends BaseAgent {
       return this.successResult(result.text);
     } catch (error) {
       return this.errorResult(
-        `Writing failed: ${error instanceof Error ? error.message : String(error)}`
+        `${binding} writing failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }

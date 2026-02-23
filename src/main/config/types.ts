@@ -1,4 +1,6 @@
-export type LlmProvider = "openai" | "deepseek" | "volcengine";
+import type { ModelProvider } from "../../shared/model-providers";
+
+export type LlmProvider = ModelProvider;
 
 export type NetworkMode = "auto" | "online" | "offline";
 
@@ -56,6 +58,23 @@ export type InternalToolsConfig = {
 export type InternalToolsLayerConfig = Partial<{
   webSearch: Partial<InternalWebSearchConfig>;
   webFetch: Partial<InternalWebFetchConfig>;
+}>;
+
+export type CatalogSourceType = "http" | "file";
+export type CatalogSourceSchema = "models.dev";
+
+export type CatalogSourceConfig = {
+  type: CatalogSourceType;
+  location: string;
+  schema: CatalogSourceSchema;
+  timeoutMs: number;
+};
+
+export type CatalogSourceLayerConfig = Partial<{
+  type: CatalogSourceType;
+  location: string;
+  schema: CatalogSourceSchema;
+  timeoutMs: number;
 }>;
 
 export type AppPaths = {
@@ -157,6 +176,9 @@ export type ConfigLayer = {
   features?: FeaturesLayerConfig;
   openviking?: OpenVikingLayerConfig;
   paths?: PathsLayerConfig;
+  catalog?: {
+    source?: CatalogSourceLayerConfig;
+  };
   modelProfiles?: ModelProfileLayer[];
   routing?: RoutingLayerConfig;
   tools?: InternalToolsLayerConfig;
@@ -191,11 +213,7 @@ export type AppConfig = {
     maxOutputBytes: number;
     auditLogEnabled: boolean;
   };
-  providers: {
-    openai: ProviderConfig;
-    deepseek: ProviderConfig;
-    volcengine: ProviderConfig;
-  };
+  providers: Record<LlmProvider, ProviderConfig>;
   features: {
     enableMiddleware: boolean;
     enableMultiAgent: boolean;
@@ -215,6 +233,9 @@ export type AppConfig = {
     memoryScoreThreshold: number;
     commitDebounceMs: number;
     targetUris: string[];
+  };
+  catalog: {
+    source: CatalogSourceConfig;
   };
   modelProfiles: ModelProfile[];
   routing: RoutingConfig;

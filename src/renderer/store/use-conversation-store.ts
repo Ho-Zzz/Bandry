@@ -18,6 +18,7 @@ interface ConversationState {
   deleteConversation: (id: string) => Promise<void>;
   setActiveConversation: (id: string | null) => void;
   updateConversationTitle: (id: string, title: string) => Promise<void>;
+  updateConversationModelProfile: (id: string, modelProfileId?: string) => Promise<void>;
   getConversation: (id: string) => ConversationResult | undefined;
 }
 
@@ -67,6 +68,26 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
       set((state) => ({
         conversations: state.conversations.map((c) =>
           c.id === id ? { ...c, title, updated_at: updated.updated_at } : c
+        )
+      }));
+    }
+  },
+
+  updateConversationModelProfile: async (id: string, modelProfileId?: string) => {
+    const updated = await window.api.conversationUpdate(id, {
+      model_profile_id: modelProfileId
+    });
+
+    if (updated) {
+      set((state) => ({
+        conversations: state.conversations.map((conversation) =>
+          conversation.id === id
+            ? {
+                ...conversation,
+                model_profile_id: updated.model_profile_id,
+                updated_at: updated.updated_at
+              }
+            : conversation
         )
       }));
     }

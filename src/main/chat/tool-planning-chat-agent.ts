@@ -1,6 +1,6 @@
-import type { AppConfig } from "../config";
+import type { AppConfig, RuntimeRole } from "../config";
 import type { GenerateTextResult, ModelsFactory } from "../models";
-import { resolveRuntimeTarget } from "../models/runtime-target";
+import { resolveRuntimeTarget, type RuntimeModelTarget } from "../models/runtime-target";
 import type { SandboxService } from "../sandbox";
 import type { ChatSendInput, ChatSendResult, ChatUpdateStage } from "../../shared/ipc";
 import { MAX_TOOL_STEPS } from "./chat-constants";
@@ -26,6 +26,20 @@ const throwIfAborted = (abortSignal?: AbortSignal): void => {
   }
 };
 
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+};
+
+const formatRoleBinding = (
+  role: RuntimeRole,
+  target: RuntimeModelTarget
+): string => {
+  return `${role} profile=${target.profileId} model=${target.provider}/${target.model}`;
+};
+
 export class ToolPlanningChatAgent {
   constructor(
     private readonly config: AppConfig,
@@ -44,45 +58,74 @@ export class ToolPlanningChatAgent {
       throw new Error("message is required");
     }
 
-    const target = resolveRuntimeTarget(this.config, "chat.default", input.modelProfileId);
-    if (!target.runtimeConfig.apiKey.trim()) {
-      throw new Error(`Provider ${target.provider} is not configured. Please set API key in Settings.`);
+    let plannerTarget: RuntimeModelTarget;
+    let synthTarget: RuntimeModelTarget;
+    try {
+      plannerTarget = resolveRuntimeTarget(this.config, "lead.planner");
+      synthTarget = resolveRuntimeTarget(this.config, "lead.synthesizer");
+    } catch (error) {
+      const messageWithRole = `LeadAgent 路由配置错误: ${getErrorMessage(error)}`;
+      onUpdate?.("error", messageWithRole);
+      throw new Error(messageWithRole);
+    }
+
+    if (!plannerTarget.runtimeConfig.apiKey.trim()) {
+      const messageWithRole = `[${formatRoleBinding("lead.planner", plannerTarget)}] provider api key is missing`;
+      onUpdate?.("error", messageWithRole);
+      throw new Error(messageWithRole);
+    }
+    if (!synthTarget.runtimeConfig.apiKey.trim()) {
+      const messageWithRole = `[${formatRoleBinding("lead.synthesizer", synthTarget)}] provider api key is missing`;
+      onUpdate?.("error", messageWithRole);
+      throw new Error(messageWithRole);
     }
 
     const history = normalizeHistory(input.history);
     const observations: ToolObservation[] = [];
+    const attemptedToolSignatures = new Set<string>();
     let accumulatedLatency = 0;
     let plannerDraftAnswer: string | undefined;
+    let failedToolCount = 0;
 
     throwIfAborted(abortSignal);
     onUpdate?.("planning", "正在规划是否需要调用工具...");
 
     for (let step = 0; step < MAX_TOOL_STEPS; step += 1) {
       throwIfAborted(abortSignal);
-      onUpdate?.("model", `规划步骤 ${step + 1}/${MAX_TOOL_STEPS}：请求 ${target.provider}/${target.model}`);
+      onUpdate?.(
+        "model",
+        `规划步骤 ${step + 1}/${MAX_TOOL_STEPS}：请求 ${plannerTarget.provider}/${plannerTarget.model}`
+      );
 
-      const planner = await this.modelsFactory.generateText({
-        runtimeConfig: target.runtimeConfig,
-        model: target.model,
-        temperature: target.temperature ?? 0,
-        maxTokens: target.maxTokens,
-        messages: [
-          {
-            role: "system",
-            content: buildPlannerSystemPrompt(this.config)
-          },
-          ...history,
-          {
-            role: "user",
-            content: message
-          },
-          ...observations.map((observation, index) => ({
-            role: "system" as const,
-            content: `Tool observation #${index + 1}: ${JSON.stringify(observation)}`
-          }))
-        ],
-        abortSignal
-      });
+      let planner: GenerateTextResult;
+      try {
+        planner = await this.modelsFactory.generateText({
+          runtimeConfig: plannerTarget.runtimeConfig,
+          model: plannerTarget.model,
+          temperature: plannerTarget.temperature ?? 0,
+          maxTokens: plannerTarget.maxTokens,
+          messages: [
+            {
+              role: "system",
+              content: buildPlannerSystemPrompt(this.config)
+            },
+            ...history,
+            {
+              role: "user",
+              content: message
+            },
+            ...observations.map((observation, index) => ({
+              role: "system" as const,
+              content: `Tool observation #${index + 1}: ${JSON.stringify(observation)}`
+            }))
+          ],
+          abortSignal
+        });
+      } catch (error) {
+        const plannerError = `[${formatRoleBinding("lead.planner", plannerTarget)}] model call failed: ${getErrorMessage(error)}`;
+        onUpdate?.("error", plannerError);
+        throw new Error(plannerError);
+      }
 
       accumulatedLatency += planner.latencyMs;
       const action = parsePlannerAction(planner.text);
@@ -98,6 +141,13 @@ export class ToolPlanningChatAgent {
         break;
       }
 
+      const toolSignature = `${action.tool}:${JSON.stringify(action.input ?? {})}`;
+      if (attemptedToolSignatures.has(toolSignature)) {
+        onUpdate?.("final", "检测到重复工具调用，改为直接回答");
+        break;
+      }
+      attemptedToolSignatures.add(toolSignature);
+
       onUpdate?.("tool", `执行工具：${action.tool}${action.reason ? `（${normalizeSpaces(action.reason)}）` : ""}`);
       throwIfAborted(abortSignal);
       const observation = await executePlannerTool({
@@ -107,46 +157,74 @@ export class ToolPlanningChatAgent {
       });
       observations.push(observation);
       onUpdate?.("tool", `${action.tool} -> ${observation.ok ? "success" : "failed"}: ${truncate(observation.output, 240)}`);
+
+      if (observation.ok) {
+        continue;
+      }
+
+      failedToolCount += 1;
+      const normalizedError = observation.output.toLowerCase();
+      const shouldStopPlanning =
+        failedToolCount >= 1 &&
+        (observations.every((item) => !item.ok) ||
+          normalizedError.includes("path does not exist") ||
+          normalizedError.includes("invalid_path"));
+      if (shouldStopPlanning) {
+        onUpdate?.("final", "工具执行失败，改为直接回答（避免无效重试）");
+        break;
+      }
     }
 
     throwIfAborted(abortSignal);
-    onUpdate?.("model", "进入最终总结阶段（基于工具观察结果）");
-
-    const finalResponse = await this.modelsFactory.generateTextStream(
-      {
-        runtimeConfig: target.runtimeConfig,
-        model: target.model,
-        temperature: target.temperature ?? 0.2,
-        maxTokens: target.maxTokens,
-        messages: [
-          {
-            role: "system",
-            content: buildFinalSystemPrompt()
-          },
-          ...history,
-          {
-            role: "user",
-            content: message
-          },
-          {
-            role: "system",
-            content: observations.map((observation, index) => `Observation #${index + 1}: ${JSON.stringify(observation)}`).join("\n")
-          },
-          ...(plannerDraftAnswer
-            ? [
-                {
-                  role: "system" as const,
-                  content: `Planner draft answer (for reference only): ${plannerDraftAnswer}`
-                }
-              ]
-            : [])
-        ],
-        abortSignal
-      },
-      (delta) => {
-        onDelta?.(delta);
-      }
+    onUpdate?.(
+      "model",
+      observations.length > 0
+        ? "进入最终总结阶段（基于工具观察结果）"
+        : "进入直接回答阶段（无需工具）"
     );
+
+    let finalResponse: GenerateTextResult;
+    try {
+      finalResponse = await this.modelsFactory.generateTextStream(
+        {
+          runtimeConfig: synthTarget.runtimeConfig,
+          model: synthTarget.model,
+          temperature: synthTarget.temperature ?? 0.2,
+          maxTokens: synthTarget.maxTokens,
+          messages: [
+            {
+              role: "system",
+              content: buildFinalSystemPrompt()
+            },
+            ...history,
+            {
+              role: "user",
+              content: message
+            },
+            {
+              role: "system",
+              content: observations.map((observation, index) => `Observation #${index + 1}: ${JSON.stringify(observation)}`).join("\n")
+            },
+            ...(plannerDraftAnswer
+              ? [
+                  {
+                    role: "system" as const,
+                    content: `Planner draft answer (for reference only): ${plannerDraftAnswer}`
+                  }
+                ]
+              : [])
+          ],
+          abortSignal
+        },
+        (delta) => {
+          onDelta?.(delta);
+        }
+      );
+    } catch (error) {
+      const synthError = `[${formatRoleBinding("lead.synthesizer", synthTarget)}] model call failed: ${getErrorMessage(error)}`;
+      onUpdate?.("error", synthError);
+      throw new Error(synthError);
+    }
 
     accumulatedLatency += finalResponse.latencyMs;
     onUpdate?.("final", "最终回答已生成");

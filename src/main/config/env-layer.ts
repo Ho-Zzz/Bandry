@@ -102,6 +102,14 @@ export const envToLayer = (env: NodeJS.ProcessEnv): ConfigLayer => {
       auditLogPath: toStringValue(env.BANDRY_AUDIT_LOG_PATH),
       sandboxAuditLogPath: toStringValue(env.BANDRY_SANDBOX_AUDIT_LOG_PATH)
     },
+    catalog: {
+      source: {
+        type: toStringValue(env.BANDRY_MODELS_SOURCE_TYPE) as "http" | "file" | undefined,
+        location: toStringValue(env.BANDRY_MODELS_SOURCE_LOCATION),
+        schema: "models.dev",
+        timeoutMs: toNumberValue(env.BANDRY_MODELS_SOURCE_TIMEOUT_MS)
+      }
+    },
     tools: {
       webSearch: {
         enabled: toBooleanValue(env.WEB_SEARCH_ENABLED),
@@ -135,6 +143,36 @@ export const envToLayer = (env: NodeJS.ProcessEnv): ConfigLayer => {
         apiKey: volcengineApiKey,
         baseUrl: volcengineBaseUrl,
         model: toStringValue(env.BYTEDANCE_MODEL ?? env.VOLCENGINE_MODEL)
+      },
+      openrouter: {
+        apiKey: toStringValue(env.OPENROUTER_API_KEY),
+        baseUrl: toBaseUrlValue(env.OPENROUTER_BASE_URL),
+        model: toStringValue(env.OPENROUTER_MODEL)
+      },
+      groq: {
+        apiKey: toStringValue(env.GROQ_API_KEY),
+        baseUrl: toBaseUrlValue(env.GROQ_BASE_URL),
+        model: toStringValue(env.GROQ_MODEL)
+      },
+      moonshot: {
+        apiKey: toStringValue(env.MOONSHOT_API_KEY),
+        baseUrl: toBaseUrlValue(env.MOONSHOT_BASE_URL),
+        model: toStringValue(env.MOONSHOT_MODEL)
+      },
+      qwen: {
+        apiKey: toStringValue(env.QWEN_API_KEY),
+        baseUrl: toBaseUrlValue(env.QWEN_BASE_URL),
+        model: toStringValue(env.QWEN_MODEL)
+      },
+      siliconflow: {
+        apiKey: toStringValue(env.SILICONFLOW_API_KEY),
+        baseUrl: toBaseUrlValue(env.SILICONFLOW_BASE_URL),
+        model: toStringValue(env.SILICONFLOW_MODEL)
+      },
+      together: {
+        apiKey: toStringValue(env.TOGETHER_API_KEY),
+        baseUrl: toBaseUrlValue(env.TOGETHER_BASE_URL),
+        model: toStringValue(env.TOGETHER_MODEL)
       }
     }
   };

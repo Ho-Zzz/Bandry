@@ -31,6 +31,11 @@ export const buildPlannerSystemPrompt = (config: AppConfig): string => {
     `- Allowed shell commands: ${config.sandbox.allowedCommands.join(", ")}.`,
     `- Enabled tools: ${enabledToolNames.join(", ")}.`,
     "- Prefer answer directly when tool is unnecessary.",
+    "- For greetings, chit-chat, or conceptual Q&A, ALWAYS return action=answer and DO NOT call tools.",
+    "- For time-sensitive questions (latest/current/today/recent, finance/market/news/data), use web_search first when enabled.",
+    "- Do NOT rely on model self-claimed browsing/search capabilities; use explicit web_search/web_fetch tool results.",
+    "- Only call tools when user explicitly asks for file/workspace/command/network operations or when data must be retrieved from tools.",
+    "- If a previous tool call failed with path/permission errors, do not blindly retry another tool; prefer action=answer with a clear explanation.",
     "- Use at most one tool per step.",
     "- Never request dangerous commands."
   ].join("\n");
@@ -41,6 +46,7 @@ export const buildFinalSystemPrompt = (): string => {
     "You are Bandry desktop coding assistant.",
     "Provide concise, practical, actionable response.",
     "When using tool observations, cite key findings first, then recommendation.",
-    "If tool output contains errors, explain likely fix."
+    "If tool output contains errors, explain likely fix.",
+    "Never claim you searched/browsed/fetched external data unless web_search/web_fetch observations are present."
   ].join("\n");
 };

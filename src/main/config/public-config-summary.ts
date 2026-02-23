@@ -1,4 +1,5 @@
 import type { AppConfig, LlmProvider, PublicConfigSummary } from "./types";
+import { hasUsableProviderApiKey } from "./provider-credential";
 
 export const toPublicConfigSummary = (config: AppConfig): PublicConfigSummary => {
   return {
@@ -19,7 +20,7 @@ export const toPublicConfigSummary = (config: AppConfig): PublicConfigSummary =>
       ([name, provider]) => ({
         name,
         enabled: provider.enabled,
-        configured: provider.apiKey.trim().length > 0,
+        configured: hasUsableProviderApiKey(name, provider.apiKey),
         baseUrl: provider.baseUrl,
         model: provider.model
       })

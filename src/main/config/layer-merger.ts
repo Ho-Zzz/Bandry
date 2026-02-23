@@ -176,6 +176,22 @@ export const applyLayer = (target: AppConfig, layer: ConfigLayer): void => {
     }
   }
 
+  if (layer.catalog?.source) {
+    const catalogLayer = layer.catalog.source;
+    if (catalogLayer.type !== undefined) {
+      target.catalog.source.type = catalogLayer.type;
+    }
+    if (catalogLayer.location !== undefined) {
+      target.catalog.source.location = catalogLayer.location;
+    }
+    if (catalogLayer.schema !== undefined) {
+      target.catalog.source.schema = catalogLayer.schema;
+    }
+    if (catalogLayer.timeoutMs !== undefined) {
+      target.catalog.source.timeoutMs = catalogLayer.timeoutMs;
+    }
+  }
+
   if (layer.modelProfiles !== undefined) {
     const mergedById = new Map(target.modelProfiles.map((profile) => [profile.id, { ...profile }]));
     for (const profileLayer of layer.modelProfiles) {

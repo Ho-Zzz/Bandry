@@ -1,4 +1,8 @@
 import type { AppConfig, AppPaths, RuntimeConfig } from "./types";
+import {
+  MODEL_PROVIDER_DEFAULTS,
+  MODEL_PROVIDERS
+} from "../../shared/model-providers";
 
 type CreateDefaultConfigInput = {
   paths: AppPaths;
@@ -8,6 +12,22 @@ type CreateDefaultConfigInput = {
 export const createDefaultConfig = (
   input: CreateDefaultConfigInput
 ): AppConfig => {
+  const defaultProviders = Object.fromEntries(
+    MODEL_PROVIDERS.map((provider) => {
+      const defaults = MODEL_PROVIDER_DEFAULTS[provider];
+      return [
+        provider,
+        {
+          enabled: true,
+          apiKey: "",
+          baseUrl: defaults.baseUrl,
+          model: defaults.model,
+          ...(defaults.orgId !== undefined ? { orgId: defaults.orgId } : {})
+        }
+      ];
+    })
+  ) as AppConfig["providers"];
+
   const defaultProfiles: AppConfig["modelProfiles"] = [
     {
       id: "profile_openai_default",
@@ -56,27 +76,7 @@ export const createDefaultConfig = (
       maxOutputBytes: 64 * 1024,
       auditLogEnabled: true,
     },
-    providers: {
-      openai: {
-        enabled: true,
-        apiKey: "",
-        baseUrl: "https://api.openai.com/v1",
-        model: "gpt-4.1-mini",
-        orgId: "",
-      },
-      deepseek: {
-        enabled: true,
-        apiKey: "",
-        baseUrl: "https://api.deepseek.com",
-        model: "deepseek-chat",
-      },
-      volcengine: {
-        enabled: true,
-        apiKey: "",
-        baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
-        model: "doubao-seed-1-6-250615",
-      },
-    },
+    providers: defaultProviders,
     features: {
       enableMiddleware: false,
       enableMultiAgent: false,
@@ -96,6 +96,14 @@ export const createDefaultConfig = (
       memoryScoreThreshold: 0.35,
       commitDebounceMs: 30_000,
       targetUris: ["viking://user/memories", "viking://agent/memories"],
+    },
+    catalog: {
+      source: {
+        type: "http",
+        location: "https://models.dev/api.json",
+        schema: "models.dev",
+        timeoutMs: 12_000
+      }
     },
     modelProfiles: defaultProfiles,
     routing: {

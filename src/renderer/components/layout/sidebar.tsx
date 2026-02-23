@@ -12,6 +12,7 @@ import {
   Users,
   Zap,
   FolderOpen,
+  Cpu,
   ChevronDown,
   ChevronRight,
   ChevronLeft,
@@ -200,7 +201,7 @@ export const Sidebar = ({
   const navigate = useNavigate();
   const location = useLocation();
   const [channelsOpen, setChannelsOpen] = useState(true);
-  const { conversations, fetchConversations, setActiveConversation } = useConversationStore();
+  const { conversations, fetchConversations, setActiveConversation, createConversation } = useConversationStore();
 
   const isCollapsed = state === "collapsed";
 
@@ -223,6 +224,9 @@ export const Sidebar = ({
         case "directory":
           navigate("/employees");
           break;
+        case "models":
+          navigate("/model-studio");
+          break;
         case "settings":
           navigate("/settings");
           break;
@@ -233,9 +237,16 @@ export const Sidebar = ({
     }
   };
 
-  const handleNewChat = () => {
-    setActiveConversation(null);
-    navigate("/copilot");
+  const handleNewChat = async () => {
+    try {
+      const conversation = await createConversation(undefined, undefined);
+      setActiveConversation(conversation.id);
+      navigate(`/copilot/${conversation.id}`);
+    } catch (error) {
+      console.error("Failed to create conversation:", error);
+      setActiveConversation(null);
+      navigate("/copilot");
+    }
   };
 
   const isNavActive = (navItem: NavigationItem): boolean => {
@@ -245,6 +256,7 @@ export const Sidebar = ({
         workflows: "/workflows",
         assets: "/assets",
         directory: "/employees",
+        models: "/model-studio",
         settings: "/settings"
       };
       return location.pathname === pathMap[navItem.id];
@@ -315,6 +327,13 @@ export const Sidebar = ({
             isCollapsed={isCollapsed}
           />
           <NavItem
+            icon={Cpu}
+            label="Model Studio"
+            isActive={isNavActive({ type: "view", id: "models" })}
+            onClick={() => handleNavClick({ type: "view", id: "models" })}
+            isCollapsed={isCollapsed}
+          />
+          <NavItem
             icon={Settings}
             label="Settings"
             isActive={isNavActive({ type: "view", id: "settings" })}
@@ -331,7 +350,9 @@ export const Sidebar = ({
           actionIcon={
             !isCollapsed && (
               <button
-                onClick={handleNewChat}
+                onClick={() => {
+                  void handleNewChat();
+                }}
                 className="p-1 rounded hover:bg-gray-200/50 text-gray-400 hover:text-gray-600 transition-colors"
                 title="New Chat"
               >

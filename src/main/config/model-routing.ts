@@ -1,4 +1,5 @@
 import type { AppConfig, LlmProvider, RuntimeRole } from "./types";
+import { hasUsableProviderApiKey } from "./provider-credential";
 
 export type ResolvedModelTarget = {
   role: RuntimeRole;
@@ -9,50 +10,119 @@ export type ResolvedModelTarget = {
   maxTokens?: number;
 };
 
+export type ModelRoutingErrorCode =
+  | "ROLE_ASSIGNMENT_MISSING"
+  | "MODEL_PROFILE_NOT_FOUND"
+  | "MODEL_PROFILE_DISABLED"
+  | "MODEL_PROVIDER_DISABLED"
+  | "MODEL_PROVIDER_UNCONFIGURED";
+
+type ModelRoutingErrorInput = {
+  code: ModelRoutingErrorCode;
+  role: RuntimeRole;
+  profileId?: string;
+  provider?: LlmProvider;
+  source: "assignment" | "override";
+};
+
+const buildModelRoutingErrorMessage = (input: ModelRoutingErrorInput): string => {
+  const sourceLabel = input.source === "override" ? "override profile" : "assigned profile";
+  if (input.code === "ROLE_ASSIGNMENT_MISSING") {
+    return `[${input.role}] has no ${sourceLabel}. Please bind a model profile in People / Model Studio.`;
+  }
+  if (input.code === "MODEL_PROFILE_NOT_FOUND") {
+    return `[${input.role}] ${sourceLabel} "${input.profileId ?? ""}" was not found.`;
+  }
+  if (input.code === "MODEL_PROFILE_DISABLED") {
+    return `[${input.role}] ${sourceLabel} "${input.profileId ?? ""}" is disabled.`;
+  }
+  if (input.code === "MODEL_PROVIDER_DISABLED") {
+    return `[${input.role}] provider "${input.provider ?? ""}" for profile "${input.profileId ?? ""}" is disabled.`;
+  }
+
+  return `[${input.role}] provider "${input.provider ?? ""}" for profile "${input.profileId ?? ""}" has missing or invalid API key.`;
+};
+
+export class ModelRoutingError extends Error {
+  readonly code: ModelRoutingErrorCode;
+  readonly role: RuntimeRole;
+  readonly profileId?: string;
+  readonly provider?: LlmProvider;
+  readonly source: "assignment" | "override";
+
+  constructor(input: ModelRoutingErrorInput) {
+    super(buildModelRoutingErrorMessage(input));
+    this.name = "ModelRoutingError";
+    this.code = input.code;
+    this.role = input.role;
+    this.profileId = input.profileId;
+    this.provider = input.provider;
+    this.source = input.source;
+  }
+}
+
 const isProviderRuntimeUsable = (config: AppConfig, provider: LlmProvider): boolean => {
   const providerConfig = config.providers[provider];
-  return providerConfig.enabled && providerConfig.apiKey.trim().length > 0;
+  return providerConfig.enabled && hasUsableProviderApiKey(provider, providerConfig.apiKey);
 };
 
-const resolveUsableProfile = (config: AppConfig, profileId: string | undefined): AppConfig["modelProfiles"][number] | undefined => {
-  if (!profileId) {
-    return undefined;
+const resolveStrictProfile = (
+  config: AppConfig,
+  role: RuntimeRole,
+  source: "assignment" | "override",
+  profileId: string | undefined
+): AppConfig["modelProfiles"][number] => {
+  const normalizedProfileId = profileId?.trim();
+  if (!normalizedProfileId) {
+    throw new ModelRoutingError({
+      code: "ROLE_ASSIGNMENT_MISSING",
+      role,
+      source
+    });
   }
-  const profile = config.modelProfiles.find((item) => item.id === profileId && item.enabled);
+
+  const profile = config.modelProfiles.find((item) => item.id === normalizedProfileId);
   if (!profile) {
-    return undefined;
+    throw new ModelRoutingError({
+      code: "MODEL_PROFILE_NOT_FOUND",
+      role,
+      profileId: normalizedProfileId,
+      source
+    });
   }
+
+  if (!profile.enabled) {
+    throw new ModelRoutingError({
+      code: "MODEL_PROFILE_DISABLED",
+      role,
+      profileId: profile.id,
+      provider: profile.provider,
+      source
+    });
+  }
+
+  const providerConfig = config.providers[profile.provider];
+  if (!providerConfig.enabled) {
+    throw new ModelRoutingError({
+      code: "MODEL_PROVIDER_DISABLED",
+      role,
+      profileId: profile.id,
+      provider: profile.provider,
+      source
+    });
+  }
+
   if (!isProviderRuntimeUsable(config, profile.provider)) {
-    return undefined;
+    throw new ModelRoutingError({
+      code: "MODEL_PROVIDER_UNCONFIGURED",
+      role,
+      profileId: profile.id,
+      provider: profile.provider,
+      source
+    });
   }
+
   return profile;
-};
-
-const resolveFallbackProfile = (config: AppConfig): AppConfig["modelProfiles"][number] => {
-  const enabledUsable = config.modelProfiles.find((profile) => {
-    return profile.enabled && isProviderRuntimeUsable(config, profile.provider);
-  });
-  if (enabledUsable) {
-    return enabledUsable;
-  }
-
-  const usableByProvider = config.modelProfiles.find((profile) => profile.provider === config.llm.defaultProvider && profile.enabled);
-  if (usableByProvider) {
-    return usableByProvider;
-  }
-
-  const first = config.modelProfiles[0];
-  if (first) {
-    return first;
-  }
-
-  return {
-    id: "profile_fallback_openai",
-    name: "Fallback OpenAI",
-    provider: "openai",
-    model: config.providers.openai.model,
-    enabled: true
-  };
 };
 
 export const resolveModelTarget = (
@@ -60,38 +130,16 @@ export const resolveModelTarget = (
   role: RuntimeRole,
   overrideProfileId?: string
 ): ResolvedModelTarget => {
-  const fromOverride = resolveUsableProfile(config, overrideProfileId);
-  if (fromOverride) {
-    return {
-      role,
-      profileId: fromOverride.id,
-      provider: fromOverride.provider,
-      model: fromOverride.model,
-      temperature: fromOverride.temperature,
-      maxTokens: fromOverride.maxTokens
-    };
-  }
+  const profile = overrideProfileId
+    ? resolveStrictProfile(config, role, "override", overrideProfileId)
+    : resolveStrictProfile(config, role, "assignment", config.routing.assignments[role]);
 
-  const assigned = config.routing.assignments[role];
-  const fromAssignment = resolveUsableProfile(config, assigned);
-  if (fromAssignment) {
-    return {
-      role,
-      profileId: fromAssignment.id,
-      provider: fromAssignment.provider,
-      model: fromAssignment.model,
-      temperature: fromAssignment.temperature,
-      maxTokens: fromAssignment.maxTokens
-    };
-  }
-
-  const fallback = resolveFallbackProfile(config);
   return {
     role,
-    profileId: fallback.id,
-    provider: fallback.provider,
-    model: fallback.model,
-    temperature: fallback.temperature,
-    maxTokens: fallback.maxTokens
+    profileId: profile.id,
+    provider: profile.provider,
+    model: profile.model,
+    temperature: profile.temperature,
+    maxTokens: profile.maxTokens
   };
 };

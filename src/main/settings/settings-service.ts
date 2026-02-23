@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { type AppConfig, type RuntimeRole } from "../config";
+import { type AppConfig } from "../config";
 import { normalizeConfig } from "../config/normalize-config";
 import type {
   GlobalSettingsState,
@@ -12,39 +12,51 @@ type SettingsServiceOptions = {
   config: AppConfig;
 };
 
-const RUNTIME_ROLES: RuntimeRole[] = [
-  "chat.default",
-  "lead.planner",
-  "lead.synthesizer",
-  "sub.researcher",
-  "sub.bash_operator",
-  "sub.writer",
-  "memory.fact_extractor"
-];
+const toSettingsProviders = (
+  providers: AppConfig["providers"]
+): GlobalSettingsState["providers"] => {
+  return Object.fromEntries(
+    Object.entries(providers).map(([provider, config]) => [
+      provider,
+      {
+        enabled: config.enabled,
+        apiKey: config.apiKey,
+        baseUrl: config.baseUrl,
+        model: config.model,
+        ...(config.orgId !== undefined ? { orgId: config.orgId } : {})
+      }
+    ])
+  ) as GlobalSettingsState["providers"];
+};
+
+const toConfigProvidersLayer = (
+  providers: GlobalSettingsState["providers"]
+): {
+  [provider: string]: {
+    enabled: boolean;
+    apiKey: string;
+    baseUrl: string;
+    model: string;
+    orgId?: string;
+  };
+} => {
+  return Object.fromEntries(
+    Object.entries(providers).map(([provider, config]) => [
+      provider,
+      {
+        enabled: config.enabled,
+        apiKey: config.apiKey,
+        baseUrl: config.baseUrl,
+        model: config.model,
+        ...(config.orgId !== undefined ? { orgId: config.orgId } : {})
+      }
+    ])
+  );
+};
 
 const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
   return {
-    providers: {
-      openai: {
-        enabled: config.providers.openai.enabled,
-        apiKey: config.providers.openai.apiKey,
-        baseUrl: config.providers.openai.baseUrl,
-        model: config.providers.openai.model,
-        orgId: config.providers.openai.orgId
-      },
-      deepseek: {
-        enabled: config.providers.deepseek.enabled,
-        apiKey: config.providers.deepseek.apiKey,
-        baseUrl: config.providers.deepseek.baseUrl,
-        model: config.providers.deepseek.model
-      },
-      volcengine: {
-        enabled: config.providers.volcengine.enabled,
-        apiKey: config.providers.volcengine.apiKey,
-        baseUrl: config.providers.volcengine.baseUrl,
-        model: config.providers.volcengine.model
-      }
-    },
+    providers: toSettingsProviders(config.providers),
     modelProfiles: config.modelProfiles.map((profile) => ({
       id: profile.id,
       name: profile.name,
@@ -99,7 +111,10 @@ const validateState = (state: GlobalSettingsState): string[] => {
 
   const profileIds = new Set(state.modelProfiles.map((profile) => profile.id));
   for (const role of Object.keys(state.routing)) {
-    const profileId = state.routing[role as keyof GlobalSettingsState["routing"]];
+    const profileId = state.routing[role as keyof GlobalSettingsState["routing"]]?.trim();
+    if (!profileId) {
+      continue;
+    }
     if (!profileIds.has(profileId)) {
       errors.push(`角色 ${role} 绑定的模型档案不存在: ${profileId}`);
     }
@@ -149,27 +164,7 @@ export class SettingsService {
         defaultProvider: chatProfile?.provider,
         defaultModel: chatProfile?.model
       },
-      providers: {
-        openai: {
-          enabled: input.state.providers.openai.enabled,
-          apiKey: input.state.providers.openai.apiKey,
-          baseUrl: input.state.providers.openai.baseUrl,
-          model: input.state.providers.openai.model,
-          orgId: input.state.providers.openai.orgId
-        },
-        deepseek: {
-          enabled: input.state.providers.deepseek.enabled,
-          apiKey: input.state.providers.deepseek.apiKey,
-          baseUrl: input.state.providers.deepseek.baseUrl,
-          model: input.state.providers.deepseek.model
-        },
-        volcengine: {
-          enabled: input.state.providers.volcengine.enabled,
-          apiKey: input.state.providers.volcengine.apiKey,
-          baseUrl: input.state.providers.volcengine.baseUrl,
-          model: input.state.providers.volcengine.model
-        }
-      },
+      providers: toConfigProvidersLayer(input.state.providers),
       features: {
         enableMemory: input.state.memory.enableMemory
       },
@@ -194,6 +189,14 @@ export class SettingsService {
           baseUrl: input.state.tools.webFetch.baseUrl,
           timeoutMs: input.state.tools.webFetch.timeoutMs
         }
+      },
+      catalog: {
+        source: {
+          type: this.options.config.catalog.source.type,
+          location: this.options.config.catalog.source.location,
+          schema: this.options.config.catalog.source.schema,
+          timeoutMs: this.options.config.catalog.source.timeoutMs
+        }
       }
     };
 
@@ -205,28 +208,14 @@ export class SettingsService {
     currentConfig.llm.defaultProvider = chatProfile?.provider ?? currentConfig.llm.defaultProvider;
     currentConfig.llm.defaultModel = chatProfile?.model ?? currentConfig.llm.defaultModel;
 
-    currentConfig.providers.openai = {
-      ...currentConfig.providers.openai,
-      enabled: input.state.providers.openai.enabled,
-      apiKey: input.state.providers.openai.apiKey,
-      baseUrl: input.state.providers.openai.baseUrl,
-      model: input.state.providers.openai.model,
-      orgId: input.state.providers.openai.orgId
-    };
-    currentConfig.providers.deepseek = {
-      ...currentConfig.providers.deepseek,
-      enabled: input.state.providers.deepseek.enabled,
-      apiKey: input.state.providers.deepseek.apiKey,
-      baseUrl: input.state.providers.deepseek.baseUrl,
-      model: input.state.providers.deepseek.model
-    };
-    currentConfig.providers.volcengine = {
-      ...currentConfig.providers.volcengine,
-      enabled: input.state.providers.volcengine.enabled,
-      apiKey: input.state.providers.volcengine.apiKey,
-      baseUrl: input.state.providers.volcengine.baseUrl,
-      model: input.state.providers.volcengine.model
-    };
+    for (const [provider, providerInput] of Object.entries(input.state.providers)) {
+      const providerConfig = currentConfig.providers[provider as keyof AppConfig["providers"]];
+      providerConfig.enabled = providerInput.enabled;
+      providerConfig.apiKey = providerInput.apiKey;
+      providerConfig.baseUrl = providerInput.baseUrl;
+      providerConfig.model = providerInput.model;
+      providerConfig.orgId = providerInput.orgId;
+    }
 
     currentConfig.features.enableMemory = input.state.memory.enableMemory;
     currentConfig.openviking = {
@@ -259,22 +248,11 @@ export class SettingsService {
     };
 
     normalizeConfig(currentConfig);
-    this.ensureRuntimeAssignments();
 
     return {
       ok: true,
       requiresRestart: true,
       message: "配置已保存。部分模块（如沙盒与进程管理）建议重启应用后生效。"
     };
-  }
-
-  ensureRuntimeAssignments(): void {
-    const routing = this.options.config.routing.assignments;
-    const fallback = this.options.config.modelProfiles[0]?.id ?? "profile_openai_default";
-    for (const role of RUNTIME_ROLES) {
-      if (!routing[role]) {
-        routing[role] = fallback;
-      }
-    }
   }
 }

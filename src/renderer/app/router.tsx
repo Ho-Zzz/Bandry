@@ -14,6 +14,7 @@ import { Employees } from '../components/views/employees';
 import { Chat } from '../components/views/chat';
 import { Copilot } from '../components/views/copilot';
 import { Settings } from '../components/views/settings';
+import { ModelStudio } from '../components/views/model-studio';
 import { INITIAL_TASK } from '../data/mock';
 import type { NavigationItem } from '../types/app';
 
@@ -85,6 +86,7 @@ export const AppRouter = () => {
           <Route path="workflows" element={<Workflows />} />
           <Route path="assets" element={<Assets />} />
           <Route path="employees" element={<Employees />} />
+          <Route path="model-studio" element={<ModelStudio />} />
           <Route path="settings" element={<Settings />} />
 
           {/* Copilot Views */}

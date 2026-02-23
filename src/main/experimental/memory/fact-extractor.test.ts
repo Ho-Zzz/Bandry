@@ -28,7 +28,7 @@ const createMockConfig = (): AppConfig => ({
   providers: {
     openai: {
       enabled: true,
-      apiKey: "",
+      apiKey: "sk-openai-valid-key-1234567890",
       baseUrl: "",
       model: "gpt-4"
     },
@@ -39,6 +39,42 @@ const createMockConfig = (): AppConfig => ({
       model: ""
     },
     volcengine: {
+      enabled: false,
+      apiKey: "",
+      baseUrl: "",
+      model: ""
+    },
+    openrouter: {
+      enabled: false,
+      apiKey: "",
+      baseUrl: "",
+      model: ""
+    },
+    groq: {
+      enabled: false,
+      apiKey: "",
+      baseUrl: "",
+      model: ""
+    },
+    moonshot: {
+      enabled: false,
+      apiKey: "",
+      baseUrl: "",
+      model: ""
+    },
+    qwen: {
+      enabled: false,
+      apiKey: "",
+      baseUrl: "",
+      model: ""
+    },
+    siliconflow: {
+      enabled: false,
+      apiKey: "",
+      baseUrl: "",
+      model: ""
+    },
+    together: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
@@ -64,6 +100,14 @@ const createMockConfig = (): AppConfig => ({
     memoryScoreThreshold: 0.35,
     commitDebounceMs: 30_000,
     targetUris: ["viking://user/memories", "viking://agent/memories"]
+  },
+  catalog: {
+    source: {
+      type: "http",
+      location: "https://models.dev/api.json",
+      schema: "models.dev",
+      timeoutMs: 12000
+    }
   },
   modelProfiles: [
     {

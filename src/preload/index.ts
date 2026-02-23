@@ -12,8 +12,6 @@ import type {
   ChatUpdateEvent,
   ConversationInput,
   ConversationResult,
-  EmployeeInput,
-  EmployeeResult,
   HITLApprovalRequest,
   HITLApprovalResponse,
   MessageInput,
@@ -21,8 +19,15 @@ import type {
   MessageUpdateInput,
   PingResult,
   GlobalSettingsState,
-  ProviderInput,
-  ProviderResult,
+  ModelsCatalogListInput,
+  ModelsCatalogListResult,
+  ModelsConnectInput,
+  ModelsConnectResult,
+  ModelsListConnectedResult,
+  ModelsOperationResult,
+  ModelsRemoveInput,
+  ModelsSetDefaultInput,
+  ModelsUpdateCredentialInput,
   RuntimeConfigSummary,
   SaveSettingsInput,
   SaveSettingsResult,
@@ -50,6 +55,18 @@ const api = {
   getSettingsState: (): Promise<GlobalSettingsState> => ipcRenderer.invoke("config:get-settings-state"),
   saveSettingsState: (input: SaveSettingsInput): Promise<SaveSettingsResult> =>
     ipcRenderer.invoke("config:save-settings-state", input),
+  modelsCatalogList: (input?: ModelsCatalogListInput): Promise<ModelsCatalogListResult> =>
+    ipcRenderer.invoke("models:catalog:list", input ?? {}),
+  modelsConnect: (input: ModelsConnectInput): Promise<ModelsConnectResult> =>
+    ipcRenderer.invoke("models:connect", input),
+  modelsListConnected: (): Promise<ModelsListConnectedResult> =>
+    ipcRenderer.invoke("models:list-connected"),
+  modelsSetChatDefault: (input: ModelsSetDefaultInput): Promise<ModelsOperationResult> =>
+    ipcRenderer.invoke("models:set-chat-default", input),
+  modelsRemove: (input: ModelsRemoveInput): Promise<ModelsOperationResult> =>
+    ipcRenderer.invoke("models:remove", input),
+  modelsUpdateProviderCredential: (input: ModelsUpdateCredentialInput): Promise<ModelsOperationResult> =>
+    ipcRenderer.invoke("models:update-provider-credential", input),
   sandboxListDir: (input: SandboxListDirInput): Promise<SandboxListDirResult> =>
     ipcRenderer.invoke("sandbox:list-dir", input),
   sandboxReadFile: (input: SandboxReadFileInput): Promise<SandboxReadFileResult> =>
@@ -103,21 +120,6 @@ const api = {
   },
   submitHITLApproval: (response: HITLApprovalResponse): Promise<void> =>
     ipcRenderer.invoke("hitl:submit-approval", response),
-  providerCreate: (input: ProviderInput): Promise<ProviderResult> =>
-    ipcRenderer.invoke("provider:create", input),
-  providerList: (): Promise<ProviderResult[]> => ipcRenderer.invoke("provider:list"),
-  providerGet: (id: string): Promise<ProviderResult | null> => ipcRenderer.invoke("provider:get", id),
-  providerUpdate: (id: string, input: Partial<ProviderInput>): Promise<ProviderResult | null> =>
-    ipcRenderer.invoke("provider:update", id, input),
-  providerDelete: (id: string): Promise<boolean> => ipcRenderer.invoke("provider:delete", id),
-  employeeCreate: (input: EmployeeInput): Promise<EmployeeResult> =>
-    ipcRenderer.invoke("employee:create", input),
-  employeeList: (providerId?: string): Promise<EmployeeResult[]> =>
-    ipcRenderer.invoke("employee:list", providerId),
-  employeeGet: (id: string): Promise<EmployeeResult | null> => ipcRenderer.invoke("employee:get", id),
-  employeeUpdate: (id: string, input: Partial<EmployeeInput>): Promise<EmployeeResult | null> =>
-    ipcRenderer.invoke("employee:update", id, input),
-  employeeDelete: (id: string): Promise<boolean> => ipcRenderer.invoke("employee:delete", id),
   // Conversation API
   conversationCreate: (input: ConversationInput): Promise<ConversationResult> =>
     ipcRenderer.invoke("conversation:create", input),

@@ -29,7 +29,7 @@ afterEach(async () => {
 });
 
 describe("loadAppConfig", () => {
-  it("applies precedence in order env > user > project > default", async () => {
+  it("keeps user model/provider settings over env while env can override non-model runtime values", async () => {
     const fixture = await createFixture();
     const projectConfigPath = path.join(fixture.workspaceDir, ".bandry", "config.json");
     const userConfigPath = path.join(fixture.userHome, ".bandry", "config", "config.json");
@@ -60,6 +60,7 @@ describe("loadAppConfig", () => {
       JSON.stringify(
         {
           llm: {
+            defaultProvider: "openai",
             defaultModel: "user-model",
             timeoutMs: 45_000
           },
@@ -83,16 +84,22 @@ describe("loadAppConfig", () => {
         LLM_DEFAULT_PROVIDER: "deepseek",
         LLM_DEFAULT_MODEL: "env-model",
         LLM_TIMEOUT_MS: "90000",
+        OPENAI_MODEL: "openai-from-env",
+        WEB_SEARCH_ENABLED: "false",
+        TAVILY_API_KEY: "tvly-from-env",
         DEEPSEEK_MODEL: "deepseek-from-env",
         DEEPSEEK_API_KEY: "fake-key"
       }
     });
 
-    expect(config.llm.defaultProvider).toBe("deepseek");
-    expect(config.llm.defaultModel).toBe("env-model");
+    expect(config.llm.defaultProvider).toBe("openai");
+    expect(config.llm.defaultModel).toBe("user-model");
     expect(config.llm.timeoutMs).toBe(90_000);
     expect(config.providers.openai.model).toBe("user-openai-model");
+    expect(config.providers.openai.model).not.toBe("openai-from-env");
     expect(config.providers.deepseek.model).toBe("deepseek-from-env");
+    expect(config.tools.webSearch.enabled).toBe(false);
+    expect(config.tools.webSearch.apiKey).toBe("tvly-from-env");
     expect(config.paths.projectConfigPath).toBe(projectConfigPath);
     expect(config.paths.userConfigPath).toBe(userConfigPath);
     expect(config.paths.workspaceDir).toBe(path.join(fixture.userHome, ".bandry", "workspaces"));
@@ -380,5 +387,64 @@ describe("loadAppConfig", () => {
       "viking://user/memories",
       "viking://resources/project-x"
     ]);
+  });
+
+  it("supports catalog source overrides from env", async () => {
+    const fixture = await createFixture();
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {
+        BANDRY_MODELS_SOURCE_TYPE: "file",
+        BANDRY_MODELS_SOURCE_LOCATION: "./fixtures/catalog.json",
+        BANDRY_MODELS_SOURCE_TIMEOUT_MS: "9000"
+      }
+    });
+
+    expect(config.catalog.source.type).toBe("file");
+    expect(config.catalog.source.location).toBe("./fixtures/catalog.json");
+    expect(config.catalog.source.timeoutMs).toBe(9000);
+  });
+
+  it("keeps user tools over env tool overrides", async () => {
+    const fixture = await createFixture();
+    const userConfigPath = path.join(fixture.userHome, ".bandry", "config", "config.json");
+
+    await fs.writeFile(
+      userConfigPath,
+      JSON.stringify(
+        {
+          tools: {
+            webSearch: {
+              enabled: true,
+              apiKey: "tvly-from-user",
+              baseUrl: "https://api.tavily.com",
+              timeoutMs: 15000,
+              maxResults: 7
+            }
+          }
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {
+        WEB_SEARCH_ENABLED: "false",
+        TAVILY_API_KEY: "tvly-from-env",
+        WEB_SEARCH_MAX_RESULTS: "3"
+      }
+    });
+
+    expect(config.tools.webSearch.enabled).toBe(true);
+    expect(config.tools.webSearch.apiKey).toBe("tvly-from-user");
+    expect(config.tools.webSearch.maxResults).toBe(7);
   });
 });

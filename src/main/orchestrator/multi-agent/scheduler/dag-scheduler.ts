@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import type { DAGPlan, TaskNode, AgentResult } from "../agents/types";
 import type { WorkerPool } from "../workers/worker-pool";
+import type { AppConfig } from "../../../config";
 
 /**
  * DAG Scheduler
@@ -16,12 +17,16 @@ export class DAGScheduler extends EventEmitter {
   /**
    * Schedule a DAG plan for execution
    */
-  async scheduleDAG(plan: DAGPlan, workspacePath: string): Promise<Map<string, AgentResult>> {
+  async scheduleDAG(
+    plan: DAGPlan,
+    workspacePath: string,
+    appConfig: AppConfig
+  ): Promise<Map<string, AgentResult>> {
     // Build task graph
     this.buildTaskGraph(plan);
 
     // Start execution
-    await this.executeDAG(workspacePath);
+    await this.executeDAG(workspacePath, appConfig);
 
     // Collect results
     const results = new Map<string, AgentResult>();
@@ -60,7 +65,7 @@ export class DAGScheduler extends EventEmitter {
   /**
    * Execute DAG with dependency resolution
    */
-  private async executeDAG(workspacePath: string): Promise<void> {
+  private async executeDAG(workspacePath: string, appConfig: AppConfig): Promise<void> {
     const executing = new Set<string>();
     const completed = new Set<string>();
 
@@ -90,7 +95,7 @@ export class DAGScheduler extends EventEmitter {
       // Start ready tasks
       for (const taskId of readyTasks) {
         executing.add(taskId);
-        this.executeTask(taskId, workspacePath, executing, completed);
+        this.executeTask(taskId, workspacePath, appConfig, executing, completed);
       }
     }
   }
@@ -124,6 +129,7 @@ export class DAGScheduler extends EventEmitter {
   private async executeTask(
     taskId: string,
     workspacePath: string,
+    appConfig: AppConfig,
     executing: Set<string>,
     completed: Set<string>
   ): Promise<void> {
@@ -141,7 +147,8 @@ export class DAGScheduler extends EventEmitter {
         prompt: node.task.prompt,
         workspacePath,
         allowedTools: this.getToolsForRole(node.task.agentRole),
-        writePath: node.task.writePath
+        writePath: node.task.writePath,
+        appConfig
       });
 
       node.status = "completed";

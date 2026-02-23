@@ -2,14 +2,15 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { ToolPlanningChatAgent } from "./chat";
 import { loadAppConfig, toPublicConfigSummary } from "./config";
+import { ModelsCatalogService } from "./ai";
 import { ModelsFactory } from "./models";
 import { OpenVikingMemoryProvider, OpenVikingProcessManager } from "./openviking";
 import { LocalOrchestrator } from "./orchestrator";
 import { SandboxService } from "./sandbox";
-import { SettingsService } from "./settings";
+import { ModelOnboardingService, SettingsService } from "./settings";
 import { MiddlewareChatAgent } from "./chat/middleware-chat-agent";
 import { LeadAgent } from "./orchestrator/multi-agent/agents";
-import { EmployeeStore, ProviderStore, ConversationStore } from "./storage";
+import { ConversationStore } from "./storage";
 import type {
   ChatCancelInput,
   ChatCancelResult,
@@ -23,15 +24,20 @@ import type {
   ChatDeltaEvent,
   ConversationInput,
   ConversationResult,
-  EmployeeInput,
-  EmployeeResult,
   GlobalSettingsState,
   HITLApprovalResponse,
+  ModelsCatalogListInput,
+  ModelsCatalogListResult,
+  ModelsConnectInput,
+  ModelsConnectResult,
+  ModelsListConnectedResult,
+  ModelsOperationResult,
+  ModelsRemoveInput,
+  ModelsSetDefaultInput,
+  ModelsUpdateCredentialInput,
   MessageInput,
   MessageResult,
   MessageUpdateInput,
-  ProviderInput,
-  ProviderResult,
   SandboxExecInput,
   SandboxListDirInput,
   SandboxReadFileInput,
@@ -53,14 +59,13 @@ const toolPlanningChatAgent = new ToolPlanningChatAgent(config, modelsFactory, s
 let middlewareChatAgent: MiddlewareChatAgent;
 const leadAgent = new LeadAgent(config, modelsFactory);
 const orchestrator = new LocalOrchestrator(config, sandboxService, modelsFactory);
-const employeeStore = new EmployeeStore(config.paths.databasePath);
-const providerStore = new ProviderStore(config.paths.databasePath);
 const conversationStore = new ConversationStore(config.paths.databasePath);
 const runningTasks = new Map<string, Promise<void>>();
 let openVikingProcessManager: OpenVikingProcessManager | null = null;
 let openVikingMemoryProvider: OpenVikingMemoryProvider | null = null;
 const settingsService = new SettingsService({ config });
-settingsService.ensureRuntimeAssignments();
+const modelsCatalogService = new ModelsCatalogService(config);
+const modelOnboardingService = new ModelOnboardingService(settingsService, modelsCatalogService);
 const activeChatRequests = new Map<string, AbortController>();
 
 const broadcastTaskUpdate = (update: TaskUpdateEvent): void => {
@@ -340,50 +345,38 @@ const registerIpcHandlers = (): void => {
     return result;
   });
 
-  // Provider IPC handlers
-  ipcMain.handle("provider:create", async (_event, input: ProviderInput): Promise<ProviderResult> => {
-    return providerStore.createProvider(input);
+  ipcMain.handle(
+    "models:catalog:list",
+    async (_event, input: ModelsCatalogListInput = {}): Promise<ModelsCatalogListResult> => {
+      return modelOnboardingService.listCatalog(input);
+    }
+  );
+
+  ipcMain.handle("models:connect", async (_event, input: ModelsConnectInput): Promise<ModelsConnectResult> => {
+    return modelOnboardingService.connect(input);
   });
 
-  ipcMain.handle("provider:list", async (): Promise<ProviderResult[]> => {
-    return providerStore.listProviders();
+  ipcMain.handle("models:list-connected", async (): Promise<ModelsListConnectedResult> => {
+    return modelOnboardingService.listConnected();
   });
 
-  ipcMain.handle("provider:get", async (_event, id: string): Promise<ProviderResult | null> => {
-    return providerStore.getProvider(id);
+  ipcMain.handle("models:set-chat-default", async (_event, input: ModelsSetDefaultInput): Promise<ModelsOperationResult> => {
+    return modelOnboardingService.setChatDefault(input);
   });
 
-  ipcMain.handle("provider:update", async (_event, id: string, input: Partial<ProviderInput>): Promise<ProviderResult | null> => {
-    return providerStore.updateProvider(id, input);
+  ipcMain.handle("models:remove", async (_event, input: ModelsRemoveInput): Promise<ModelsOperationResult> => {
+    return modelOnboardingService.remove(input);
   });
 
-  ipcMain.handle("provider:delete", async (_event, id: string): Promise<boolean> => {
-    return providerStore.deleteProvider(id);
-  });
-
-  // Employee IPC handlers
-  ipcMain.handle("employee:create", async (_event, input: EmployeeInput): Promise<EmployeeResult> => {
-    return employeeStore.createEmployee(input);
-  });
-
-  ipcMain.handle("employee:list", async (_event, providerId?: string): Promise<EmployeeResult[]> => {
-    return employeeStore.listEmployees(providerId);
-  });
-
-  ipcMain.handle("employee:get", async (_event, id: string): Promise<EmployeeResult | null> => {
-    return employeeStore.getEmployee(id);
-  });
-
-  ipcMain.handle("employee:update", async (_event, id: string, input: Partial<EmployeeInput>): Promise<EmployeeResult | null> => {
-    return employeeStore.updateEmployee(id, input);
-  });
-
-  ipcMain.handle("employee:delete", async (_event, id: string): Promise<boolean> => {
-    return employeeStore.deleteEmployee(id);
-  });
+  ipcMain.handle(
+    "models:update-provider-credential",
+    async (_event, input: ModelsUpdateCredentialInput): Promise<ModelsOperationResult> => {
+      return modelOnboardingService.updateProviderCredential(input);
+    }
+  );
 
   // Conversation IPC handlers
-  ipcMain.handle("conversation:create", async (_event, input: ConversationInput): Promise<ConversationResult> => {
+  ipcMain.handle("conversation:create", async (_event, input: ConversationInput = {}): Promise<ConversationResult> => {
     return conversationStore.createConversation(input);
   });
 

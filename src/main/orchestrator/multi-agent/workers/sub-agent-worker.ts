@@ -1,5 +1,4 @@
 import { parentPort, workerData } from "worker_threads";
-import { loadAppConfig } from "../../../config";
 import { ModelsFactory } from "../../../models";
 import { ResearcherAgent, BashOperatorAgent, WriterAgent } from "../agents/sub-agents";
 import type { WorkerConfig, WorkerMessage, AgentResult } from "../agents/types";
@@ -16,8 +15,7 @@ async function runSubAgent(): Promise<void> {
   const config = workerData as WorkerConfig;
 
   try {
-    // Load app config
-    const appConfig = loadAppConfig();
+    const appConfig = config.appConfig;
     const modelsFactory = new ModelsFactory(appConfig);
 
     // Create agent based on role

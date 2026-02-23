@@ -682,12 +682,48 @@ export const Copilot = () => {
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
   const [isPlanModeEnabled, setIsPlanModeEnabled] = useState(false);
   const [selectedFileCount, setSelectedFileCount] = useState(0);
+  const [leadRouteReady, setLeadRouteReady] = useState(true);
+  const [profilesLoading, setProfilesLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const { deleteConversation, fetchConversations } = useConversationStore();
+  const {
+    deleteConversation,
+    fetchConversations
+  } = useConversationStore();
 
   const { runtime, clearMessages, isLoading, conversationId, cancelCurrentRequest } = useCopilotRuntime({
     conversationId: routeConversationId
   });
+
+  useEffect(() => {
+    const loadModelProfiles = async () => {
+      try {
+        setProfilesLoading(true);
+        const summary = await window.api.getConfigSummary();
+        const configuredProviders = new Set(
+          summary.providers
+            .filter((provider) => provider.configured && provider.enabled)
+            .map((provider) => provider.name)
+        );
+
+        const roleReady = (role: "lead.planner" | "lead.synthesizer"): boolean => {
+          const profileId = summary.routing[role];
+          const profile = summary.modelProfiles.find(
+            (item) => item.id === profileId && item.enabled
+          );
+          return Boolean(profile && configuredProviders.has(profile.provider));
+        };
+        const ready = roleReady("lead.planner") && roleReady("lead.synthesizer");
+
+        setLeadRouteReady(ready);
+      } catch {
+        setLeadRouteReady(false);
+      } finally {
+        setProfilesLoading(false);
+      }
+    };
+
+    void loadModelProfiles();
+  }, []);
 
   // Update URL when conversation is created
   useEffect(() => {
@@ -724,6 +760,9 @@ export const Copilot = () => {
         <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6 py-4">
           <div className="flex items-center gap-4">
             <h1 className="text-xl font-bold text-gray-900">Bandry Assistant</h1>
+            <span className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600">
+              Routed by LeadAgent
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <Dropdown>
@@ -744,7 +783,24 @@ export const Copilot = () => {
           </div>
         </div>
 
-        <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
+        {!profilesLoading && !leadRouteReady ? (
+          <div className="flex flex-1 items-center justify-center px-6">
+            <div className="max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center">
+              <h2 className="text-lg font-semibold text-slate-900">LeadAgent route is not ready</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                Configure runnable models for `lead.planner` and `lead.synthesizer` (with valid provider credentials) in Model Studio / People.
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate("/model-studio")}
+                className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+              >
+                Open Model Studio
+              </button>
+            </div>
+          </div>
+        ) : (
+          <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
           <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-6">
             <ThreadPrimitive.Empty>
               <div className="flex h-full flex-col items-center justify-center text-center">
@@ -885,7 +941,8 @@ export const Copilot = () => {
               </div>
             </div>
           </div>
-        </ThreadPrimitive.Root>
+          </ThreadPrimitive.Root>
+        )}
       </div>
     </AssistantRuntimeProvider>
   );

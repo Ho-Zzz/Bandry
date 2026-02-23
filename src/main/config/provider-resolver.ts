@@ -1,6 +1,7 @@
 import type { LlmProvider } from "./types";
+import { isModelProvider, MODEL_PROVIDERS } from "../../shared/model-providers";
 
-const KNOWN_PROVIDERS = new Set(["openai", "deepseek", "volcengine", "bytedance"]);
+const KNOWN_PROVIDERS = new Set([...MODEL_PROVIDERS, "bytedance"]);
 
 export const isKnownProvider = (value: string): boolean => KNOWN_PROVIDERS.has(value.toLowerCase());
 
@@ -14,7 +15,7 @@ export const resolveProviderName = (raw: string | undefined): LlmProvider => {
     return "volcengine";
   }
 
-  if (normalized === "openai" || normalized === "deepseek" || normalized === "volcengine") {
+  if (isModelProvider(normalized)) {
     return normalized;
   }
 

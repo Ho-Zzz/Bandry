@@ -1,4 +1,5 @@
 import type { LlmMessage } from "../../../models/types";
+import type { AppConfig } from "../../../config";
 
 /**
  * Agent role types
@@ -65,6 +66,7 @@ export type WorkerConfig = {
   workspacePath: string;
   allowedTools: string[];
   writePath?: string;
+  appConfig: AppConfig;
 };
 
 /**

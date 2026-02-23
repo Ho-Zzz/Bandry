@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import type { ConfigLayer } from "./types";
+import type { ConfigLayer, LlmProvider } from "./types";
 import { isKnownProvider } from "./provider-resolver";
 import {
   asObject,
@@ -28,6 +28,8 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
   const featuresRaw = asObject(root.features);
   const openvikingRaw = asObject(root.openviking);
   const pathsRaw = asObject(root.paths);
+  const catalogRaw = asObject(root.catalog);
+  const catalogSourceRaw = asObject(catalogRaw.source);
   const routingRaw = asObject(root.routing);
   const toolsRaw = asObject(root.tools);
   type LlmLayer = NonNullable<ConfigLayer["llm"]>;
@@ -89,13 +91,22 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
     sandboxAuditLogPath: toStringValue(pathsRaw.sandboxAuditLogPath)
   };
 
+  const catalogLayer: ConfigLayer["catalog"] = {
+    source: {
+      type: toStringValue(catalogSourceRaw.type) as "http" | "file" | undefined,
+      location: toStringValue(catalogSourceRaw.location),
+      schema: toStringValue(catalogSourceRaw.schema) as "models.dev" | undefined,
+      timeoutMs: toNumberValue(catalogSourceRaw.timeoutMs)
+    }
+  };
+
   const modelProfilesLayer: ConfigLayer["modelProfiles"] = Array.isArray(root.modelProfiles)
     ? root.modelProfiles
         .map((item) => asObject(item))
         .map((item) => ({
           id: toStringValue(item.id) ?? "",
           name: toStringValue(item.name),
-          provider: toStringValue(item.provider) as "openai" | "deepseek" | "volcengine" | undefined,
+          provider: toStringValue(item.provider) as LlmProvider | undefined,
           model: toStringValue(item.model),
           enabled: toBooleanValue(item.enabled),
           temperature: toNumberValue(item.temperature),
@@ -161,6 +172,7 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
     features: featuresLayer,
     openviking: openvikingLayer,
     paths: pathsLayer,
+    catalog: catalogLayer,
     modelProfiles: modelProfilesLayer,
     routing: routingLayer,
     tools: toolsLayer,

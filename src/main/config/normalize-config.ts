@@ -33,6 +33,16 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.paths.databasePath = normalizePath(config.paths.databasePath);
   config.paths.dotenvPath = normalizePath(config.paths.dotenvPath);
 
+  if (config.catalog.source.type !== "http" && config.catalog.source.type !== "file") {
+    config.catalog.source.type = "http";
+  }
+  config.catalog.source.location = config.catalog.source.location.trim();
+  if (!config.catalog.source.location) {
+    config.catalog.source.location = "https://models.dev/api.json";
+  }
+  config.catalog.source.schema = "models.dev";
+  config.catalog.source.timeoutMs = Math.max(1_000, Math.floor(config.catalog.source.timeoutMs));
+
   config.llm.timeoutMs = Math.max(1_000, Math.floor(config.llm.timeoutMs));
   config.llm.maxRetries = Math.max(0, Math.floor(config.llm.maxRetries));
   config.llm.retryBaseMs = Math.max(100, Math.floor(config.llm.retryBaseMs));
@@ -120,26 +130,9 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   }
   config.modelProfiles = Array.from(normalizedProfiles.values());
 
-  if (config.modelProfiles.length === 0) {
-    config.modelProfiles = [
-      {
-        id: "profile_fallback_openai",
-        name: "Fallback OpenAI",
-        provider: "openai",
-        model: config.providers.openai.model,
-        enabled: true,
-        temperature: 0.2
-      }
-    ];
-  }
-
-  const enabledProfileIds = config.modelProfiles.filter((profile) => profile.enabled).map((profile) => profile.id);
-  const fallbackProfileId = enabledProfileIds[0] ?? config.modelProfiles[0].id;
   for (const role of RUNTIME_ROLES) {
-    const current = config.routing.assignments[role];
-    if (!current || !normalizedProfiles.has(current)) {
-      config.routing.assignments[role] = fallbackProfileId;
-    }
+    const current = config.routing.assignments[role]?.trim() ?? "";
+    config.routing.assignments[role] = current && normalizedProfiles.has(current) ? current : "";
   }
 
   config.tools.webSearch.enabled = Boolean(config.tools.webSearch.enabled);
