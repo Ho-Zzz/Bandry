@@ -13,11 +13,27 @@ It is not a single-model chatbot. It is a collaborative band of agents:
 - `Memory` is the score and rehearsal log, preserving long-term knowledge for continuous reuse.
 - `Filesystem` is the stage and studio, making each creation process traceable and reviewable.
 - `Automation` is the metronome and tour schedule, driving tasks forward with state machines and triggers, even across interrupted sessions.
-- `User` is the producer, always in control of direction and final decisions.
+- `User` that's you, is the producer, always in control of direction and final decisions.
 
 Core goal: build an AI system that collaborates with you long-term in your local environment, accumulates context and experience over time, and understands you better the more you use it.
 
 Bandry is currently a personal exploratory project. It is inspired by OpenClaw and CAMEL-AI, and rooted in the `one-person company` mindset: with the right agent architecture, an individual can operate with the leverage and execution bandwidth of a small team. Bandry is building that "band" to continuously amplify both the builder and the user through coordinated agents, persistent memory, and automation.
+
+## AI-Native Development Model
+
+Roughly 99% of this project has been built by the developer with various AI coding agents.
+The target is that after Bandry reaches beta, iteration work will be driven by Bandry itself against this blueprint.
+
+## Acknowledgements
+
+Bandry is deeply inspired by outstanding open-source projects and communities:
+
+- OpenClaw
+- CAMEL-AI
+- OpenCode (`opencode`)
+- DeerFlow
+
+Parts of the implementation and product thinking are informed by these projects. Respect to all contributors.
 
 ## Architecture Blueprint
 
