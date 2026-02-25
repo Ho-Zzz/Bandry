@@ -8,12 +8,22 @@ export type ChatHistoryMessage = {
   content: string;
 };
 
+/**
+ * Chat mode determines the agent's behavior and capabilities.
+ * - default: Fast response with single-step tool calls
+ * - thinking: Extended thinking with deep reasoning (uses thinking model)
+ * - subagents: Multi-agent collaboration with DAG scheduling, todolist, and task tools
+ */
+export type ChatMode = "default" | "thinking" | "subagents";
+
 export type ChatSendInput = {
   requestId?: string;
   conversationId?: string;
   message: string;
   history: ChatHistoryMessage[];
   modelProfileId?: string;
+  /** Chat mode - defaults to 'default' if not specified */
+  mode?: ChatMode;
 };
 
 export type ChatSendResult = {
@@ -32,7 +42,7 @@ export type ChatCancelResult = {
   cancelled: boolean;
 };
 
-export type ChatUpdateStage = "planning" | "tool" | "model" | "final" | "error" | "clarification";
+export type ChatUpdateStage = "planning" | "tool" | "model" | "final" | "error" | "clarification" | "subagent";
 
 export type ChatClarificationOption = {
   label: string;
@@ -45,8 +55,19 @@ export type ChatClarificationPayload = {
   options: ChatClarificationOption[];
 };
 
+/**
+ * Sub-agent execution progress info for subagents mode
+ */
+export type SubagentProgressPayload = {
+  taskId: string;
+  agentType: "general-purpose" | "researcher" | "bash" | "writer";
+  status: "running" | "completed" | "failed";
+  progress?: string;
+};
+
 export type ChatUpdatePayload = {
   clarification?: ChatClarificationPayload;
+  subagent?: SubagentProgressPayload;
 };
 
 export type ChatUpdateEvent = {
@@ -271,6 +292,13 @@ export type GlobalSettingsState = {
       apiKey: string;
       baseUrl: string;
       timeoutMs: number;
+    };
+    githubSearch: {
+      enabled: boolean;
+      apiKey: string;
+      baseUrl: string;
+      timeoutMs: number;
+      maxResults: number;
     };
   };
 };

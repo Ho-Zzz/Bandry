@@ -50,14 +50,25 @@ export type InternalWebFetchConfig = {
   timeoutMs: number;
 };
 
+export type InternalGitHubSearchConfig = {
+  enabled: boolean;
+  /** GitHub personal access token (optional, increases rate limit) */
+  apiKey: string;
+  baseUrl: string;
+  timeoutMs: number;
+  maxResults: number;
+};
+
 export type InternalToolsConfig = {
   webSearch: InternalWebSearchConfig;
   webFetch: InternalWebFetchConfig;
+  githubSearch: InternalGitHubSearchConfig;
 };
 
 export type InternalToolsLayerConfig = Partial<{
   webSearch: Partial<InternalWebSearchConfig>;
   webFetch: Partial<InternalWebFetchConfig>;
+  githubSearch: Partial<InternalGitHubSearchConfig>;
 }>;
 
 export type CatalogSourceType = "http" | "file";
@@ -210,6 +221,13 @@ export type AppConfig = {
     execTimeoutMs: number;
     maxOutputBytes: number;
     auditLogEnabled: boolean;
+  };
+  /** Sub-agent configuration for subagents mode */
+  subagent: {
+    /** Maximum concurrent sub-agents (2-5, default 3) */
+    maxConcurrent: number;
+    /** Sub-agent execution timeout in ms (default 900000 = 15min) */
+    timeoutMs: number;
   };
   providers: Record<LlmProvider, ProviderConfig>;
   features: {

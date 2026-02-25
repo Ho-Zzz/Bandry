@@ -140,13 +140,18 @@ export const parsePlannerAction = (rawText: string): PlannerAction | null => {
         root.tool === "exec" ||
         root.tool === "web_search" ||
         root.tool === "web_fetch" ||
+        root.tool === "github_search" ||
         root.tool === "delegate_sub_tasks" ||
-        root.tool === "ask_clarification")
+        root.tool === "ask_clarification" ||
+        root.tool === "write_todos" ||
+        root.tool === "task")
     ) {
+      // Support both "input" and "action_input" field names
+      const inputRaw = root.input ?? root.action_input;
       return {
         action: "tool",
         tool: root.tool,
-        input: parsePlannerInput(root.input),
+        input: parsePlannerInput(inputRaw),
         reason: typeof root.reason === "string" ? root.reason : undefined
       };
     }

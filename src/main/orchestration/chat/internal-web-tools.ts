@@ -14,6 +14,87 @@ const withTimeout = async <T>(
   }
 };
 
+/**
+ * Search GitHub repositories using the GitHub Search API.
+ * This is more reliable than web_fetch for GitHub searches because
+ * GitHub search pages require JavaScript rendering.
+ */
+export const runGitHubSearch = async (
+  config: AppConfig,
+  query: string,
+  type: "repositories" | "code" | "issues" = "repositories"
+): Promise<string> => {
+  if (!config.tools.githubSearch.enabled) {
+    throw new Error("github_search is disabled in settings");
+  }
+
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) {
+    throw new Error("github_search requires non-empty query");
+  }
+
+  const baseUrl = config.tools.githubSearch.baseUrl.replace(/\/+$/, "");
+  const endpoint = `${baseUrl}/search/${type}?q=${encodeURIComponent(trimmedQuery)}&per_page=${config.tools.githubSearch.maxResults}`;
+  const apiKey = config.tools.githubSearch.apiKey.trim();
+
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "Bandry-Agent/1.0"
+  };
+
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  const response = await withTimeout(config.tools.githubSearch.timeoutMs, async (signal) => {
+    return await fetch(endpoint, {
+      method: "GET",
+      signal,
+      headers
+    });
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`github_search request failed (${response.status}): ${text || response.statusText}`);
+  }
+
+  if (type === "repositories") {
+    const payload = (await response.json()) as {
+      total_count?: number;
+      items?: Array<{
+        full_name?: string;
+        html_url?: string;
+        description?: string;
+        stargazers_count?: number;
+        language?: string;
+        updated_at?: string;
+      }>;
+    };
+
+    const items = payload.items ?? [];
+    if (items.length === 0) {
+      return `No repositories found for query: "${trimmedQuery}"`;
+    }
+
+    const results = items.map((item, index) => {
+      const name = item.full_name ?? "Unknown";
+      const url = item.html_url ?? "";
+      const desc = item.description?.slice(0, 200) ?? "No description";
+      const stars = item.stargazers_count ?? 0;
+      const lang = item.language ?? "Unknown";
+      return `${index + 1}. ${name} (${stars} stars, ${lang})\n   ${url}\n   ${desc}`;
+    });
+
+    return `Found ${payload.total_count ?? items.length} repositories:\n\n${results.join("\n\n")}`;
+  }
+
+  // For code/issues, return raw JSON for now
+  const payload = await response.json();
+  return JSON.stringify(payload, null, 2).slice(0, 4000);
+};
+
 export const runWebSearch = async (config: AppConfig, query: string): Promise<string> => {
   if (!config.tools.webSearch.enabled) {
     throw new Error("web_search is disabled in settings");

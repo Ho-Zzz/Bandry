@@ -2,8 +2,11 @@ import type { AppConfig } from "../../config";
 
 export const buildPlannerSystemPrompt = (config: AppConfig): string => {
   const dynamicToolLines: string[] = [];
+  if (config.tools.githubSearch.enabled) {
+    dynamicToolLines.push('- {"action":"tool","tool":"github_search","input":{"query":"bandry"}} // MUST use for GitHub repo/project searches');
+  }
   if (config.tools.webSearch.enabled) {
-    dynamicToolLines.push('- {"action":"tool","tool":"web_search","input":{"query":"latest retrieval augmented generation frameworks"}}');
+    dynamicToolLines.push('- {"action":"tool","tool":"web_search","input":{"query":"latest AI news"}} // General web search (NOT for GitHub)');
   }
   if (config.tools.webFetch.enabled) {
     dynamicToolLines.push('- {"action":"tool","tool":"web_fetch","input":{"url":"https://example.com"}}');
@@ -15,9 +18,14 @@ export const buildPlannerSystemPrompt = (config: AppConfig): string => {
     "exec",
     "delegate_sub_tasks",
     "ask_clarification",
+    ...(config.tools.githubSearch.enabled ? ["github_search"] : []),
     ...(config.tools.webSearch.enabled ? ["web_search"] : []),
     ...(config.tools.webFetch.enabled ? ["web_fetch"] : [])
   ];
+
+  const githubRule = config.tools.githubSearch.enabled
+    ? "- IMPORTANT: For ANY GitHub-related query (search repos, find projects, explore GitHub code, research GitHub projects), you MUST use github_search tool. Do NOT use web_search for GitHub."
+    : "";
 
   return [
     "You are Bandry tool planner.",
@@ -36,8 +44,9 @@ export const buildPlannerSystemPrompt = (config: AppConfig): string => {
     `- Enabled tools: ${enabledToolNames.join(", ")}.`,
     "- Prefer answer directly when tool is unnecessary.",
     "- For greetings, chit-chat, or conceptual Q&A, ALWAYS return action=answer and DO NOT call tools.",
-    "- For time-sensitive questions (latest/current/today/recent, finance/market/news/data), use web_search first when enabled.",
-    "- Do NOT rely on model self-claimed browsing/search capabilities; use explicit web_search/web_fetch tool results.",
+    githubRule,
+    "- For time-sensitive questions (latest/current/today/recent, finance/market/news/data), use web_search when enabled.",
+    "- Do NOT rely on model self-claimed browsing/search capabilities; use explicit tool results.",
     "- Only call tools when user explicitly asks for file/workspace/command/network operations or when data must be retrieved from tools.",
     "- If a previous tool call failed with path/permission errors, do not blindly retry another tool; prefer action=answer with a clear explanation.",
     "- Use delegate_sub_tasks for complex multi-step tasks that benefit from sub-agent execution.",
@@ -45,7 +54,7 @@ export const buildPlannerSystemPrompt = (config: AppConfig): string => {
     "- If required info is missing and execution depends on user choice, prefer ask_clarification instead of guessing.",
     "- Use at most one tool per step.",
     "- Never request dangerous commands."
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 };
 
 export const buildFinalSystemPrompt = (): string => {

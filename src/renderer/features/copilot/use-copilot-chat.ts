@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type {
   ChatClarificationOption,
   ChatHistoryMessage,
+  ChatMode,
   ChatUpdateEvent,
   MessageResult
 } from "../../../shared/ipc";
@@ -35,6 +36,7 @@ export type PendingClarification = {
 
 type UseCopilotChatOptions = {
   conversationId?: string;
+  mode?: ChatMode;
 };
 
 const makeRequestId = (): string => {
@@ -253,10 +255,11 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
   }, []);
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, messageMode?: ChatMode) => {
       const requestId = makeRequestId();
       const userMessageId = `user-${Date.now()}`;
       const assistantMessageId = `assistant-${Date.now()}`;
+      const effectiveMode = messageMode ?? options.mode ?? "default";
 
       // Create conversation if needed
       let currentConvId: string;
@@ -365,7 +368,8 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           requestId,
           conversationId: currentConvId,
           message: content,
-          history
+          history,
+          mode: effectiveMode
         });
 
         const finalTrace = traceByRequestIdRef.current[requestId] || [];
@@ -443,7 +447,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         clearConversationRequestIfMatch(currentConvId, requestId);
       }
     },
-    [clearConversationRequestIfMatch, conversationId, setConversationActiveRequest, upsertConversation]
+    [clearConversationRequestIfMatch, conversationId, options.mode, setConversationActiveRequest, upsertConversation]
   );
 
   const cancelCurrentRequest = useCallback(async (): Promise<boolean> => {

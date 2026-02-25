@@ -41,11 +41,14 @@ import {
   Square,
   Trash2,
   User,
-  Wrench
+  Users,
+  Wrench,
+  Zap
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useConversationStore } from "../../store/use-conversation-store";
 import { useCopilotRuntime } from "../../features/copilot/use-copilot-runtime";
+import type { ChatMode } from "../../../shared/ipc";
 
 type TraceToolArgs = {
   stage?: string;
@@ -134,6 +137,15 @@ const stageMeta = (stage?: string): { label: string; icon: typeof Brain; dotClas
     };
   }
 
+  if (stage === "subagent") {
+    return {
+      label: "Sub-Agent",
+      icon: Users,
+      dotClass: "bg-purple-400",
+      toneClass: "text-purple-700"
+    };
+  }
+
   if (stage === "error") {
     return {
       label: "Error",
@@ -184,8 +196,8 @@ const resolveProcessKind = (stage: string, message: string): ProcessKind => {
     return "Plan";
   }
 
-  if (stage === "tool") {
-    if (/[->]\s*(success|failed)\s*:/i.test(message)) {
+  if (stage === "tool" || stage === "subagent") {
+    if (/[->]\s*(success|failed|completed)\s*:/i.test(message)) {
       return "Result";
     }
 
@@ -713,6 +725,7 @@ export const Copilot = () => {
   const [clarificationInput, setClarificationInput] = useState("");
   const [leadRouteReady, setLeadRouteReady] = useState(true);
   const [profilesLoading, setProfilesLoading] = useState(true);
+  const [chatMode, setChatMode] = useState<ChatMode>("default");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const {
     deleteConversation,
@@ -729,7 +742,8 @@ export const Copilot = () => {
     submitClarificationCustom,
     submitClarificationOption
   } = useCopilotRuntime({
-    conversationId: routeConversationId
+    conversationId: routeConversationId,
+    mode: chatMode
   });
 
   useEffect(() => {
@@ -959,6 +973,58 @@ export const Copilot = () => {
                     isComposerExpanded ? "py-2" : "py-1.5"
                   )}
                 >
+                  <Dropdown>
+                    <DropdownTrigger>
+                      <Button
+                        variant="light"
+                        size="sm"
+                        className="mb-0.5 mr-1 h-8 min-w-0 gap-1 px-2 text-zinc-600"
+                        title="Select mode"
+                      >
+                        {chatMode === "default" ? (
+                          <Zap size={14} />
+                        ) : chatMode === "thinking" ? (
+                          <Brain size={14} />
+                        ) : (
+                          <Users size={14} />
+                        )}
+                        <ChevronDown size={12} />
+                      </Button>
+                    </DropdownTrigger>
+                    <DropdownMenu
+                      aria-label="Chat mode selection"
+                      selectionMode="single"
+                      selectedKeys={new Set([chatMode])}
+                      onSelectionChange={(keys) => {
+                        const selected = Array.from(keys)[0] as ChatMode;
+                        if (selected) {
+                          setChatMode(selected);
+                        }
+                      }}
+                    >
+                      <DropdownItem
+                        key="default"
+                        startContent={<Zap size={14} />}
+                        description="Fast response, single-step tools"
+                      >
+                        Default
+                      </DropdownItem>
+                      <DropdownItem
+                        key="thinking"
+                        startContent={<Brain size={14} />}
+                        description="Deep reasoning, extended thinking"
+                      >
+                        Thinking
+                      </DropdownItem>
+                      <DropdownItem
+                        key="subagents"
+                        startContent={<Users size={14} />}
+                        description="Multi-agent collaboration"
+                      >
+                        Sub-Agents
+                      </DropdownItem>
+                    </DropdownMenu>
+                  </Dropdown>
                   <ComposerPrimitive.Input
                     placeholder="沟通时请保持“公开可接受”"
                     minRows={isComposerExpanded ? 4 : 1}

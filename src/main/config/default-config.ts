@@ -76,6 +76,10 @@ export const createDefaultConfig = (
       maxOutputBytes: 64 * 1024,
       auditLogEnabled: true,
     },
+    subagent: {
+      maxConcurrent: 3,
+      timeoutMs: 900_000 // 15 minutes
+    },
     providers: defaultProviders,
     features: {
       enableMemory: false,
@@ -130,6 +134,13 @@ export const createDefaultConfig = (
         apiKey: "",
         baseUrl: "https://r.jina.ai/http://",
         timeoutMs: 15_000
+      },
+      githubSearch: {
+        enabled: true,
+        apiKey: "",
+        baseUrl: "https://api.github.com",
+        timeoutMs: 15_000,
+        maxResults: 10
       }
     },
     paths: input.paths,

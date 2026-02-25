@@ -5,11 +5,12 @@ import {
   type MessageStatus as AssistantMessageStatus,
   type ThreadMessageLike
 } from "@assistant-ui/react";
-import type { ChatUpdateEvent } from "../../../shared/ipc";
+import type { ChatMode, ChatUpdateEvent } from "../../../shared/ipc";
 import { useCopilotChat, type Message } from "./use-copilot-chat";
 
 type UseCopilotRuntimeOptions = {
   conversationId?: string;
+  mode?: ChatMode;
 };
 
 type TraceToolArgs = {
@@ -144,7 +145,10 @@ const getTextFromAppendMessage = (message: AppendMessage): string => {
 };
 
 export const useCopilotRuntime = (options: UseCopilotRuntimeOptions = {}) => {
-  const chat = useCopilotChat(options);
+  const chat = useCopilotChat({
+    conversationId: options.conversationId,
+    mode: options.mode
+  });
 
   const onNew = useCallback(
     async (message: AppendMessage): Promise<void> => {

@@ -5,6 +5,7 @@ import { resolveRuntimeTarget, type RuntimeModelTarget } from "../../llm/runtime
 import type { SandboxService } from "../../sandbox";
 import type {
   ChatClarificationOption,
+  ChatMode,
   ChatSendInput,
   ChatSendResult,
   ChatUpdatePayload,
@@ -186,9 +187,14 @@ export class ToolPlanningChatAgent {
       throw new Error("message is required");
     }
 
+    const mode: ChatMode = input.mode ?? "default";
+
     const emitUpdate = (stage: ChatUpdateStage, updateMessage: string, payload?: ChatUpdatePayload): void => {
       onUpdate?.(stage, updateMessage, payload);
     };
+
+    // Log mode for debugging
+    emitUpdate("planning", `Mode: ${mode}`);
 
     let plannerTarget: RuntimeModelTarget;
     let synthTarget: RuntimeModelTarget;
@@ -217,7 +223,8 @@ export class ToolPlanningChatAgent {
       config: this.config,
       modelsFactory: this.modelsFactory,
       sandboxService: this.sandboxService,
-      conversationStore: this.conversationStore
+      conversationStore: this.conversationStore,
+      mode
     });
     let middlewareCtx = await pipeline.runBeforeAgent({
       sessionId: input.requestId?.trim() || randomUUID(),
@@ -228,6 +235,7 @@ export class ToolPlanningChatAgent {
       tools: [],
       metadata: {},
       state: "before_agent",
+      chatMode: mode,
       runtime: {
         config: this.config,
         modelsFactory: this.modelsFactory,

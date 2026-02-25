@@ -97,6 +97,13 @@ const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
         apiKey: config.tools.webFetch.apiKey,
         baseUrl: config.tools.webFetch.baseUrl,
         timeoutMs: config.tools.webFetch.timeoutMs
+      },
+      githubSearch: {
+        enabled: config.tools.githubSearch.enabled,
+        apiKey: config.tools.githubSearch.apiKey,
+        baseUrl: config.tools.githubSearch.baseUrl,
+        timeoutMs: config.tools.githubSearch.timeoutMs,
+        maxResults: config.tools.githubSearch.maxResults
       }
     }
   };
@@ -188,6 +195,13 @@ export class SettingsService {
           apiKey: input.state.tools.webFetch.apiKey,
           baseUrl: input.state.tools.webFetch.baseUrl,
           timeoutMs: input.state.tools.webFetch.timeoutMs
+        },
+        githubSearch: {
+          enabled: input.state.tools.githubSearch.enabled,
+          apiKey: input.state.tools.githubSearch.apiKey,
+          baseUrl: input.state.tools.githubSearch.baseUrl,
+          timeoutMs: input.state.tools.githubSearch.timeoutMs,
+          maxResults: input.state.tools.githubSearch.maxResults
         }
       },
       catalog: {
@@ -245,6 +259,14 @@ export class SettingsService {
       apiKey: input.state.tools.webFetch.apiKey,
       baseUrl: input.state.tools.webFetch.baseUrl,
       timeoutMs: input.state.tools.webFetch.timeoutMs
+    };
+    currentConfig.tools.githubSearch = {
+      ...currentConfig.tools.githubSearch,
+      enabled: input.state.tools.githubSearch.enabled,
+      apiKey: input.state.tools.githubSearch.apiKey,
+      baseUrl: input.state.tools.githubSearch.baseUrl,
+      timeoutMs: input.state.tools.githubSearch.timeoutMs,
+      maxResults: input.state.tools.githubSearch.maxResults
     };
 
     normalizeConfig(currentConfig);

@@ -6,14 +6,43 @@ export type PlannerDelegatedTask = {
   writePath?: string;
 };
 
-export type PlannerToolName =
+/**
+ * Sub-agent type for task tool (subagents mode)
+ */
+export type SubagentType = "general-purpose" | "researcher" | "bash" | "writer";
+
+/**
+ * Todo item for write_todos tool (subagents mode)
+ */
+export type TodoInput = {
+  id: string;
+  subject: string;
+  description: string;
+  status: "pending" | "in_progress" | "completed";
+};
+
+/**
+ * Base tool names available in all modes
+ */
+export type BasePlannerToolName =
   | "list_dir"
   | "read_file"
   | "exec"
   | "web_search"
   | "web_fetch"
+  | "github_search"
   | "delegate_sub_tasks"
   | "ask_clarification";
+
+/**
+ * Additional tool names for subagents mode
+ */
+export type SubagentsPlannerToolName = "write_todos" | "task";
+
+/**
+ * All possible tool names
+ */
+export type PlannerToolName = BasePlannerToolName | SubagentsPlannerToolName;
 
 export type PlannerActionAnswer = {
   action: "answer";
@@ -24,6 +53,7 @@ export type PlannerActionTool = {
   action: "tool";
   tool: PlannerToolName;
   input?: {
+    // Base tool inputs
     path?: string;
     command?: string;
     args?: string[];
@@ -33,6 +63,13 @@ export type PlannerActionTool = {
     url?: string;
     question?: string;
     tasks?: PlannerDelegatedTask[];
+    // write_todos tool inputs (subagents mode)
+    todos?: TodoInput[];
+    // task tool inputs (subagents mode)
+    description?: string;
+    prompt?: string;
+    subagentType?: SubagentType;
+    maxTurns?: number;
   };
   reason?: string;
 };

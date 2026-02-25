@@ -25,6 +25,10 @@ const createMockConfig = (): AppConfig => ({
     maxOutputBytes: 64 * 1024,
     auditLogEnabled: false
   },
+  subagent: {
+    maxConcurrent: 3,
+    timeoutMs: 900_000
+  },
   providers: {
     openai: {
       enabled: true,
@@ -143,6 +147,13 @@ const createMockConfig = (): AppConfig => ({
       apiKey: "",
       baseUrl: "https://r.jina.ai/http://",
       timeoutMs: 15000
+    },
+    githubSearch: {
+      enabled: true,
+      apiKey: "",
+      baseUrl: "https://api.github.com",
+      timeoutMs: 15000,
+      maxResults: 10
     }
   },
   paths: {

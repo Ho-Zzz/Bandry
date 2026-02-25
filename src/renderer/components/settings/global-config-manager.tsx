@@ -342,6 +342,99 @@ export const GlobalConfigManager = () => {
               />
             </div>
           </div>
+
+          <div className="rounded-lg border p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="font-medium">github_search (GitHub API)</span>
+                <p className="text-xs text-gray-500 mt-1">搜索 GitHub 仓库、代码等。API Key 可选，但可提高速率限制。</p>
+              </div>
+              <Switch
+                isSelected={state.tools.githubSearch.enabled}
+                onValueChange={(value) =>
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            githubSearch: {
+                              ...current.tools.githubSearch,
+                              enabled: value
+                            }
+                          }
+                        }
+                      : current
+                  ))
+                }
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Input
+                label="API Key (Optional)"
+                type={isApiKeyVisible("tools.githubSearch.apiKey") ? "text" : "password"}
+                value={state.tools.githubSearch.apiKey}
+                placeholder="ghp_xxxx"
+                endContent={renderApiKeyToggle("tools.githubSearch.apiKey")}
+                onValueChange={(value) =>
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            githubSearch: {
+                              ...current.tools.githubSearch,
+                              apiKey: value
+                            }
+                          }
+                        }
+                      : current
+                  ))
+                }
+              />
+              <Input
+                label="Base URL"
+                value={state.tools.githubSearch.baseUrl}
+                onValueChange={(value) =>
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            githubSearch: {
+                              ...current.tools.githubSearch,
+                              baseUrl: value
+                            }
+                          }
+                        }
+                      : current
+                  ))
+                }
+              />
+              <Input
+                label="Max Results"
+                value={String(state.tools.githubSearch.maxResults)}
+                onValueChange={(value) =>
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            githubSearch: {
+                              ...current.tools.githubSearch,
+                              maxResults: Number(value) || 1
+                            }
+                          }
+                        }
+                      : current
+                  ))
+                }
+              />
+            </div>
+          </div>
         </CardBody>
       </Card>
 
