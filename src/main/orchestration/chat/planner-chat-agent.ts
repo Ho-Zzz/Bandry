@@ -267,7 +267,10 @@ export class ToolPlanningChatAgent {
         const plannerMessages = [
           {
             role: "system" as const,
-            content: buildPlannerSystemPrompt(this.config)
+            content: buildPlannerSystemPrompt(this.config, {
+              mode,
+              userMessage: message
+            })
           },
           ...history,
           {
