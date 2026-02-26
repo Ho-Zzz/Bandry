@@ -36,9 +36,9 @@ export class SandboxPathGuard {
     this.allowedRoots = config.sandbox.allowedWorkspaces.map((item) => canonicalizePath(item));
   }
 
-  async resolve(inputPath: string, mode: ResolveMode): Promise<SandboxResolvedPath> {
+  async resolve(inputPath: string, mode: ResolveMode, workspaceOverride?: string): Promise<SandboxResolvedPath> {
     const virtualPath = this.normalizeVirtualPath(inputPath);
-    const candidateRealPath = this.virtualToRealPath(virtualPath);
+    const candidateRealPath = this.virtualToRealPath(virtualPath, workspaceOverride);
 
     if (mode === "write") {
       await this.assertWritePathAllowed(candidateRealPath);
@@ -76,7 +76,7 @@ export class SandboxPathGuard {
     return normalizedVirtual;
   }
 
-  private virtualToRealPath(virtualPath: string): string {
+  private virtualToRealPath(virtualPath: string, workspaceOverride?: string): string {
     const relative = path.posix.relative(this.virtualRoot, virtualPath);
     if (relative.startsWith("..") || path.isAbsolute(relative)) {
       throw new SandboxViolationError("PATH_OUTSIDE_VIRTUAL_ROOT", "Path escapes virtual root", {
@@ -84,7 +84,10 @@ export class SandboxPathGuard {
       });
     }
 
-    return path.resolve(this.workspaceRoot, relative);
+    const effectiveRoot = workspaceOverride
+      ? canonicalizePath(workspaceOverride)
+      : this.workspaceRoot;
+    return path.resolve(effectiveRoot, relative);
   }
 
   private async resolveExistingRealPath(candidate: string): Promise<string> {

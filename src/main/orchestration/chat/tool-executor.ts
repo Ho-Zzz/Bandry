@@ -201,9 +201,15 @@ export const executePlannerTool = async ({
       const failedText = failed
         .map(([taskId, result]) => `${taskId}: ${result.error ?? "unknown error"}`)
         .join("; ");
+      const virtualRoot = config.sandbox.virtualRoot.replace(/\/+$/, "");
       const artifacts = entries
         .flatMap(([, result]) => result.artifacts ?? [])
-        .filter((value, index, list) => list.indexOf(value) === index);
+        .filter((value, index, list) => list.indexOf(value) === index)
+        .map((artifact) => {
+          if (artifact.startsWith(`${virtualRoot}/`)) return artifact;
+          const relative = artifact.startsWith("/") ? artifact.slice(1) : artifact;
+          return `${virtualRoot}/${relative}`;
+        });
 
       const renderResult = (taskId: string, result: AgentResult): string => {
         const suffix = result.error ? ` | error=${result.error}` : "";

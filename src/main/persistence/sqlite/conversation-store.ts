@@ -73,6 +73,11 @@ export class ConversationStore {
       values.push(input.model_profile_id || null);
     }
 
+    if (input.workspace_path !== undefined) {
+      updates.push("workspace_path = ?");
+      values.push(input.workspace_path || null);
+    }
+
     if (updates.length === 0) {
       return existing;
     }
@@ -99,6 +104,7 @@ export class ConversationStore {
       id: row.id as string,
       title: (row.title as string) || undefined,
       model_profile_id: (row.model_profile_id as string) || undefined,
+      workspace_path: (row.workspace_path as string) || undefined,
       created_at: row.created_at as number,
       updated_at: row.updated_at as number
     };

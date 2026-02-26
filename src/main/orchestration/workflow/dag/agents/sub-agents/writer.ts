@@ -47,11 +47,22 @@ export class WriterAgent extends BaseAgent {
 
       // If writePath is specified, write the output
       if (input.writePath) {
-        const fullPath = path.join(input.workspacePath, input.writePath);
+        // Planner may pass a full virtual path (e.g. "/mnt/workspace/output/report.md")
+        // instead of a relative path. Strip the virtual root prefix so path.join
+        // produces the correct real path under workspacePath.
+        const virtualRoot = this.appConfig.sandbox.virtualRoot.replace(/\/+$/, "");
+        let relativePath = input.writePath;
+        if (relativePath.startsWith(`${virtualRoot}/`)) {
+          relativePath = relativePath.slice(virtualRoot.length + 1);
+        } else if (relativePath.startsWith("/")) {
+          relativePath = relativePath.slice(1);
+        }
+
+        const fullPath = path.join(input.workspacePath, relativePath);
         await fs.mkdir(path.dirname(fullPath), { recursive: true });
         await fs.writeFile(fullPath, result.text, "utf8");
 
-        return this.successResult(result.text, [input.writePath]);
+        return this.successResult(result.text, [relativePath]);
       }
 
       return this.successResult(result.text);

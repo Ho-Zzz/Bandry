@@ -31,6 +31,7 @@ export type ChatSendResult = {
   provider: ModelProvider;
   model: string;
   latencyMs: number;
+  workspacePath?: string;
 };
 
 export type ChatCancelInput = {
@@ -68,6 +69,7 @@ export type SubagentProgressPayload = {
 export type ChatUpdatePayload = {
   clarification?: ChatClarificationPayload;
   subagent?: SubagentProgressPayload;
+  workspacePath?: string;
 };
 
 export type ChatUpdateEvent = {
@@ -331,6 +333,7 @@ export type SandboxListDirResult = {
 export type SandboxReadFileInput = {
   path: string;
   encoding?: "utf8";
+  workspacePath?: string;
 };
 
 export type SandboxReadFileResult = {
@@ -372,12 +375,14 @@ export type SandboxExecResult = {
 export type ConversationInput = {
   title?: string;
   model_profile_id?: string;
+  workspace_path?: string;
 };
 
 export type ConversationResult = {
   id: string;
   title?: string;
   model_profile_id?: string;
+  workspace_path?: string;
   created_at: number;
   updated_at: number;
 };

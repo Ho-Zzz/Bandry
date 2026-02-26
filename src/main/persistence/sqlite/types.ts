@@ -15,6 +15,7 @@ export type ConversationRecord = {
   id: string;
   title?: string;
   model_profile_id?: string;
+  workspace_path?: string;
   created_at: number;
   updated_at: number;
 };
@@ -43,7 +44,9 @@ export type CreateConversationInput = {
 /**
  * Input for updating a conversation
  */
-export type UpdateConversationInput = Partial<CreateConversationInput>;
+export type UpdateConversationInput = Partial<CreateConversationInput> & {
+  workspace_path?: string;
+};
 
 /**
  * Input for creating a message
