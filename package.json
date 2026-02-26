@@ -14,13 +14,64 @@
     "build": "pnpm build:renderer && pnpm build:main",
     "build:renderer": "vite build",
     "build:main": "tsup",
+    "package": "pnpm build && electron-builder",
+    "package:dir": "pnpm build && electron-builder --dir",
     "preview": "vite preview",
     "test": "vitest run",
     "test:core": "vitest run",
     "test:experimental": "vitest run --config vitest.experimental.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
-    "clean": "rimraf dist dist-electron"
+    "clean": "rimraf dist dist-electron release"
+  },
+  "build": {
+    "appId": "com.bandry.app",
+    "productName": "Bandry",
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.30",
@@ -42,6 +93,7 @@
     "postcss": "^8.5.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^7.13.0",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.0",
@@ -60,6 +112,7 @@
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "electron": "^35.0.0",
+    "electron-builder": "^26.8.1",
     "eslint": "^9.20.1",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.18",

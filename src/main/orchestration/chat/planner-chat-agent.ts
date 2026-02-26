@@ -22,12 +22,13 @@ import { buildFinalSystemPrompt, buildPlannerSystemPrompt } from "./prompts";
 import { executePlannerTool } from "./tool-executor";
 import { normalizeSpaces, truncate } from "./text-utils";
 
-const buildStreamResult = (streamed: GenerateTextResult, latencyMs: number): ChatSendResult => {
+const buildStreamResult = (streamed: GenerateTextResult, latencyMs: number, workspacePath?: string): ChatSendResult => {
   return {
     reply: streamed.text,
     provider: streamed.provider,
     model: streamed.model,
-    latencyMs
+    latencyMs,
+    ...(workspacePath ? { workspacePath } : {})
   };
 };
 
@@ -261,6 +262,13 @@ export class ToolPlanningChatAgent {
     let failedToolCount = 0;
 
     throwIfAborted(abortSignal);
+
+    // Emit workspace path early so the renderer can resolve file paths
+    // before the chat response completes.
+    if (middlewareCtx.workspacePath) {
+      emitUpdate("planning", "工作空间已就绪", { workspacePath: middlewareCtx.workspacePath });
+    }
+
     emitUpdate("planning", "正在规划是否需要调用工具...");
 
     for (let step = 0; step < MAX_TOOL_STEPS; step += 1) {
@@ -525,6 +533,6 @@ export class ToolPlanningChatAgent {
     accumulatedLatency += finalResponse.latencyMs;
     emitUpdate("final", "最终回答已生成");
 
-    return buildStreamResult(finalResponse, accumulatedLatency);
+    return buildStreamResult(finalResponse, accumulatedLatency, middlewareCtx.workspacePath || undefined);
   }
 }
