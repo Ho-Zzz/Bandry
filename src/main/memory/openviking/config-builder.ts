@@ -60,17 +60,11 @@ export const buildOpenVikingConfig = (input: BuildOpenVikingConfigInput): Record
       cors_origins: ["*"]
     },
     storage: {
-      vectordb: {
-        name: "context",
-        backend: "local",
-        path: input.dataDir
-      },
-      agfs: {
-        port: input.agfsPort,
-        log_level: "warn",
-        path: input.dataDir,
-        backend: "local"
-      }
+      workspace: input.dataDir
+    },
+    log: {
+      level: "INFO",
+      output: "stdout"
     },
     embedding: {
       dense: denseEmbedding

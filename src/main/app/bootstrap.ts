@@ -9,9 +9,31 @@ export const startMainApp = (): void => {
   const composition = createCompositionRoot();
   const eventBus = createIpcEventBus();
 
-  const initializeOpenViking = async (): Promise<void> => {
-    if (!composition.config.features.enableMemory || !composition.config.openviking.enabled) {
+  const shutdownOpenViking = async (): Promise<void> => {
+    await composition.openViking.memoryProvider?.flush();
+    await composition.openViking.processManager?.stop();
+    composition.openViking.processManager = null;
+    composition.openViking.memoryProvider = null;
+    composition.toolPlanningChatAgent.setMemoryProvider(null);
+  };
+
+  const syncOpenViking = async (): Promise<void> => {
+    const shouldRun =
+      composition.config.features.enableMemory && composition.config.openviking.enabled;
+
+    if (!shouldRun) {
+      if (composition.openViking.processManager) {
+        console.log("[OpenViking] Memory disabled, shutting down...");
+        await shutdownOpenViking();
+      }
       return;
+    }
+
+    if (composition.openViking.processManager) {
+      const runtime = composition.openViking.processManager.getRuntime();
+      if (runtime) {
+        return;
+      }
     }
 
     const manager = new OpenVikingProcessManager(composition.config);
@@ -26,11 +48,13 @@ export const startMainApp = (): void => {
         scoreThreshold: composition.config.openviking.memoryScoreThreshold,
         commitDebounceMs: composition.config.openviking.commitDebounceMs
       });
+      composition.toolPlanningChatAgent.setMemoryProvider(composition.openViking.memoryProvider);
     } catch (error) {
       console.error("[OpenViking] failed to start, memory integration disabled:", error);
       await manager.stop();
       composition.openViking.processManager = null;
       composition.openViking.memoryProvider = null;
+      composition.toolPlanningChatAgent.setMemoryProvider(null);
     }
   };
 
@@ -42,11 +66,20 @@ export const startMainApp = (): void => {
     settingsService: composition.settingsService,
     modelOnboardingService: composition.modelOnboardingService,
     conversationStore: composition.conversationStore,
-    eventBus
+    eventBus,
+    getOpenViking: () => ({
+      processManager: composition.openViking.processManager,
+      httpClient: composition.openViking.processManager?.getRuntime()
+        ? composition.openViking.processManager.createHttpClient()
+        : null
+    }),
+    onSettingsSaved: () => {
+      void syncOpenViking();
+    }
   });
 
   app.whenReady().then(async () => {
-    await initializeOpenViking();
+    await syncOpenViking();
     await createMainWindow({
       devServerUrl: composition.config.runtime.devServerUrl
     });
@@ -62,8 +95,7 @@ export const startMainApp = (): void => {
 
   app.on("window-all-closed", () => {
     clearRunningTasks();
-    void composition.openViking.memoryProvider?.flush();
-    void composition.openViking.processManager?.stop();
+    void shutdownOpenViking();
 
     if (process.platform !== "darwin") {
       app.quit();
@@ -71,7 +103,6 @@ export const startMainApp = (): void => {
   });
 
   app.on("before-quit", () => {
-    void composition.openViking.memoryProvider?.flush();
-    void composition.openViking.processManager?.stop();
+    void shutdownOpenViking();
   });
 };

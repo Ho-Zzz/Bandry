@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { AppConfig, RuntimeRole } from "../../config";
 import type { GenerateTextResult, ModelsFactory } from "../../llm/runtime";
 import { resolveRuntimeTarget, type RuntimeModelTarget } from "../../llm/runtime/runtime-target";
+import type { MemoryProvider } from "../../memory/contracts/types";
 import type { SandboxService } from "../../sandbox";
 import type {
   ChatClarificationOption,
@@ -86,12 +87,18 @@ const extractJsonArray = (text: string): string | null => {
 };
 
 export class ToolPlanningChatAgent {
+  private memoryProvider?: MemoryProvider;
+
   constructor(
     private readonly config: AppConfig,
     private readonly modelsFactory: ModelsFactory,
     private readonly sandboxService: SandboxService,
     private readonly conversationStore?: ConversationStore
   ) {}
+
+  setMemoryProvider(provider: MemoryProvider | null): void {
+    this.memoryProvider = provider ?? undefined;
+  }
 
   private buildFallbackClarificationOptions(question: string): ChatClarificationOption[] {
     return [
@@ -224,6 +231,7 @@ export class ToolPlanningChatAgent {
       modelsFactory: this.modelsFactory,
       sandboxService: this.sandboxService,
       conversationStore: this.conversationStore,
+      memoryProvider: this.memoryProvider,
       mode
     });
     let middlewareCtx = await pipeline.runBeforeAgent({
@@ -378,7 +386,9 @@ export class ToolPlanningChatAgent {
             sandboxService: this.sandboxService,
             workspacePath: ctx.workspacePath,
             onDelegationUpdate: (detail) => emitUpdate("tool", detail),
-            abortSignal
+            abortSignal,
+            memoryProvider: this.memoryProvider,
+            sessionId: middlewareCtx.sessionId
           })
       );
       observations.push(observation);

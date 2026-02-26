@@ -15,6 +15,13 @@ import type {
   ConversationInput,
   ConversationResult,
   GlobalSettingsState,
+  MemoryAddResourceInput,
+  MemoryAddResourceResult,
+  MemoryListResourcesInput,
+  MemoryListResourcesResult,
+  MemorySearchInput,
+  MemorySearchResult,
+  MemoryStatusResult,
   MessageInput,
   MessageResult,
   MessageUpdateInput,
@@ -38,6 +45,8 @@ import type {
   TaskStatus,
   TaskUpdateEvent
 } from "../../shared/ipc";
+import type { OpenVikingHttpClient } from "../memory/openviking/http-client";
+import type { OpenVikingProcessManager } from "../memory/openviking/process-manager";
 import type { IpcEventBus } from "./event-bus";
 
 type RegisterIpcHandlersInput = {
@@ -49,6 +58,11 @@ type RegisterIpcHandlersInput = {
   modelOnboardingService: ModelOnboardingService;
   conversationStore: ConversationStore;
   eventBus: IpcEventBus;
+  getOpenViking: () => {
+    processManager: OpenVikingProcessManager | null;
+    httpClient: OpenVikingHttpClient | null;
+  };
+  onSettingsSaved?: () => void;
 };
 
 const sleep = async (ms: number): Promise<void> => {
@@ -173,7 +187,11 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
   });
 
   ipcMain.handle("config:save-settings-state", async (_event, saveInput: SaveSettingsInput): Promise<SaveSettingsResult> => {
-    return await input.settingsService.saveState(saveInput);
+    const result = await input.settingsService.saveState(saveInput);
+    if (result.ok) {
+      input.onSettingsSaved?.();
+    }
+    return result;
   });
 
   ipcMain.handle(
@@ -275,6 +293,80 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
   ipcMain.handle("sandbox:exec", async (_event, execInput: SandboxExecInput) => {
     return await input.sandboxService.exec(execInput);
   });
+
+  ipcMain.handle("memory:status", async (): Promise<MemoryStatusResult> => {
+    const ov = input.getOpenViking();
+    if (!ov.processManager) {
+      return { enabled: false, running: false };
+    }
+    const runtime = ov.processManager.getRuntime();
+    if (!runtime) {
+      return { enabled: true, running: false };
+    }
+    const healthy = ov.httpClient ? await ov.httpClient.health() : false;
+    return {
+      enabled: true,
+      running: healthy,
+      url: runtime.url
+    };
+  });
+
+  ipcMain.handle("memory:search", async (_event, searchInput: MemorySearchInput): Promise<MemorySearchResult> => {
+    const ov = input.getOpenViking();
+    if (!ov.httpClient) {
+      return { items: [], total: 0 };
+    }
+
+    const result = await ov.httpClient.search({
+      query: searchInput.query,
+      targetUri: searchInput.targetUri,
+      limit: searchInput.limit
+    });
+
+    const items = [
+      ...(result.memories ?? []),
+      ...(result.resources ?? []),
+      ...(result.skills ?? [])
+    ].map((item) => ({
+      uri: item.uri,
+      abstract: item.abstract,
+      score: item.score,
+      category: item.category,
+      matchReason: item.match_reason
+    }));
+
+    return { items, total: items.length };
+  });
+
+  ipcMain.handle(
+    "memory:add-resource",
+    async (_event, resourceInput: MemoryAddResourceInput): Promise<MemoryAddResourceResult> => {
+      const ov = input.getOpenViking();
+      if (!ov.httpClient) {
+        throw new Error("OpenViking is not running");
+      }
+      const result = await ov.httpClient.addResource(resourceInput.path);
+      return { rootUri: result.root_uri };
+    }
+  );
+
+  ipcMain.handle(
+    "memory:list-resources",
+    async (_event, listInput: MemoryListResourcesInput): Promise<MemoryListResourcesResult> => {
+      const ov = input.getOpenViking();
+      if (!ov.httpClient) {
+        throw new Error("OpenViking is not running");
+      }
+      const result = await ov.httpClient.ls(listInput.uri);
+      return {
+        entries: result.entries.map((entry) => ({
+          name: entry.name,
+          uri: entry.uri,
+          type: entry.type
+        }))
+      };
+    }
+  );
 
   return {
     clearRunningTasks: (): void => {

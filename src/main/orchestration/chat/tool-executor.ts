@@ -1,5 +1,6 @@
 import type { SandboxExecInput, ChatUpdateStage, SubagentProgressPayload } from "../../../shared/ipc";
 import type { AppConfig } from "../../config";
+import type { MemoryProvider } from "../../memory/contracts/types";
 import type { SandboxService } from "../../sandbox";
 import type { DAGPlan, AgentResult } from "../workflow/dag/agents";
 import { DelegationEngine } from "../workflow/dag/delegation-engine";
@@ -10,6 +11,7 @@ import type { PlannerActionTool, ToolObservation, TodoInput, SubagentType } from
 import { normalizeSpaces } from "./text-utils";
 import { executeWriteTodos, type WriteTodosContext } from "./tools/write-todos-tool";
 import { executeTaskTool, type TaskToolContext } from "./tools/task-tool";
+import { executeMemorySearch } from "./tools/memory-tool";
 import type { TodoItem } from "./middleware/types";
 
 type ExecutePlannerToolOptions = {
@@ -20,8 +22,9 @@ type ExecutePlannerToolOptions = {
   onDelegationUpdate?: (message: string) => void;
   onSubagentUpdate?: (stage: ChatUpdateStage, message: string, payload?: { subagent?: SubagentProgressPayload }) => void;
   abortSignal?: AbortSignal;
-  /** Current todos for write_todos tool */
   todos?: TodoItem[];
+  memoryProvider?: MemoryProvider;
+  sessionId?: string;
 };
 
 export const executePlannerTool = async ({
@@ -32,7 +35,9 @@ export const executePlannerTool = async ({
   onDelegationUpdate,
   onSubagentUpdate,
   abortSignal,
-  todos = []
+  todos = [],
+  memoryProvider,
+  sessionId
 }: ExecutePlannerToolOptions): Promise<ToolObservation & { updatedTodos?: TodoItem[] }> => {
   const fallbackPath = config.sandbox.virtualRoot;
 
@@ -126,6 +131,13 @@ export const executePlannerTool = async ({
         ok: true,
         output: result
       };
+    }
+
+    if (action.tool === "memory_search") {
+      return executeMemorySearch(
+        { query: action.input?.query },
+        { memoryProvider, sessionId: sessionId ?? "default" }
+      );
     }
 
     if (action.tool === "ask_clarification") {

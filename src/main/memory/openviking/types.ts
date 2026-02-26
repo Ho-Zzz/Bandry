@@ -33,3 +33,43 @@ export type OpenVikingFindResult = {
   total?: number;
   [key: string]: unknown;
 };
+
+export type OpenVikingAddResourceResult = {
+  root_uri: string;
+  [key: string]: unknown;
+};
+
+export type OpenVikingLsEntry = {
+  name: string;
+  uri: string;
+  type: "file" | "directory";
+  [key: string]: unknown;
+};
+
+export type OpenVikingLsResult = {
+  entries: OpenVikingLsEntry[];
+  [key: string]: unknown;
+};
+
+export type OpenVikingGlobResult = {
+  matches: string[];
+  [key: string]: unknown;
+};
+
+export type OpenVikingReadResult = {
+  content: string;
+  uri: string;
+  [key: string]: unknown;
+};
+
+export type OpenVikingAbstractResult = {
+  abstract: string;
+  uri: string;
+  [key: string]: unknown;
+};
+
+export type OpenVikingOverviewResult = {
+  overview: string;
+  uri: string;
+  [key: string]: unknown;
+};

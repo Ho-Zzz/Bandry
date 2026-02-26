@@ -7,7 +7,7 @@
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
-    "dev": "concurrently -k \"pnpm dev:renderer\" \"pnpm dev:main\" \"pnpm dev:electron\"",
+    "dev": "bash scripts/ensure-openviking.sh && concurrently -k \"pnpm dev:renderer\" \"pnpm dev:main\" \"pnpm dev:electron\"",
     "dev:renderer": "vite",
     "dev:main": "tsup --watch",
     "dev:electron": "wait-on tcp:5173 file:dist-electron/main.cjs && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",

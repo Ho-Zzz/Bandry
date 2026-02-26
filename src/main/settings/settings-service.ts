@@ -273,8 +273,8 @@ export class SettingsService {
 
     return {
       ok: true,
-      requiresRestart: true,
-      message: "配置已保存。部分模块（如沙盒与进程管理）建议重启应用后生效。"
+      requiresRestart: false,
+      message: "配置已保存，Memory 和工具配置已即时生效。"
     };
   }
 }

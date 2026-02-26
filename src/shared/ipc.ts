@@ -406,3 +406,53 @@ export type MessageUpdateInput = {
   status?: "pending" | "completed" | "error";
   trace?: string;
 };
+
+// Memory types
+
+export type MemorySearchInput = {
+  query: string;
+  targetUri?: string;
+  limit?: number;
+};
+
+export type MemorySearchResultItem = {
+  uri: string;
+  abstract?: string;
+  score?: number;
+  category?: string;
+  matchReason?: string;
+};
+
+export type MemorySearchResult = {
+  items: MemorySearchResultItem[];
+  total: number;
+};
+
+export type MemoryAddResourceInput = {
+  path: string;
+};
+
+export type MemoryAddResourceResult = {
+  rootUri: string;
+};
+
+export type MemoryListResourcesInput = {
+  uri: string;
+};
+
+export type MemoryListResourceEntry = {
+  name: string;
+  uri: string;
+  type: "file" | "directory";
+};
+
+export type MemoryListResourcesResult = {
+  entries: MemoryListResourceEntry[];
+};
+
+export type MemoryStatusResult = {
+  enabled: boolean;
+  running: boolean;
+  url?: string;
+  error?: string;
+};

@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Brain, CheckCircle2, XCircle } from "lucide-react";
 import { Button, Card, CardBody, CardHeader, Input, Switch } from "@heroui/react";
-import type { GlobalSettingsState } from "../../../shared/ipc";
+import type { GlobalSettingsState, MemoryStatusResult } from "../../../shared/ipc";
 
 export const GlobalConfigManager = () => {
   const navigate = useNavigate();
@@ -30,6 +30,17 @@ export const GlobalConfigManager = () => {
     </button>
   );
 
+  const [memoryStatus, setMemoryStatus] = useState<MemoryStatusResult | null>(null);
+
+  const refreshMemoryStatus = useCallback(async () => {
+    try {
+      const result = await window.api.memoryStatus();
+      setMemoryStatus(result);
+    } catch {
+      setMemoryStatus(null);
+    }
+  }, []);
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -43,7 +54,8 @@ export const GlobalConfigManager = () => {
       }
     };
     void load();
-  }, []);
+    void refreshMemoryStatus();
+  }, [refreshMemoryStatus]);
 
   if (loading) {
     return <div className="p-6 text-sm text-gray-500">Loading settings...</div>;
@@ -92,12 +104,49 @@ export const GlobalConfigManager = () => {
       </Card>
 
       <Card>
-        <CardHeader>
-          <h3 className="text-lg font-semibold">记忆能力（OpenViking）</h3>
+        <CardHeader className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Brain size={20} className="text-indigo-600" />
+            <h3 className="text-lg font-semibold">记忆能力（OpenViking）</h3>
+          </div>
+          {memoryStatus ? (
+            <div className="flex items-center gap-1.5 text-xs">
+              {memoryStatus.running ? (
+                <>
+                  <CheckCircle2 size={14} className="text-emerald-500" />
+                  <span className="text-emerald-700">运行中</span>
+                  {memoryStatus.url ? (
+                    <span className="ml-1 text-gray-400">{memoryStatus.url}</span>
+                  ) : null}
+                </>
+              ) : memoryStatus.enabled ? (
+                <>
+                  <XCircle size={14} className="text-amber-500" />
+                  <span className="text-amber-700">未运行</span>
+                </>
+              ) : (
+                <>
+                  <XCircle size={14} className="text-gray-400" />
+                  <span className="text-gray-500">已禁用</span>
+                </>
+              )}
+              <Button
+                variant="light"
+                size="sm"
+                className="ml-2 h-6 min-w-0 px-2 text-xs"
+                onPress={() => { void refreshMemoryStatus(); }}
+              >
+                刷新
+              </Button>
+            </div>
+          ) : null}
         </CardHeader>
         <CardBody className="space-y-4">
           <div className="flex items-center justify-between rounded-lg border p-3">
-            <span>启用 Memory Middleware</span>
+            <div>
+              <span className="font-medium">启用 Memory Middleware</span>
+              <p className="text-xs text-gray-500 mt-0.5">开启后 Agent 会在对话中注入历史记忆上下文，并自动沉淀对话记忆</p>
+            </div>
             <Switch
               isSelected={state.memory.enableMemory}
               onValueChange={(value) =>
@@ -115,7 +164,7 @@ export const GlobalConfigManager = () => {
               }
             />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             <Input
               label="OpenViking Host"
               value={state.memory.openviking.host}
@@ -158,6 +207,7 @@ export const GlobalConfigManager = () => {
             />
             <Input
               label="Top K"
+              description="每次检索返回的最大记忆条数"
               value={String(state.memory.openviking.memoryTopK)}
               onValueChange={(value) =>
                 setState((current) => (
@@ -169,6 +219,27 @@ export const GlobalConfigManager = () => {
                           openviking: {
                             ...current.memory.openviking,
                             memoryTopK: Number(value) || 0
+                          }
+                        }
+                      }
+                    : current
+                ))
+              }
+            />
+            <Input
+              label="Score Threshold"
+              description="低于此分数的记忆将被过滤"
+              value={String(state.memory.openviking.memoryScoreThreshold)}
+              onValueChange={(value) =>
+                setState((current) => (
+                  current
+                    ? {
+                        ...current,
+                        memory: {
+                          ...current.memory,
+                          openviking: {
+                            ...current.memory.openviking,
+                            memoryScoreThreshold: Number(value) || 0
                           }
                         }
                       }

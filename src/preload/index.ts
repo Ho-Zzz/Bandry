@@ -8,6 +8,13 @@ import type {
   ChatUpdateEvent,
   ConversationInput,
   ConversationResult,
+  MemoryAddResourceInput,
+  MemoryAddResourceResult,
+  MemoryListResourcesInput,
+  MemoryListResourcesResult,
+  MemorySearchInput,
+  MemorySearchResult,
+  MemoryStatusResult,
   MessageInput,
   MessageResult,
   MessageUpdateInput,
@@ -99,6 +106,15 @@ const api = {
       ipcRenderer.removeListener("task:update", wrappedListener);
     };
   },
+  // Memory API
+  memoryStatus: (): Promise<MemoryStatusResult> =>
+    ipcRenderer.invoke("memory:status"),
+  memorySearch: (input: MemorySearchInput): Promise<MemorySearchResult> =>
+    ipcRenderer.invoke("memory:search", input),
+  memoryAddResource: (input: MemoryAddResourceInput): Promise<MemoryAddResourceResult> =>
+    ipcRenderer.invoke("memory:add-resource", input),
+  memoryListResources: (input: MemoryListResourcesInput): Promise<MemoryListResourcesResult> =>
+    ipcRenderer.invoke("memory:list-resources", input),
   // Conversation API
   conversationCreate: (input: ConversationInput): Promise<ConversationResult> =>
     ipcRenderer.invoke("conversation:create", input),

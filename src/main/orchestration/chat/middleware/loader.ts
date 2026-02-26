@@ -1,46 +1,26 @@
 import type { AppConfig } from "../../../config";
 import type { ModelsFactory } from "../../../llm/runtime";
+import type { MemoryProvider } from "../../../memory/contracts/types";
 import type { SandboxService } from "../../../sandbox";
 import type { ConversationStore } from "../../../persistence/sqlite";
 import type { ChatMode } from "../../../../shared/ipc";
 import { MiddlewarePipeline } from "./pipeline";
-import type { Middleware } from "./types";
+import type { Middleware, MiddlewareContext } from "./types";
 import { WorkspaceMiddleware } from "./workspace";
 import { LocalResourceMiddleware } from "./local-resource";
 import { SandboxBindingMiddleware } from "./sandbox-binding";
 import { DanglingToolCallMiddleware } from "./dangling-tool-call";
 import { SummarizationMiddleware } from "./summarization";
 import { TitleMiddleware } from "./title";
+import { MemoryMiddleware } from "./memory";
 import { SubagentLimitMiddleware } from "./subagent-limit";
 import { ClarificationMiddleware } from "./clarification";
 import { TodoListMiddleware } from "./todolist";
 
-/**
- * Noop memory middleware placeholder.
- *
- * This is a placeholder for the memory queue functionality.
- * When implemented, it should:
- *
- * afterAgent hook:
- * 1. Filter messages to keep only user + final assistant messages
- * 2. Add filtered messages to a memory queue
- * 3. Process queue asynchronously (debounced)
- *
- * The actual MemoryMiddleware in ./memory.ts provides full implementation
- * when a MemoryProvider is available. This noop version is used when
- * memory is disabled or not configured.
- *
- * @see MemoryMiddleware for full implementation
- */
 class NoopMemoryMiddleware implements Middleware {
   name = "memory";
 
-  async afterAgent(ctx: import("./types").MiddlewareContext): Promise<import("./types").MiddlewareContext> {
-    // Memory is disabled - no-op
-    // When enabled, this would:
-    // 1. Extract user message and final assistant response
-    // 2. Queue for fact extraction and storage
-    // 3. Return context unchanged (async processing)
+  async afterAgent(ctx: MiddlewareContext): Promise<MiddlewareContext> {
     return ctx;
   }
 }
@@ -50,7 +30,7 @@ export type MiddlewareLoaderOptions = {
   modelsFactory: ModelsFactory;
   sandboxService: SandboxService;
   conversationStore?: ConversationStore;
-  /** Chat mode affects which middlewares are enabled */
+  memoryProvider?: MemoryProvider;
   mode?: ChatMode;
 };
 
@@ -72,6 +52,10 @@ export type MiddlewareLoaderOptions = {
 export const buildMiddlewares = (options: MiddlewareLoaderOptions): Middleware[] => {
   const mode = options.mode ?? "default";
 
+  const memoryMiddleware = options.memoryProvider
+    ? new MemoryMiddleware(options.memoryProvider)
+    : new NoopMemoryMiddleware();
+
   const middlewares: Middleware[] = [
     new WorkspaceMiddleware(options.config.paths.workspacesDir),
     new LocalResourceMiddleware(),
@@ -79,7 +63,7 @@ export const buildMiddlewares = (options: MiddlewareLoaderOptions): Middleware[]
     new DanglingToolCallMiddleware(),
     new SummarizationMiddleware(),
     new TitleMiddleware(),
-    new NoopMemoryMiddleware()
+    memoryMiddleware
   ];
 
   // Add mode-specific middlewares

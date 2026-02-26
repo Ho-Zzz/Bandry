@@ -31,7 +31,7 @@ const createConfig = () => {
 };
 
 describe("middleware loader order", () => {
-  it("builds middlewares in fixed order and keeps clarification last", () => {
+  it("builds middlewares in fixed order and keeps clarification last (default mode)", () => {
     const config = createConfig();
     const sandboxService = new SandboxService(config);
 
@@ -50,9 +50,73 @@ describe("middleware loader order", () => {
       "summarization",
       "title",
       "memory",
+      "clarification"
+    ]);
+    expect(middlewares[middlewares.length - 1]?.name).toBe("clarification");
+  });
+
+  it("includes todolist and subagent_limit in subagents mode", () => {
+    const config = createConfig();
+    const sandboxService = new SandboxService(config);
+
+    const middlewares = buildMiddlewares({
+      config,
+      modelsFactory: {} as never,
+      sandboxService,
+      conversationStore: undefined,
+      mode: "subagents"
+    });
+
+    expect(middlewares.map((item) => item.name)).toEqual([
+      "workspace",
+      "local_resource",
+      "sandbox_binding",
+      "dangling_tool_call",
+      "summarization",
+      "title",
+      "memory",
+      "todolist",
       "subagent_limit",
       "clarification"
     ]);
     expect(middlewares[middlewares.length - 1]?.name).toBe("clarification");
+  });
+
+  it("uses NoopMemoryMiddleware when no memoryProvider given", () => {
+    const config = createConfig();
+    const sandboxService = new SandboxService(config);
+
+    const middlewares = buildMiddlewares({
+      config,
+      modelsFactory: {} as never,
+      sandboxService,
+      memoryProvider: undefined
+    });
+
+    const memory = middlewares.find((item) => item.name === "memory");
+    expect(memory).toBeDefined();
+    expect(memory!.beforeLLM).toBeUndefined();
+  });
+
+  it("uses real MemoryMiddleware when memoryProvider is given", () => {
+    const config = createConfig();
+    const sandboxService = new SandboxService(config);
+
+    const mockProvider = {
+      injectContext: async () => [],
+      storeConversation: async () => undefined
+    };
+
+    const middlewares = buildMiddlewares({
+      config,
+      modelsFactory: {} as never,
+      sandboxService,
+      memoryProvider: mockProvider
+    });
+
+    const memory = middlewares.find((item) => item.name === "memory");
+    expect(memory).toBeDefined();
+    expect(memory!.beforeLLM).toBeDefined();
+    expect(memory!.onResponse).toBeDefined();
   });
 });

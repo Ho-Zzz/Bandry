@@ -7,6 +7,13 @@ import type {
   ChatUpdateEvent,
   ConversationInput,
   ConversationResult,
+  MemoryAddResourceInput,
+  MemoryAddResourceResult,
+  MemoryListResourcesInput,
+  MemoryListResourcesResult,
+  MemorySearchInput,
+  MemorySearchResult,
+  MemoryStatusResult,
   ModelsCatalogListInput,
   ModelsCatalogListResult,
   ModelsConnectInput,
@@ -77,6 +84,12 @@ declare global {
       messageList: (conversationId: string) => Promise<MessageResult[]>;
       messageUpdate: (id: string, input: MessageUpdateInput) => Promise<MessageResult | null>;
       messageDelete: (id: string) => Promise<boolean>;
+
+      // Memory API
+      memoryStatus: () => Promise<MemoryStatusResult>;
+      memorySearch: (input: MemorySearchInput) => Promise<MemorySearchResult>;
+      memoryAddResource: (input: MemoryAddResourceInput) => Promise<MemoryAddResourceResult>;
+      memoryListResources: (input: MemoryListResourcesInput) => Promise<MemoryListResourcesResult>;
 
       // Event Listeners
       onChatUpdate: (listener: (update: ChatUpdateEvent) => void) => () => void;

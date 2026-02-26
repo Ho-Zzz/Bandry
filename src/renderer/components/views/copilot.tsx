@@ -5,7 +5,7 @@
  * Supports conversation persistence via route params.
  */
 
-import { type ChangeEvent, type PropsWithChildren, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   AssistantRuntimeProvider,
@@ -48,7 +48,7 @@ import {
 import { clsx } from "clsx";
 import { useConversationStore } from "../../store/use-conversation-store";
 import { useCopilotRuntime } from "../../features/copilot/use-copilot-runtime";
-import type { ChatMode } from "../../../shared/ipc";
+import type { ChatMode, MemoryStatusResult } from "../../../shared/ipc";
 
 type TraceToolArgs = {
   stage?: string;
@@ -726,11 +726,21 @@ export const Copilot = () => {
   const [leadRouteReady, setLeadRouteReady] = useState(true);
   const [profilesLoading, setProfilesLoading] = useState(true);
   const [chatMode, setChatMode] = useState<ChatMode>("default");
+  const [memoryStatus, setMemoryStatus] = useState<MemoryStatusResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const {
     deleteConversation,
     fetchConversations
   } = useConversationStore();
+
+  const refreshMemoryStatus = useCallback(async () => {
+    try {
+      const result = await window.api.memoryStatus();
+      setMemoryStatus(result);
+    } catch {
+      setMemoryStatus(null);
+    }
+  }, []);
 
   const {
     runtime,
@@ -775,7 +785,8 @@ export const Copilot = () => {
     };
 
     void loadModelProfiles();
-  }, []);
+    void refreshMemoryStatus();
+  }, [refreshMemoryStatus]);
 
   useEffect(() => {
     if (!pendingClarification) {
@@ -834,6 +845,12 @@ export const Copilot = () => {
             <span className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600">
               Routed by LeadAgent
             </span>
+            {memoryStatus?.running ? (
+              <span className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs text-indigo-700">
+                <Brain size={12} />
+                Memory Active
+              </span>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             <Dropdown>

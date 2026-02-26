@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import type { AppConfig } from "../../config";
 import { writeOpenVikingConfig } from "./config-builder";
 import { OpenVikingHttpClient } from "./http-client";
+import { resolveOpenVikingCommand } from "./python-resolver";
 import type { OpenVikingLaunchResult, OpenVikingRuntime } from "./types";
 
 const sleep = async (ms: number): Promise<void> => {
@@ -73,7 +75,80 @@ export class OpenVikingProcessManager {
     }
   }
 
+  private findSitePackagesDir(): string | null {
+    const searchRoots = [
+      path.join(this.config.paths.projectRoot, "python-env", "venv", "lib"),
+      path.join(this.config.paths.resourcesDir, "python-env", "venv", "lib")
+    ];
+
+    for (const libDir of searchRoots) {
+      try {
+        const entries = fsSync.readdirSync(libDir);
+        const pythonDir = entries.find((e) => e.startsWith("python3"));
+        if (!pythonDir) continue;
+
+        const sitePackages = path.join(libDir, pythonDir, "site-packages");
+        if (fsSync.existsSync(path.join(sitePackages, "openviking"))) {
+          return sitePackages;
+        }
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  private patchAgfsTimeout(sitePackages: string): void {
+    const agfsManagerPath = path.join(sitePackages, "openviking", "agfs_manager.py");
+    try {
+      let content = fsSync.readFileSync(agfsManagerPath, "utf8");
+      const original = "def _wait_for_ready(self, timeout: float = 5.0)";
+      const patched  = "def _wait_for_ready(self, timeout: float = 30.0)";
+
+      if (content.includes(patched)) {
+        return;
+      }
+
+      if (content.includes(original)) {
+        content = content.replace(original, patched);
+        fsSync.writeFileSync(agfsManagerPath, content, "utf8");
+        console.log("[OpenViking] Patched AGFS timeout: 5s -> 30s");
+      }
+    } catch (error) {
+      console.warn("[OpenViking] Could not patch AGFS timeout:", error);
+    }
+  }
+
+  private warmUpAgfsBinary(sitePackages: string): void {
+    const agfsBinary = path.join(sitePackages, "openviking", "bin", "agfs-server");
+    try {
+      fsSync.accessSync(agfsBinary, fsSync.constants.X_OK);
+    } catch {
+      return;
+    }
+
+    console.log("[OpenViking] Warming up AGFS binary (macOS Gatekeeper may take a moment) ...");
+    try {
+      execFileSync(agfsBinary, ["--help"], { stdio: "pipe", timeout: 60_000 });
+      console.log("[OpenViking] AGFS binary warm-up done");
+    } catch {
+      console.warn("[OpenViking] AGFS binary warm-up failed (non-fatal)");
+    }
+  }
+
+  private prepareEnvironment(): void {
+    const sitePackages = this.findSitePackagesDir();
+    if (!sitePackages) {
+      return;
+    }
+
+    this.patchAgfsTimeout(sitePackages);
+    this.warmUpAgfsBinary(sitePackages);
+  }
+
   private async doStart(): Promise<OpenVikingLaunchResult> {
+    this.prepareEnvironment();
+
     const host = this.config.openviking.host;
     const port = await this.findAvailablePort(this.config.openviking.port, host);
     const agfsPort = await this.findAvailablePort(Math.max(1_025, port - 100), host);
@@ -93,8 +168,15 @@ export class OpenVikingProcessManager {
       dataDir
     });
 
+    const resolved = resolveOpenVikingCommand(
+      this.config.paths.projectRoot,
+      this.config.paths.resourcesDir,
+      this.config.openviking.serverCommand,
+      this.config.openviking.serverArgs
+    );
+
     const args = [
-      ...this.config.openviking.serverArgs,
+      ...resolved.args,
       "--config",
       configPath,
       "--host",
@@ -103,13 +185,20 @@ export class OpenVikingProcessManager {
       String(port)
     ];
 
-    const child = spawn(this.config.openviking.serverCommand, args, {
+    const spawnEnv = {
+      ...this.config.runtime.inheritedEnv,
+      OPENVIKING_CONFIG_FILE: configPath,
+      NO_PROXY: "localhost,127.0.0.1,::1",
+      no_proxy: "localhost,127.0.0.1,::1"
+    };
+    for (const key of ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"]) {
+      delete spawnEnv[key];
+    }
+
+    const child = spawn(resolved.command, args, {
       cwd: runtimeRoot,
       stdio: ["pipe", "pipe", "pipe"],
-      env: {
-        ...this.config.runtime.inheritedEnv,
-        OPENVIKING_CONFIG_FILE: configPath
-      }
+      env: spawnEnv
     });
 
     child.stdout.on("data", (chunk: Buffer) => {

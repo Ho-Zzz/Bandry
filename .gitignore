@@ -44,3 +44,6 @@ playwright-report/
 tmp/
 temp/
 .trae/*
+
+python-env/
+python-env-backup/

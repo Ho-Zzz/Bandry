@@ -32,7 +32,8 @@ export type BasePlannerToolName =
   | "web_fetch"
   | "github_search"
   | "delegate_sub_tasks"
-  | "ask_clarification";
+  | "ask_clarification"
+  | "memory_search";
 
 /**
  * Additional tool names for subagents mode
