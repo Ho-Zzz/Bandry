@@ -134,6 +134,11 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
     const current = config.routing.assignments[role]?.trim() ?? "";
     config.routing.assignments[role] = current && normalizedProfiles.has(current) ? current : "";
   }
+  config.routing.assignments["memory.fact_extractor"] =
+    config.routing.assignments["lead.synthesizer"] ||
+    config.routing.assignments["lead.planner"] ||
+    config.routing.assignments["chat.default"] ||
+    "";
 
   config.tools.webSearch.enabled = Boolean(config.tools.webSearch.enabled);
   config.tools.webSearch.provider = "tavily";

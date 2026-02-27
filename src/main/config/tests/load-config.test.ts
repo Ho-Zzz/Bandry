@@ -385,6 +385,39 @@ describe("loadAppConfig", () => {
     ]);
   });
 
+  it("syncs memory fact extractor routing with lead model routing", async () => {
+    const fixture = await createFixture();
+    const userConfigPath = path.join(fixture.userHome, ".bandry", "config", "config.json");
+
+    await fs.writeFile(
+      userConfigPath,
+      JSON.stringify(
+        {
+          routing: {
+            assignments: {
+              "lead.planner": "profile_openai_default",
+              "lead.synthesizer": "profile_deepseek_default",
+              "memory.fact_extractor": "profile_volcengine_default"
+            }
+          }
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {}
+    });
+
+    expect(config.routing.assignments["lead.synthesizer"]).toBe("profile_deepseek_default");
+    expect(config.routing.assignments["memory.fact_extractor"]).toBe("profile_deepseek_default");
+  });
+
   it("supports catalog source overrides from env", async () => {
     const fixture = await createFixture();
 

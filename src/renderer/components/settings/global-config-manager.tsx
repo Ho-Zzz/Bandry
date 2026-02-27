@@ -164,6 +164,9 @@ export const GlobalConfigManager = () => {
               }
             />
           </div>
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
+            事实提取模型会自动跟随 LeadAgent 的模型配置（优先 lead.synthesizer，缺失时回退 lead.planner / chat.default）。
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             <Input
               label="OpenViking Host"
