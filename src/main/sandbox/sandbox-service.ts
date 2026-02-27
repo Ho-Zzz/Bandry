@@ -76,9 +76,13 @@ export class SandboxService implements SandboxServiceApi {
     return this.workspaceContext;
   }
 
+  private getActiveWorkspaceOverride(): string | undefined {
+    return this.workspaceContext?.workspacePath;
+  }
+
   async listDir(input: SandboxListDirInput): Promise<SandboxListDirResult> {
     return this.withAudit("list_dir", { path: input.path }, async () => {
-      const resolved = await this.pathGuard.resolve(input.path, "list");
+      const resolved = await this.pathGuard.resolve(input.path, "list", this.getActiveWorkspaceOverride());
       const entries = await fs.readdir(resolved.realPath, { withFileTypes: true });
       const mappedEntries = entries
         .map((entry) => ({
@@ -102,7 +106,8 @@ export class SandboxService implements SandboxServiceApi {
         throw new SandboxViolationError("UNSAFE_ARGUMENT", "Only utf8 encoding is allowed", { encoding });
       }
 
-      const resolved = await this.pathGuard.resolve(input.path, "read");
+      const workspaceOverride = input.workspacePath ?? this.getActiveWorkspaceOverride();
+      const resolved = await this.pathGuard.resolve(input.path, "read", workspaceOverride);
       const content = await fs.readFile(resolved.realPath, "utf8");
       return {
         path: resolved.virtualPath,
@@ -115,7 +120,7 @@ export class SandboxService implements SandboxServiceApi {
     return this.withAudit("write_file", { path: input.path }, async () => {
       const createDirs = input.createDirs !== false;
       const overwrite = input.overwrite === true;
-      const resolved = await this.pathGuard.resolve(input.path, "write");
+      const resolved = await this.pathGuard.resolve(input.path, "write", this.getActiveWorkspaceOverride());
 
       if (!overwrite) {
         try {
@@ -150,7 +155,7 @@ export class SandboxService implements SandboxServiceApi {
       { command: input.command, args: input.args ?? [], cwd: input.cwd ?? this.config.sandbox.virtualRoot },
       async () => {
         const { command, args } = await this.resolveCommandInput(input);
-        const resolvedCwd = await this.pathGuard.resolve(input.cwd ?? this.config.sandbox.virtualRoot, "cwd");
+        const resolvedCwd = await this.pathGuard.resolve(input.cwd ?? this.config.sandbox.virtualRoot, "cwd", this.getActiveWorkspaceOverride());
 
         const timeoutMs = Math.min(
           this.config.sandbox.execTimeoutMs,
@@ -213,7 +218,7 @@ export class SandboxService implements SandboxServiceApi {
           continue;
         }
 
-        const resolved = await this.pathGuard.resolve(arg, mode);
+        const resolved = await this.pathGuard.resolve(arg, mode, this.getActiveWorkspaceOverride());
         resolvedArgs.push(resolved.realPath);
       }
 

@@ -86,11 +86,22 @@ export const resolvePendingClarificationFromUpdate = (
 
 export const normalizeClarificationInput = (value: string): string => value.trim();
 
+/**
+ * Module-level map storing workspace paths per conversation.
+ * Persists across re-renders but not across page reloads.
+ */
+const workspaceByConversation = new Map<string, string>();
+
+export const getConversationWorkspacePath = (conversationId: string): string | undefined => {
+  return workspaceByConversation.get(conversationId);
+};
+
 export function useCopilotChat(options: UseCopilotChatOptions = {}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>(options.conversationId);
   const [activeRequestByConversation, setActiveRequestByConversation] = useState<Record<string, string>>({});
   const [pendingClarification, setPendingClarification] = useState<PendingClarification | null>(null);
+  const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const traceByRequestIdRef = useRef<Record<string, ChatUpdateEvent[]>>({});
   const requestToConversationRef = useRef<Record<string, string>>({});
   const messagesRef = useRef<Message[]>([]);
@@ -181,12 +192,29 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
       setMessages([]);
       setPendingClarification(null);
       traceByRequestIdRef.current = {};
+
+      // Restore workspace path: prefer in-memory cache, fall back to DB
+      const cachedWs = workspaceByConversation.get(options.conversationId);
+      if (cachedWs) {
+        setWorkspacePath(cachedWs);
+      } else {
+        window.api.conversationGet(options.conversationId).then((conv) => {
+          if (conv?.workspace_path) {
+            workspaceByConversation.set(options.conversationId!, conv.workspace_path);
+            setWorkspacePath(conv.workspace_path);
+          } else {
+            setWorkspacePath(null);
+          }
+        }).catch(() => setWorkspacePath(null));
+      }
+
       void loadMessages(options.conversationId);
     } else {
       setConversationId(undefined);
       setMessages([]);
       setPendingClarification(null);
       traceByRequestIdRef.current = {};
+      setWorkspacePath(null);
     }
   }, [loadMessages, options.conversationId]);
 
@@ -205,6 +233,15 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
       );
       if (pending) {
         setPendingClarification(pending);
+      }
+
+      // Capture workspace path from early update events so it's available
+      // before the chatSend promise resolves (users can click files during streaming).
+      if (update.payload?.workspacePath && mappedConversationId) {
+        workspaceByConversation.set(mappedConversationId, update.payload.workspacePath);
+        if (mappedConversationId === conversationIdRef.current) {
+          setWorkspacePath(update.payload.workspacePath);
+        }
       }
 
       setMessages((prev) =>
@@ -372,6 +409,13 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           mode: effectiveMode
         });
 
+        // Capture workspace path for this conversation and persist to DB
+        if (result.workspacePath) {
+          workspaceByConversation.set(currentConvId, result.workspacePath);
+          setWorkspacePath(result.workspacePath);
+          window.api.conversationUpdate(currentConvId, { workspace_path: result.workspacePath }).catch(() => {});
+        }
+
         const finalTrace = traceByRequestIdRef.current[requestId] || [];
 
         // Update pending message with final response
@@ -515,6 +559,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
     clearMessages,
     isLoading,
     conversationId,
-    pendingClarification
+    pendingClarification,
+    workspacePath
   };
 }

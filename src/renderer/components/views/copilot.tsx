@@ -47,8 +47,11 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useConversationStore } from "../../store/use-conversation-store";
+import { usePreviewStore } from "../../store/use-preview-store";
 import { useCopilotRuntime } from "../../features/copilot/use-copilot-runtime";
 import type { ChatMode, MemoryStatusResult } from "../../../shared/ipc";
+import { parseToolResult, extractFilePaths } from "../../features/copilot/trace-paths";
+import { PreviewPanel } from "../copilot/preview-panel";
 
 type TraceToolArgs = {
   stage?: string;
@@ -257,33 +260,6 @@ const parseToolSource = (message: string): string | undefined => {
   return match[1];
 };
 
-const parseToolResult = (
-  message: string
-): {
-  source: string;
-  status: "success" | "failed";
-  output: string;
-} | null => {
-  const match = message.match(/^([a-zA-Z0-9_.:-]+)\s*->\s*(success|failed)\s*:\s*([\s\S]*)$/i);
-  if (!match) {
-    return null;
-  }
-
-  const source = match[1]?.trim();
-  const status = match[2]?.toLowerCase() === "failed" ? "failed" : "success";
-  const output = match[3]?.trim() ?? "";
-
-  if (!source) {
-    return null;
-  }
-
-  return {
-    source,
-    status,
-    output
-  };
-};
-
 const tryFormatJson = (value: string): string | null => {
   const normalized = value.trim();
   if (!(normalized.startsWith("{") || normalized.startsWith("["))) {
@@ -443,6 +419,7 @@ const HiddenTraceGroup = (group: PropsWithChildren<{ startIndex: number; endInde
 
 const ToolResultLayer = ({ summaries }: { summaries: ToolResultSummary[] }) => {
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
+  const openPreview = usePreviewStore((s) => s.openPreview);
 
   if (summaries.length === 0) {
     return null;
@@ -459,11 +436,12 @@ const ToolResultLayer = ({ summaries }: { summaries: ToolResultSummary[] }) => {
         const jsonText = formattedJson ?? rawOutput;
         const shouldCollapse = jsonText.length > 520;
         const renderedOutput = isExpanded || !shouldCollapse ? rawOutput : truncateText(rawOutput, 520);
+        const filePaths = extractFilePaths(summary.output);
 
         return (
           <div key={key} className="max-w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
             <div className="flex items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="font-medium text-zinc-800">{summary.source}</span>
                 <span
                   className={clsx(
@@ -473,6 +451,18 @@ const ToolResultLayer = ({ summaries }: { summaries: ToolResultSummary[] }) => {
                 >
                   {summary.status}
                 </span>
+                {filePaths.map((fileInfo) => (
+                  <button
+                    key={fileInfo.path}
+                    type="button"
+                    className="cursor-pointer text-blue-600 underline underline-offset-2 hover:text-blue-700"
+                    onClick={() => {
+                      void openPreview(fileInfo.path, fileInfo.name);
+                    }}
+                  >
+                    {fileInfo.name}
+                  </button>
+                ))}
               </div>
               {summary.timestamp ? <span className="text-zinc-500">{formatTime(summary.timestamp)}</span> : null}
             </div>
@@ -750,17 +740,27 @@ export const Copilot = () => {
     pendingClarification,
     cancelCurrentRequest,
     submitClarificationCustom,
-    submitClarificationOption
+    submitClarificationOption,
+    workspacePath
   } = useCopilotRuntime({
     conversationId: routeConversationId,
     mode: chatMode
   });
+
+  const setPreviewWorkspacePath = usePreviewStore((s) => s.setWorkspacePath);
+  const setPreviewVirtualRoot = usePreviewStore((s) => s.setVirtualRoot);
 
   useEffect(() => {
     const loadModelProfiles = async () => {
       try {
         setProfilesLoading(true);
         const summary = await window.api.getConfigSummary();
+
+        // Sync sandbox virtual root so preview paths are normalized correctly
+        if (summary.sandbox?.virtualRoot) {
+          setPreviewVirtualRoot(summary.sandbox.virtualRoot);
+        }
+
         const configuredProviders = new Set(
           summary.providers
             .filter((provider) => provider.configured && provider.enabled)
@@ -786,7 +786,12 @@ export const Copilot = () => {
 
     void loadModelProfiles();
     void refreshMemoryStatus();
-  }, [refreshMemoryStatus]);
+  }, [refreshMemoryStatus, setPreviewVirtualRoot]);
+
+  // Sync workspace path to preview store for file reads
+  useEffect(() => {
+    setPreviewWorkspacePath(workspacePath);
+  }, [workspacePath, setPreviewWorkspacePath]);
 
   useEffect(() => {
     if (!pendingClarification) {
@@ -836,9 +841,12 @@ export const Copilot = () => {
     setSelectedFileCount(event.target.files?.length ?? 0);
   };
 
+  const isPreviewOpen = usePreviewStore((s) => s.isOpen);
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <div className="flex h-full w-full flex-col bg-white">
+      <div className="flex h-full w-full bg-white">
+        <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6 py-4">
           <div className="flex items-center gap-4">
             <h1 className="text-xl font-bold text-gray-900">Bandry Assistant</h1>
@@ -1106,6 +1114,9 @@ export const Copilot = () => {
           </div>
           </ThreadPrimitive.Root>
         )}
+        </div>
+
+        {isPreviewOpen && <PreviewPanel />}
       </div>
     </AssistantRuntimeProvider>
   );

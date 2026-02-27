@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
     title TEXT,
     model_profile_id TEXT,
+    workspace_path TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );

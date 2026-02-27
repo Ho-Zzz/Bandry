@@ -45,11 +45,13 @@ describe("middleware loader order", () => {
     expect(middlewares.map((item) => item.name)).toEqual([
       "workspace",
       "local_resource",
+      "resource_injection",
       "sandbox_binding",
       "dangling_tool_call",
       "summarization",
       "title",
       "memory",
+      "resource_curation",
       "clarification"
     ]);
     expect(middlewares[middlewares.length - 1]?.name).toBe("clarification");
@@ -70,11 +72,13 @@ describe("middleware loader order", () => {
     expect(middlewares.map((item) => item.name)).toEqual([
       "workspace",
       "local_resource",
+      "resource_injection",
       "sandbox_binding",
       "dangling_tool_call",
       "summarization",
       "title",
       "memory",
+      "resource_curation",
       "todolist",
       "subagent_limit",
       "clarification"
