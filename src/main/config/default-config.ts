@@ -90,6 +90,8 @@ export const createDefaultConfig = (
       host: "127.0.0.1",
       port: 1933,
       apiKey: "",
+      vlmModel: "gpt-4.1-mini",
+      embeddingModel: "text-embedding-3-large",
       serverCommand: "openviking",
       serverArgs: ["serve"],
       startTimeoutMs: 20_000,

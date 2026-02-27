@@ -24,7 +24,7 @@ const buildDenseEmbeddingConfig = (config: AppConfig): DenseEmbeddingConfig => {
   const volcengine = config.providers.volcengine;
   if (volcengine.apiKey.trim().length > 0) {
     return {
-      model: "doubao-embedding-vision-250615",
+      model: config.openviking.embeddingModel,
       api_key: volcengine.apiKey,
       api_base: volcengine.baseUrl,
       dimension: 1024,
@@ -35,7 +35,7 @@ const buildDenseEmbeddingConfig = (config: AppConfig): DenseEmbeddingConfig => {
 
   const openai = config.providers.openai;
   return {
-    model: "text-embedding-3-large",
+    model: config.openviking.embeddingModel,
     api_key: openai.apiKey,
     api_base: openai.baseUrl,
     dimension: 3072,
@@ -70,7 +70,7 @@ export const buildOpenVikingConfig = (input: BuildOpenVikingConfigInput): Record
       dense: denseEmbedding
     },
     vlm: {
-      model: vlmConfig.model,
+      model: input.config.openviking.vlmModel,
       api_key: vlmConfig.apiKey,
       api_base: vlmConfig.baseUrl,
       temperature: 0,

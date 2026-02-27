@@ -29,6 +29,7 @@ export const buildToolSelectionSection = (): string => {
 **Local File Operations:**
 - list_dir: Explore directory structure, find files
 - read_file: Read file contents for analysis
+- write_file: Write text files inside allowed workspace output path
 - exec: Run shell commands (only allowed commands)
 
 **When to Answer Directly (NO tools needed):**

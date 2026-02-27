@@ -209,6 +209,48 @@ export const GlobalConfigManager = () => {
               }
             />
             <Input
+              label="VLM Model"
+              description="用于图像与内容理解"
+              value={state.memory.openviking.vlmModel}
+              onValueChange={(value) =>
+                setState((current) => (
+                  current
+                    ? {
+                        ...current,
+                        memory: {
+                          ...current.memory,
+                          openviking: {
+                            ...current.memory.openviking,
+                            vlmModel: value
+                          }
+                        }
+                      }
+                    : current
+                ))
+              }
+            />
+            <Input
+              label="Embedding Model"
+              description="用于向量化与语义检索"
+              value={state.memory.openviking.embeddingModel}
+              onValueChange={(value) =>
+                setState((current) => (
+                  current
+                    ? {
+                        ...current,
+                        memory: {
+                          ...current.memory,
+                          openviking: {
+                            ...current.memory.openviking,
+                            embeddingModel: value
+                          }
+                        }
+                      }
+                    : current
+                ))
+              }
+            />
+            <Input
               label="Top K"
               description="每次检索返回的最大记忆条数"
               value={String(state.memory.openviking.memoryTopK)}

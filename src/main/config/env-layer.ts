@@ -78,6 +78,8 @@ export const envToLayer = (env: NodeJS.ProcessEnv): ConfigLayer => {
       host: toStringValue(env.OPENVIKING_HOST),
       port: toNumberValue(env.OPENVIKING_PORT),
       apiKey: toStringValue(env.OPENVIKING_API_KEY),
+      vlmModel: toStringValue(env.OPENVIKING_VLM_MODEL),
+      embeddingModel: toStringValue(env.OPENVIKING_EMBEDDING_MODEL),
       serverCommand: toStringValue(env.OPENVIKING_SERVER_COMMAND),
       serverArgs: toStringListValue(env.OPENVIKING_SERVER_ARGS),
       startTimeoutMs: toNumberValue(env.OPENVIKING_START_TIMEOUT_MS),

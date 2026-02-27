@@ -37,18 +37,40 @@ export const startMainApp = (): void => {
     }
 
     const manager = new OpenVikingProcessManager(composition.config);
+
+    const rebindMemoryProvider = (): void => {
+      try {
+        composition.openViking.memoryProvider = new OpenVikingMemoryProvider(manager.createHttpClient(), {
+          targetUris: composition.config.openviking.targetUris,
+          topK: composition.config.openviking.memoryTopK,
+          scoreThreshold: composition.config.openviking.memoryScoreThreshold,
+          commitDebounceMs: composition.config.openviking.commitDebounceMs
+        });
+        composition.toolPlanningChatAgent.setMemoryProvider(composition.openViking.memoryProvider);
+      } catch {
+        composition.openViking.memoryProvider = null;
+        composition.toolPlanningChatAgent.setMemoryProvider(null);
+      }
+    };
+
+    manager.onCrash(({ willRestart }) => {
+      if (willRestart) {
+        console.log("[OpenViking] Rebinding memory provider after auto-restart");
+        rebindMemoryProvider();
+      } else {
+        console.error("[OpenViking] Process crashed and could not be restarted");
+        composition.openViking.processManager = null;
+        composition.openViking.memoryProvider = null;
+        composition.toolPlanningChatAgent.setMemoryProvider(null);
+      }
+    });
+
     try {
       const { runtime } = await manager.start();
       console.log(`[OpenViking] started at ${runtime.url}`);
 
       composition.openViking.processManager = manager;
-      composition.openViking.memoryProvider = new OpenVikingMemoryProvider(manager.createHttpClient(), {
-        targetUris: composition.config.openviking.targetUris,
-        topK: composition.config.openviking.memoryTopK,
-        scoreThreshold: composition.config.openviking.memoryScoreThreshold,
-        commitDebounceMs: composition.config.openviking.commitDebounceMs
-      });
-      composition.toolPlanningChatAgent.setMemoryProvider(composition.openViking.memoryProvider);
+      rebindMemoryProvider();
     } catch (error) {
       console.error("[OpenViking] failed to start, memory integration disabled:", error);
       await manager.stop();

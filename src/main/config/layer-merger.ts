@@ -106,6 +106,12 @@ export const applyLayer = (target: AppConfig, layer: ConfigLayer): void => {
     if (openvikingLayer.apiKey !== undefined) {
       target.openviking.apiKey = openvikingLayer.apiKey;
     }
+    if (openvikingLayer.vlmModel !== undefined) {
+      target.openviking.vlmModel = openvikingLayer.vlmModel;
+    }
+    if (openvikingLayer.embeddingModel !== undefined) {
+      target.openviking.embeddingModel = openvikingLayer.embeddingModel;
+    }
     if (openvikingLayer.serverCommand !== undefined) {
       target.openviking.serverCommand = openvikingLayer.serverCommand;
     }

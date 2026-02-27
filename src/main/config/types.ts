@@ -151,6 +151,8 @@ export type OpenVikingLayerConfig = Partial<{
   host: string;
   port: number;
   apiKey: string;
+  vlmModel: string;
+  embeddingModel: string;
   serverCommand: string;
   serverArgs: string[];
   startTimeoutMs: number;
@@ -239,6 +241,8 @@ export type AppConfig = {
     host: string;
     port: number;
     apiKey: string;
+    vlmModel: string;
+    embeddingModel: string;
     serverCommand: string;
     serverArgs: string[];
     startTimeoutMs: number;

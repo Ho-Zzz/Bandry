@@ -357,6 +357,8 @@ describe("loadAppConfig", () => {
         OPENVIKING_HOST: " 127.0.0.1 ",
         OPENVIKING_PORT: "2933",
         OPENVIKING_API_KEY: "test-key",
+        OPENVIKING_VLM_MODEL: "doubao-seed-1-6-250615",
+        OPENVIKING_EMBEDDING_MODEL: "doubao-embedding-vision-250615",
         OPENVIKING_SERVER_COMMAND: "python3",
         OPENVIKING_SERVER_ARGS: "-m,openviking.server.bootstrap",
         OPENVIKING_START_TIMEOUT_MS: "25000",
@@ -372,6 +374,8 @@ describe("loadAppConfig", () => {
     expect(config.openviking.host).toBe("127.0.0.1");
     expect(config.openviking.port).toBe(2933);
     expect(config.openviking.apiKey).toBe("test-key");
+    expect(config.openviking.vlmModel).toBe("doubao-seed-1-6-250615");
+    expect(config.openviking.embeddingModel).toBe("doubao-embedding-vision-250615");
     expect(config.openviking.serverCommand).toBe("python3");
     expect(config.openviking.serverArgs).toEqual(["-m", "openviking.server.bootstrap"]);
     expect(config.openviking.startTimeoutMs).toBe(25_000);

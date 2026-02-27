@@ -271,6 +271,8 @@ export type GlobalSettingsState = {
       host: string;
       port: number;
       apiKey: string;
+      vlmModel: string;
+      embeddingModel: string;
       serverCommand: string;
       serverArgs: string[];
       startTimeoutMs: number;

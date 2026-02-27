@@ -16,6 +16,13 @@ import type { ConversationStore } from "../../persistence/sqlite";
 import { MAX_TOOL_STEPS } from "./chat-constants";
 import { normalizeHistory } from "./history-utils";
 import { parsePlannerAction } from "./planner-parser";
+import {
+  defaultPersistPath,
+  detectPersistRequirement,
+  extractRequestedPath,
+  isFileExistsObservation,
+  resolvePersistWritePath
+} from "./persist-policy";
 import type { ToolObservation } from "./planner-types";
 import { createMiddlewarePipeline } from "./middleware";
 import { buildFinalSystemPrompt, buildPlannerSystemPrompt } from "./prompts";
@@ -85,6 +92,11 @@ const extractJsonArray = (text: string): string | null => {
 
   const candidate = text.slice(start, end + 1).trim();
   return candidate.startsWith("[") && candidate.endsWith("]") ? candidate : null;
+};
+
+const extractPersistedPath = (output: string): string | undefined => {
+  const match = output.match(/path=([^\s,]+)/i);
+  return match?.[1];
 };
 
 export class ToolPlanningChatAgent {
@@ -196,6 +208,21 @@ export class ToolPlanningChatAgent {
     }
 
     const mode: ChatMode = input.mode ?? "default";
+    const persistRequirement = detectPersistRequirement(message);
+    const requestedPersistPath = persistRequirement.required ? extractRequestedPath(message) : undefined;
+    const defaultPersistTargetPath = defaultPersistPath(message, new Date());
+    const resolvedPersistPath = persistRequirement.required
+      ? resolvePersistWritePath({
+          requestedPath: requestedPersistPath,
+          defaultPath: defaultPersistTargetPath,
+          virtualRoot: this.config.sandbox.virtualRoot
+        })
+      : undefined;
+    const userSpecifiedPersistPath = Boolean(requestedPersistPath?.trim());
+    let persistRequired = persistRequirement.required;
+    let persistDone = false;
+    let persistPathHint = resolvedPersistPath?.ok ? resolvedPersistPath.path : "";
+    let persistedPath: string | undefined;
 
     const emitUpdate = (stage: ChatUpdateStage, updateMessage: string, payload?: ChatUpdatePayload): void => {
       onUpdate?.(stage, updateMessage, payload);
@@ -269,9 +296,43 @@ export class ToolPlanningChatAgent {
       emitUpdate("planning", "工作空间已就绪", { workspacePath: middlewareCtx.workspacePath });
     }
 
+    if (persistRequired && resolvedPersistPath && !resolvedPersistPath.ok && userSpecifiedPersistPath) {
+      const question = `检测到你指定了文件路径 "${requestedPersistPath}"，但当前仅允许写入 /mnt/workspace/output/ 且仅支持文本扩展名（.md/.txt/.json/.yaml/.yml/.csv）。请提供新的输出路径。`;
+      const options: ChatClarificationOption[] = [
+        {
+          label: "用默认路径",
+          value: `请保存到 ${defaultPersistTargetPath}`,
+          recommended: true
+        },
+        {
+          label: "指定 output 路径",
+          value: "请使用 /mnt/workspace/output/ 下的新路径保存"
+        },
+        {
+          label: "先仅聊天输出",
+          value: "先给出内容草稿，稍后我再指定保存路径"
+        }
+      ];
+      clarificationFinalReply = `需要进一步确认：${question}`;
+      emitUpdate("clarification", question, {
+        clarification: {
+          question,
+          options
+        }
+      });
+      emitUpdate("final", "等待用户澄清，已暂停后续执行");
+    }
+
+    if (persistRequired && resolvedPersistPath?.ok) {
+      persistPathHint = resolvedPersistPath.path;
+    }
+
     emitUpdate("planning", "正在规划是否需要调用工具...");
 
     for (let step = 0; step < MAX_TOOL_STEPS; step += 1) {
+      if (clarificationFinalReply) {
+        break;
+      }
       throwIfAborted(abortSignal);
       emitUpdate(
         "model",
@@ -285,7 +346,9 @@ export class ToolPlanningChatAgent {
             role: "system" as const,
             content: buildPlannerSystemPrompt(this.config, {
               mode,
-              userMessage: message
+              userMessage: message,
+              persistRequired,
+              persistPathHint
             })
           },
           ...history,
@@ -346,11 +409,32 @@ export class ToolPlanningChatAgent {
         if (!looksLikeJsonAction(planner.text)) {
           plannerDraftAnswer = planner.text;
         }
+        if (persistRequired && !persistDone) {
+          observations.push({
+            tool: "write_file",
+            input: { path: persistPathHint || defaultPersistTargetPath },
+            ok: false,
+            output: "PERSIST_REQUIRED: Must call write_file successfully before final answer."
+          });
+          emitUpdate("planning", "检测到请求要求落盘，继续规划 write_file 步骤");
+          continue;
+        }
         emitUpdate("final", "Planner 返回非结构化输出，进入流式回答阶段");
         break;
       }
 
       if (action.action === "answer") {
+        if (persistRequired && !persistDone) {
+          plannerDraftAnswer = action.answer;
+          observations.push({
+            tool: "write_file",
+            input: { path: persistPathHint || defaultPersistTargetPath },
+            ok: false,
+            output: "PERSIST_REQUIRED: Answer deferred until write_file succeeds."
+          });
+          emitUpdate("planning", "请求要求先落盘，已阻止直接回答并继续规划");
+          continue;
+        }
         plannerDraftAnswer = action.answer;
         emitUpdate("final", "Planner 选择直接回答，进入流式回答阶段");
         break;
@@ -373,6 +457,13 @@ export class ToolPlanningChatAgent {
         });
         emitUpdate("final", "等待用户澄清，已暂停后续执行");
         break;
+      }
+
+      if (persistRequired && action.tool === "write_file" && (!action.input?.path || !action.input.path.trim())) {
+        action.input = {
+          ...(action.input ?? {}),
+          path: persistPathHint || defaultPersistTargetPath
+        };
       }
 
       const toolSignature = `${action.tool}:${JSON.stringify(action.input ?? {})}`;
@@ -401,6 +492,37 @@ export class ToolPlanningChatAgent {
       );
       observations.push(observation);
       emitUpdate("tool", `${action.tool} -> ${observation.ok ? "success" : "failed"}: ${truncate(observation.output, 240)}`);
+
+      if (action.tool === "write_file" && observation.ok) {
+        persistDone = true;
+        persistedPath = extractPersistedPath(observation.output) ?? action.input?.path;
+      }
+
+      if (
+        persistRequired &&
+        action.tool === "write_file" &&
+        !observation.ok &&
+        userSpecifiedPersistPath &&
+        isFileExistsObservation(observation.output)
+      ) {
+        const conflictPath = action.input?.path ?? persistPathHint ?? requestedPersistPath ?? defaultPersistTargetPath;
+        const question = `目标文件已存在：${conflictPath}。当前策略不允许覆盖，请提供新的 output 路径。`;
+        const options = await this.generateClarificationOptions({
+          question,
+          userMessage: message,
+          plannerTarget,
+          abortSignal
+        });
+        clarificationFinalReply = `需要进一步确认：${question}`;
+        emitUpdate("clarification", question, {
+          clarification: {
+            question,
+            options
+          }
+        });
+        emitUpdate("final", "检测到写入冲突，等待用户提供新路径");
+        break;
+      }
 
       if (observation.ok) {
         if (action.tool === "delegate_sub_tasks") {
@@ -528,6 +650,52 @@ export class ToolPlanningChatAgent {
         emitUpdate("error", synthError);
         throw new Error(synthError);
       }
+    }
+
+    if (persistRequired && !persistDone && !clarificationFinalReply) {
+      emitUpdate("tool", "未满足落盘约束，执行后端兜底 write_file...");
+      const fallbackPath = defaultPersistPath(message, new Date());
+      const fallbackResolved = resolvePersistWritePath({
+        defaultPath: fallbackPath,
+        virtualRoot: this.config.sandbox.virtualRoot
+      });
+      if (!fallbackResolved.ok) {
+        const fallbackError = `PERSIST_FALLBACK_FAILED: ${fallbackResolved.message}`;
+        emitUpdate("error", fallbackError);
+        throw new Error(fallbackError);
+      }
+
+      try {
+        const writeResult = await this.sandboxService.writeFile({
+          path: fallbackResolved.path,
+          content: finalResponse.text,
+          createDirs: true,
+          overwrite: false
+        });
+        persistDone = true;
+        persistedPath = writeResult.path;
+        observations.push({
+          tool: "write_file",
+          input: {
+            path: writeResult.path,
+            overwrite: false
+          },
+          ok: true,
+          output: `Wrote file successfully: path=${writeResult.path}, bytes=${writeResult.bytesWritten}`
+        });
+        emitUpdate("tool", `write_file -> success: path=${writeResult.path}`);
+      } catch (error) {
+        const fallbackError = `PERSIST_FALLBACK_FAILED: ${getErrorMessage(error)}`;
+        emitUpdate("error", fallbackError);
+        throw new Error(fallbackError);
+      }
+    }
+
+    if (persistRequired && persistDone && persistedPath && !clarificationFinalReply) {
+      finalResponse = {
+        ...finalResponse,
+        text: `${finalResponse.text}\n\n已保存到文件：${persistedPath}`
+      };
     }
 
     accumulatedLatency += finalResponse.latencyMs;

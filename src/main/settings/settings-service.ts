@@ -74,6 +74,8 @@ const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
         host: config.openviking.host,
         port: config.openviking.port,
         apiKey: config.openviking.apiKey,
+        vlmModel: config.openviking.vlmModel,
+        embeddingModel: config.openviking.embeddingModel,
         serverCommand: config.openviking.serverCommand,
         serverArgs: config.openviking.serverArgs,
         startTimeoutMs: config.openviking.startTimeoutMs,
