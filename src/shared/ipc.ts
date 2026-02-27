@@ -461,3 +461,11 @@ export type MemoryStatusResult = {
   url?: string;
   error?: string;
 };
+
+// Channel types
+export type ChannelStatusEvent = {
+  channelId: string;
+  status: "stopped" | "starting" | "running" | "error";
+  message?: string;
+  timestamp: number;
+};

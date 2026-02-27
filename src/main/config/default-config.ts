@@ -143,6 +143,10 @@ export const createDefaultConfig = (
         maxResults: 10
       }
     },
+    channels: {
+      enabled: false,
+      channels: []
+    },
     paths: input.paths,
     runtime: input.runtime
   };

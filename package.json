@@ -79,6 +79,7 @@
     "@assistant-ui/react-markdown": "^0.12.3",
     "@heroui/react": "^2.8.9",
     "@heroui/theme": "^2.4.26",
+    "@larksuiteoapi/node-sdk": "^1.59.0",
     "@tailwindcss/vite": "^4.2.0",
     "ai": "^6.0.97",
     "autoprefixer": "^10.4.24",

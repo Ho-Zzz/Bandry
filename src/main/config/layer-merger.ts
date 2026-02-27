@@ -260,6 +260,21 @@ export const applyLayer = (target: AppConfig, layer: ConfigLayer): void => {
     }
   }
 
+  if (layer.channels) {
+    const channelsLayer = layer.channels;
+    if (channelsLayer.enabled !== undefined) {
+      target.channels.enabled = channelsLayer.enabled;
+    }
+    if (channelsLayer.channels !== undefined) {
+      target.channels.channels = channelsLayer.channels.map((ch) => ({
+        type: ch.type ?? "feishu",
+        appId: ch.appId ?? "",
+        appSecret: ch.appSecret ?? "",
+        ...(ch.allowedChatIds ? { allowedChatIds: ch.allowedChatIds } : {}),
+      }));
+    }
+  }
+
   if (!layer.providers) {
     return;
   }

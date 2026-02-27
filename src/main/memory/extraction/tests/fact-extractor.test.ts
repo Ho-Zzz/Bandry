@@ -156,6 +156,10 @@ const createMockConfig = (): AppConfig => ({
       maxResults: 10
     }
   },
+  channels: {
+    enabled: false,
+    channels: []
+  },
   paths: {
     projectRoot: "",
     bandryHome: "",
