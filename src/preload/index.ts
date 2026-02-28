@@ -42,7 +42,18 @@ import type {
   SandboxWriteFileResult,
   TaskStartInput,
   TaskStartResult,
-  TaskUpdateEvent
+  TaskUpdateEvent,
+  SoulState,
+  SoulUpdateInput,
+  SoulOperationResult,
+  SoulInterviewInput,
+  SoulInterviewResult,
+  SoulInterviewSummarizeInput,
+  SoulInterviewSummarizeResult,
+  SkillItem,
+  SkillCreateInput,
+  SkillUpdateInput,
+  SkillOperationResult
 } from "../shared/ipc";
 
 const api = {
@@ -134,7 +145,27 @@ const api = {
   messageUpdate: (id: string, input: MessageUpdateInput): Promise<MessageResult | null> =>
     ipcRenderer.invoke("message:update", id, input),
   messageDelete: (id: string): Promise<boolean> =>
-    ipcRenderer.invoke("message:delete", id)
+    ipcRenderer.invoke("message:delete", id),
+  // Soul API
+  soulGet: (): Promise<SoulState> =>
+    ipcRenderer.invoke("soul:get"),
+  soulUpdate: (input: SoulUpdateInput): Promise<SoulOperationResult> =>
+    ipcRenderer.invoke("soul:update", input),
+  soulReset: (): Promise<SoulOperationResult> =>
+    ipcRenderer.invoke("soul:reset"),
+  soulInterview: (input: SoulInterviewInput): Promise<SoulInterviewResult> =>
+    ipcRenderer.invoke("soul:interview", input),
+  soulInterviewSummarize: (input: SoulInterviewSummarizeInput): Promise<SoulInterviewSummarizeResult> =>
+    ipcRenderer.invoke("soul:interview:summarize", input),
+  // Skills API
+  skillsList: (): Promise<SkillItem[]> =>
+    ipcRenderer.invoke("skills:list"),
+  skillsCreate: (input: SkillCreateInput): Promise<SkillOperationResult> =>
+    ipcRenderer.invoke("skills:create", input),
+  skillsUpdate: (name: string, input: SkillUpdateInput): Promise<SkillOperationResult> =>
+    ipcRenderer.invoke("skills:update", name, input),
+  skillsDelete: (name: string): Promise<SkillOperationResult> =>
+    ipcRenderer.invoke("skills:delete", name)
 };
 
 contextBridge.exposeInMainWorld("api", api);

@@ -19,6 +19,7 @@ import { SubagentLimitMiddleware } from "./subagent-limit";
 import { ResourceCurationMiddleware } from "./resource-curation";
 import { ClarificationMiddleware } from "./clarification";
 import { TodoListMiddleware } from "./todolist";
+import { SoulSkillMiddleware } from "./soul-skill";
 
 class NoopMemoryMiddleware implements Middleware {
   name = "memory";
@@ -42,7 +43,8 @@ export type MiddlewareLoaderOptions = {
  *
  * Middleware execution order (aligned with DeerFlow):
  * 1. WorkspaceMiddleware - Create task workspace
- * 2. LocalResourceMiddleware - Handle local resources
+ * 2. SoulSkillMiddleware - Inject soul persona and skills context
+ * 3. LocalResourceMiddleware - Handle local resources
  * 3. SandboxBindingMiddleware - Bind sandbox context
  * 4. DanglingToolCallMiddleware - Fix dangling tool calls
  * 5. SummarizationMiddleware - Context compression (optional)
@@ -62,6 +64,7 @@ export const buildMiddlewares = (options: MiddlewareLoaderOptions): Middleware[]
 
   const middlewares: Middleware[] = [
     new WorkspaceMiddleware(options.config.paths.workspacesDir),
+    new SoulSkillMiddleware(options.config),
     new LocalResourceMiddleware(),
     new ResourceInjectionMiddleware(resourceStore),
     new SandboxBindingMiddleware(options.sandboxService),

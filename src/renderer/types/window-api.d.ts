@@ -41,7 +41,18 @@ import type {
   SandboxWriteFileResult,
   TaskStartInput,
   TaskStartResult,
-  TaskUpdateEvent
+  TaskUpdateEvent,
+  SoulState,
+  SoulUpdateInput,
+  SoulOperationResult,
+  SoulInterviewInput,
+  SoulInterviewResult,
+  SoulInterviewSummarizeInput,
+  SoulInterviewSummarizeResult,
+  SkillItem,
+  SkillCreateInput,
+  SkillUpdateInput,
+  SkillOperationResult
 } from "../../shared/ipc";
 
 declare global {
@@ -95,6 +106,19 @@ declare global {
       onChatUpdate: (listener: (update: ChatUpdateEvent) => void) => () => void;
       onChatDelta: (listener: (update: ChatDeltaEvent) => void) => () => void;
       onTaskUpdate: (listener: (update: TaskUpdateEvent) => void) => () => void;
+
+      // Soul API
+      soulGet: () => Promise<SoulState>;
+      soulUpdate: (input: SoulUpdateInput) => Promise<SoulOperationResult>;
+      soulReset: () => Promise<SoulOperationResult>;
+      soulInterview: (input: SoulInterviewInput) => Promise<SoulInterviewResult>;
+      soulInterviewSummarize: (input: SoulInterviewSummarizeInput) => Promise<SoulInterviewSummarizeResult>;
+
+      // Skills API
+      skillsList: () => Promise<SkillItem[]>;
+      skillsCreate: (input: SkillCreateInput) => Promise<SkillOperationResult>;
+      skillsUpdate: (name: string, input: SkillUpdateInput) => Promise<SkillOperationResult>;
+      skillsDelete: (name: string) => Promise<SkillOperationResult>;
     };
   }
 }

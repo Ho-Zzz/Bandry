@@ -17,6 +17,8 @@ const createConfig = () => {
       resourcesDir: path.join(workspaceDir, "resources"),
       pluginsDir: path.join(workspaceDir, "plugins"),
       traceDir: path.join(workspaceDir, "traces"),
+      skillsDir: path.join(workspaceDir, "skills"),
+      soulDir: path.join(workspaceDir, "soul"),
       projectConfigPath: path.join(workspaceDir, "config.json"),
       userConfigPath: path.join(workspaceDir, "user-config.json"),
       auditLogPath: path.join(workspaceDir, "model-audit.log"),
@@ -44,6 +46,7 @@ describe("middleware loader order", () => {
 
     expect(middlewares.map((item) => item.name)).toEqual([
       "workspace",
+      "soul_skill",
       "local_resource",
       "resource_injection",
       "sandbox_binding",
@@ -71,6 +74,7 @@ describe("middleware loader order", () => {
 
     expect(middlewares.map((item) => item.name)).toEqual([
       "workspace",
+      "soul_skill",
       "local_resource",
       "resource_injection",
       "sandbox_binding",

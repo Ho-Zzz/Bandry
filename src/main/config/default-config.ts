@@ -84,6 +84,8 @@ export const createDefaultConfig = (
     features: {
       enableMemory: false,
       enableMCP: false,
+      enableSkills: true,
+      enableSoul: true,
     },
     openviking: {
       enabled: true,
