@@ -89,6 +89,30 @@ const getStringArray = (record: Record<string, unknown>, keys: string[]): string
   return [];
 };
 
+const getString = (record: Record<string, unknown>, keys: string[]): string | undefined => {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim().toLowerCase();
+    }
+  }
+  return undefined;
+};
+
+const inferEmbeddingModel = (raw: Record<string, unknown>): boolean => {
+  if (getBoolean(raw, ["embedding", "is_embedding", "supports_embedding", "supports_embeddings"])) {
+    return true;
+  }
+
+  const task = getString(raw, ["task", "type", "model_type"]);
+  if (task && task.includes("embedding")) {
+    return true;
+  }
+
+  const id = getString(raw, ["id", "model", "name"]);
+  return Boolean(id && id.includes("embedding"));
+};
+
 const buildCapabilities = (raw: Record<string, unknown>): CatalogModelCapabilities => {
   const modalities = getStringArray(raw, [
     "modalities",
@@ -109,7 +133,8 @@ const buildCapabilities = (raw: Record<string, unknown>): CatalogModelCapabiliti
       "supports_reasoning"
     ]),
     inputModalities: modalities.length > 0 ? modalities : ["text"],
-    outputModalities: modalities.length > 0 ? modalities : ["text"]
+    outputModalities: modalities.length > 0 ? modalities : ["text"],
+    isEmbeddingModel: inferEmbeddingModel(raw)
   };
 };
 

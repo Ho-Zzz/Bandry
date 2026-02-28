@@ -34,55 +34,64 @@ const createMockConfig = (): AppConfig => ({
       enabled: true,
       apiKey: "sk-openai-valid-key-1234567890",
       baseUrl: "",
-      model: "gpt-4"
+      model: "gpt-4",
+      embeddingModel: "text-embedding-3-large"
     },
     deepseek: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
     },
     volcengine: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: "doubao-embedding-vision-250615"
     },
     openrouter: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
     },
     groq: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
     },
     moonshot: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
     },
     qwen: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
     },
     siliconflow: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
     },
     together: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
     }
   },
   features: {
@@ -94,8 +103,8 @@ const createMockConfig = (): AppConfig => ({
     host: "127.0.0.1",
     port: 1933,
     apiKey: "",
-    vlmModel: "gpt-4",
-    embeddingModel: "text-embedding-3-large",
+    vlmProfileId: "profile_openai_default",
+    embeddingProfileId: "profile_openai_default",
     serverCommand: "openviking",
     serverArgs: ["serve"],
     startTimeoutMs: 20_000,

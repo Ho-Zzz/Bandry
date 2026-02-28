@@ -116,6 +116,7 @@ export type ProviderLayerConfig = Partial<{
   apiKey: string;
   baseUrl: string;
   model: string;
+  embeddingModel: string;
   orgId: string;
 }>;
 
@@ -151,8 +152,8 @@ export type OpenVikingLayerConfig = Partial<{
   host: string;
   port: number;
   apiKey: string;
-  vlmModel: string;
-  embeddingModel: string;
+  vlmProfileId: string;
+  embeddingProfileId: string;
   serverCommand: string;
   serverArgs: string[];
   startTimeoutMs: number;
@@ -200,6 +201,7 @@ export type ProviderConfig = {
   apiKey: string;
   baseUrl: string;
   model: string;
+  embeddingModel: string;
   orgId?: string;
 };
 
@@ -241,8 +243,8 @@ export type AppConfig = {
     host: string;
     port: number;
     apiKey: string;
-    vlmModel: string;
-    embeddingModel: string;
+    vlmProfileId: string;
+    embeddingProfileId: string;
     serverCommand: string;
     serverArgs: string[];
     startTimeoutMs: number;

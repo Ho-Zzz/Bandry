@@ -39,6 +39,11 @@ describe("ModelsCatalogService", () => {
                 name: "GPT 4.1 Mini",
                 tool_call: true,
                 modalities: ["text"]
+              },
+              {
+                id: "text-embedding-3-large",
+                name: "Text Embedding 3 Large",
+                task: "embedding"
               }
             ]
           },
@@ -72,6 +77,7 @@ describe("ModelsCatalogService", () => {
     expect(result.providers).toHaveLength(2);
     expect(result.providers[0].id).toBe("openai");
     expect(result.providers[0].models[0].capabilities.toolCall).toBe(true);
+    expect(result.providers[0].models[1].capabilities.isEmbeddingModel).toBe(true);
     expect(result.providers.some((provider) => provider.id === "openrouter")).toBe(true);
   });
 

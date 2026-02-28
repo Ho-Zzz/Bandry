@@ -17,6 +17,7 @@ const createMockProviders = (): AppConfig["providers"] => {
           apiKey: "",
           baseUrl: defaults.baseUrl,
           model: defaults.model,
+          embeddingModel: defaults.embeddingModel,
           ...(defaults.orgId !== undefined ? { orgId: defaults.orgId } : {})
         }
       ];
@@ -84,8 +85,8 @@ const createMockConfig = (overrides?: Partial<AppConfig>): AppConfig => ({
     host: "localhost",
     port: 8080,
     apiKey: "",
-    vlmModel: "deepseek-chat",
-    embeddingModel: "text-embedding-3-large",
+    vlmProfileId: "default",
+    embeddingProfileId: "default",
     serverCommand: "",
     serverArgs: [],
     startTimeoutMs: 10000,

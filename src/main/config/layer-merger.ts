@@ -16,6 +16,9 @@ const applyProviderLayer = (target: AppConfig, providerName: LlmProvider, provid
   if (providerLayer.model !== undefined) {
     provider.model = providerLayer.model;
   }
+  if (providerLayer.embeddingModel !== undefined) {
+    provider.embeddingModel = providerLayer.embeddingModel;
+  }
   if (providerName === "openai" && providerLayer.orgId !== undefined) {
     provider.orgId = providerLayer.orgId;
   }
@@ -106,11 +109,11 @@ export const applyLayer = (target: AppConfig, layer: ConfigLayer): void => {
     if (openvikingLayer.apiKey !== undefined) {
       target.openviking.apiKey = openvikingLayer.apiKey;
     }
-    if (openvikingLayer.vlmModel !== undefined) {
-      target.openviking.vlmModel = openvikingLayer.vlmModel;
+    if (openvikingLayer.vlmProfileId !== undefined) {
+      target.openviking.vlmProfileId = openvikingLayer.vlmProfileId;
     }
-    if (openvikingLayer.embeddingModel !== undefined) {
-      target.openviking.embeddingModel = openvikingLayer.embeddingModel;
+    if (openvikingLayer.embeddingProfileId !== undefined) {
+      target.openviking.embeddingProfileId = openvikingLayer.embeddingProfileId;
     }
     if (openvikingLayer.serverCommand !== undefined) {
       target.openviking.serverCommand = openvikingLayer.serverCommand;

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { type AppConfig } from "../config";
+import { hasUsableProviderApiKey } from "../config/provider-credential";
 import { normalizeConfig } from "../config/normalize-config";
 import type {
   GlobalSettingsState,
@@ -11,6 +12,8 @@ import type {
 type SettingsServiceOptions = {
   config: AppConfig;
 };
+
+const OPENVIKING_ALLOWED_PROVIDERS = new Set(["openai", "volcengine"]);
 
 const toSettingsProviders = (
   providers: AppConfig["providers"]
@@ -23,6 +26,7 @@ const toSettingsProviders = (
         apiKey: config.apiKey,
         baseUrl: config.baseUrl,
         model: config.model,
+        embeddingModel: config.embeddingModel,
         ...(config.orgId !== undefined ? { orgId: config.orgId } : {})
       }
     ])
@@ -37,6 +41,7 @@ const toConfigProvidersLayer = (
     apiKey: string;
     baseUrl: string;
     model: string;
+    embeddingModel: string;
     orgId?: string;
   };
 } => {
@@ -48,6 +53,7 @@ const toConfigProvidersLayer = (
         apiKey: config.apiKey,
         baseUrl: config.baseUrl,
         model: config.model,
+        embeddingModel: config.embeddingModel,
         ...(config.orgId !== undefined ? { orgId: config.orgId } : {})
       }
     ])
@@ -74,8 +80,8 @@ const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
         host: config.openviking.host,
         port: config.openviking.port,
         apiKey: config.openviking.apiKey,
-        vlmModel: config.openviking.vlmModel,
-        embeddingModel: config.openviking.embeddingModel,
+        vlmProfileId: config.openviking.vlmProfileId,
+        embeddingProfileId: config.openviking.embeddingProfileId,
         serverCommand: config.openviking.serverCommand,
         serverArgs: config.openviking.serverArgs,
         startTimeoutMs: config.openviking.startTimeoutMs,
@@ -144,6 +150,38 @@ const validateState = (state: GlobalSettingsState): string[] => {
       errors.push(`模型档案 id 重复: ${profile.id}`);
     }
     duplicated.add(profile.id);
+  }
+
+  if (state.memory.enableMemory && state.memory.openviking.enabled) {
+    const profilesById = new Map(state.modelProfiles.map((profile) => [profile.id, profile]));
+    for (const [field, profileId] of [
+      ["vlmProfileId", state.memory.openviking.vlmProfileId],
+      ["embeddingProfileId", state.memory.openviking.embeddingProfileId]
+    ] as const) {
+      const id = profileId.trim();
+      if (!id) {
+        errors.push(`OpenViking ${field} 未配置`);
+        continue;
+      }
+
+      const profile = profilesById.get(id);
+      if (!profile) {
+        errors.push(`OpenViking ${field} 指向不存在的模型档案: ${id}`);
+        continue;
+      }
+      if (!profile.enabled) {
+        errors.push(`OpenViking ${field} 指向的模型档案未启用: ${id}`);
+      }
+      if (!OPENVIKING_ALLOWED_PROVIDERS.has(profile.provider)) {
+        errors.push(`OpenViking ${field} 仅支持 OpenAI/Volcengine: ${id}`);
+        continue;
+      }
+
+      const provider = state.providers[profile.provider];
+      if (!provider || !hasUsableProviderApiKey(profile.provider, provider.apiKey)) {
+        errors.push(`OpenViking ${field} 的 provider 凭证不可用: ${profile.provider}`);
+      }
+    }
   }
 
   return errors;
@@ -230,6 +268,7 @@ export class SettingsService {
       providerConfig.apiKey = providerInput.apiKey;
       providerConfig.baseUrl = providerInput.baseUrl;
       providerConfig.model = providerInput.model;
+      providerConfig.embeddingModel = providerInput.embeddingModel;
       providerConfig.orgId = providerInput.orgId;
     }
 

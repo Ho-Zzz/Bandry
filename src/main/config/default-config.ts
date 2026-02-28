@@ -22,6 +22,7 @@ export const createDefaultConfig = (
           apiKey: "",
           baseUrl: defaults.baseUrl,
           model: defaults.model,
+          embeddingModel: defaults.embeddingModel,
           ...(defaults.orgId !== undefined ? { orgId: defaults.orgId } : {})
         }
       ];
@@ -90,8 +91,8 @@ export const createDefaultConfig = (
       host: "127.0.0.1",
       port: 1933,
       apiKey: "",
-      vlmModel: "gpt-4.1-mini",
-      embeddingModel: "text-embedding-3-large",
+      vlmProfileId: "",
+      embeddingProfileId: "",
       serverCommand: "openviking",
       serverArgs: ["serve"],
       startTimeoutMs: 20_000,
