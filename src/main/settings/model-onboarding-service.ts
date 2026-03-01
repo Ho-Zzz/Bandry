@@ -1,4 +1,5 @@
 import type {
+  CatalogModelItem,
   ConnectedModelResult,
   ModelsCatalogListInput,
   ModelsCatalogListResult,
@@ -29,6 +30,99 @@ const RUNTIME_ROLES: SettingsRuntimeRole[] = [
 
 const toProviderDisplayName = (provider: ModelProvider): string => {
   return MODEL_PROVIDER_NAME_MAP[provider] ?? provider;
+};
+
+const VOLCENGINE_PATCH_MODELS: CatalogModelItem[] = [
+  {
+    id: "doubao-seed-2-0-lite-260215",
+    name: "Doubao Seed 2.0 Lite",
+    provider: "volcengine",
+    capabilities: {
+      toolCall: true,
+      reasoning: false,
+      inputModalities: ["text"],
+      outputModalities: ["text"],
+      isEmbeddingModel: false
+    }
+  },
+  {
+    id: "doubao-seed-2-0-mini-260215",
+    name: "Doubao Seed 2.0 Mini",
+    provider: "volcengine",
+    capabilities: {
+      toolCall: true,
+      reasoning: false,
+      inputModalities: ["text"],
+      outputModalities: ["text"],
+      isEmbeddingModel: false
+    }
+  },
+  {
+    id: "doubao-seed-2-0-pro-260215",
+    name: "Doubao Seed 2.0 Pro",
+    provider: "volcengine",
+    capabilities: {
+      toolCall: true,
+      reasoning: true,
+      inputModalities: ["text"],
+      outputModalities: ["text"],
+      isEmbeddingModel: false
+    }
+  },
+  {
+    id: "doubao-seed-1-6-250615",
+    name: "Doubao Seed 1.6",
+    provider: "volcengine",
+    capabilities: {
+      toolCall: true,
+      reasoning: false,
+      inputModalities: ["text"],
+      outputModalities: ["text"],
+      isEmbeddingModel: false
+    }
+  },
+  {
+    id: "doubao-embedding-vision-250615",
+    name: "Doubao Embedding Vision",
+    provider: "volcengine",
+    capabilities: {
+      toolCall: false,
+      reasoning: false,
+      inputModalities: ["text", "image"],
+      outputModalities: ["embedding"],
+      isEmbeddingModel: true
+    }
+  }
+];
+
+const patchCatalogProviders = (catalog: ModelsCatalogListResult): ModelsCatalogListResult => {
+  const providers = catalog.providers.map((provider) => ({
+    ...provider,
+    models: [...provider.models]
+  }));
+
+  const volcengineProvider = providers.find((provider) => provider.id === "volcengine");
+  if (volcengineProvider) {
+    const existing = new Set(volcengineProvider.models.map((model) => model.id));
+    for (const model of VOLCENGINE_PATCH_MODELS) {
+      if (!existing.has(model.id)) {
+        volcengineProvider.models.push(model);
+      }
+    }
+    volcengineProvider.models.sort((a, b) => a.id.localeCompare(b.id));
+  } else {
+    providers.push({
+      id: "volcengine",
+      name: toProviderDisplayName("volcengine"),
+      models: [...VOLCENGINE_PATCH_MODELS]
+    });
+  }
+
+  providers.sort((a, b) => a.id.localeCompare(b.id));
+  return {
+    ...catalog,
+    providers
+  };
 };
 
 const toSlug = (value: string): string => {
@@ -67,7 +161,8 @@ export class ModelOnboardingService {
   ) {}
 
   async listCatalog(input: ModelsCatalogListInput = {}): Promise<ModelsCatalogListResult> {
-    return this.catalogService.list(input);
+    const catalog = await this.catalogService.list(input);
+    return patchCatalogProviders(catalog);
   }
 
   listConnected(): ModelsListConnectedResult {
@@ -108,7 +203,7 @@ export class ModelOnboardingService {
       throw new Error("apiKey is required");
     }
 
-    const catalog = await this.catalogService.list();
+    const catalog = await this.listCatalog();
     const providerCatalog = catalog.providers.find((provider) => provider.id === input.provider);
     if (!providerCatalog) {
       throw new Error(`Provider ${input.provider} is not available in current catalog source`);

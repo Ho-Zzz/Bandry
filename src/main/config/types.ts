@@ -118,6 +118,7 @@ export type ProviderLayerConfig = Partial<{
   apiKey: string;
   baseUrl: string;
   model: string;
+  embeddingModel: string;
   orgId: string;
 }>;
 
@@ -155,6 +156,8 @@ export type OpenVikingLayerConfig = Partial<{
   host: string;
   port: number;
   apiKey: string;
+  vlmProfileId: string;
+  embeddingProfileId: string;
   serverCommand: string;
   serverArgs: string[];
   startTimeoutMs: number;
@@ -184,6 +187,16 @@ export type PathsLayerConfig = Partial<
   >
 >;
 
+export type ChannelsLayerConfig = Partial<{
+  enabled: boolean;
+  channels: Array<{
+    type: string;
+    appId?: string;
+    appSecret?: string;
+    allowedChatIds?: string[];
+  }>;
+}>;
+
 export type ConfigLayer = {
   llm?: LlmLayerConfig;
   sandbox?: SandboxLayerConfig;
@@ -197,6 +210,7 @@ export type ConfigLayer = {
   modelProfiles?: ModelProfileLayer[];
   routing?: RoutingLayerConfig;
   tools?: InternalToolsLayerConfig;
+  channels?: ChannelsLayerConfig;
 };
 
 export type ProviderConfig = {
@@ -204,6 +218,7 @@ export type ProviderConfig = {
   apiKey: string;
   baseUrl: string;
   model: string;
+  embeddingModel: string;
   orgId?: string;
 };
 
@@ -247,6 +262,8 @@ export type AppConfig = {
     host: string;
     port: number;
     apiKey: string;
+    vlmProfileId: string;
+    embeddingProfileId: string;
     serverCommand: string;
     serverArgs: string[];
     startTimeoutMs: number;
@@ -262,6 +279,15 @@ export type AppConfig = {
   modelProfiles: ModelProfile[];
   routing: RoutingConfig;
   tools: InternalToolsConfig;
+  channels: {
+    enabled: boolean;
+    channels: Array<{
+      type: string;
+      appId: string;
+      appSecret: string;
+      allowedChatIds?: string[];
+    }>;
+  };
   paths: AppPaths;
   runtime: RuntimeConfig;
 };

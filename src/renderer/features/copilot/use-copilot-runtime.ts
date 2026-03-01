@@ -21,6 +21,7 @@ type TraceToolArgs = {
 type TraceToolResult = {
   message: string;
   timestamp: number;
+  workspacePath?: string;
 };
 
 const toAssistantStatus = (status?: Message["status"]): AssistantMessageStatus | undefined => {
@@ -70,7 +71,8 @@ const buildTraceToolPart = (
     argsText: JSON.stringify({ stage: event.stage }),
     result: {
       message: event.message,
-      timestamp: event.timestamp
+      timestamp: event.timestamp,
+      ...(event.payload?.workspacePath ? { workspacePath: event.payload.workspacePath } : {})
     },
     isError: event.stage === "error"
   };

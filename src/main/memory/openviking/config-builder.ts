@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { AppConfig } from "../../config";
+import { hasUsableProviderApiKey } from "../../config/provider-credential";
 
 type BuildOpenVikingConfigInput = {
   config: AppConfig;
@@ -20,34 +21,78 @@ type DenseEmbeddingConfig = {
   input: "multimodal" | "text";
 };
 
-const buildDenseEmbeddingConfig = (config: AppConfig): DenseEmbeddingConfig => {
-  const volcengine = config.providers.volcengine;
-  if (volcengine.apiKey.trim().length > 0) {
-    return {
-      model: "doubao-embedding-vision-250615",
-      api_key: volcengine.apiKey,
-      api_base: volcengine.baseUrl,
-      dimension: 1024,
-      provider: "volcengine",
-      input: "multimodal"
-    };
+type OpenVikingProvider = "openai" | "volcengine";
+
+type BoundProfileConfig = {
+  provider: OpenVikingProvider;
+  model: string;
+  apiKey: string;
+  apiBase: string;
+};
+
+const resolveBoundProfileConfig = (
+  config: AppConfig,
+  profileId: string,
+  fieldName: "vlmProfileId" | "embeddingProfileId"
+): BoundProfileConfig => {
+  const normalizedId = profileId.trim();
+  if (!normalizedId) {
+    throw new Error(`openviking.${fieldName} is required`);
   }
 
-  const openai = config.providers.openai;
+  const profile = config.modelProfiles.find((item) => item.id === normalizedId);
+  if (!profile) {
+    throw new Error(`openviking.${fieldName} references unknown profile: ${normalizedId}`);
+  }
+  if (!profile.enabled) {
+    throw new Error(`openviking.${fieldName} references disabled profile: ${normalizedId}`);
+  }
+  if (profile.provider !== "openai" && profile.provider !== "volcengine") {
+    throw new Error(`openviking.${fieldName} only supports openai/volcengine profile: ${normalizedId}`);
+  }
+
+  const providerConfig = config.providers[profile.provider];
+  if (!hasUsableProviderApiKey(profile.provider, providerConfig.apiKey)) {
+    throw new Error(`openviking.${fieldName} provider credential is invalid: ${profile.provider}`);
+  }
+
   return {
-    model: "text-embedding-3-large",
-    api_key: openai.apiKey,
-    api_base: openai.baseUrl,
-    dimension: 3072,
-    provider: "openai",
-    input: "text"
+    provider: profile.provider,
+    model: profile.model,
+    apiKey: providerConfig.apiKey,
+    apiBase: providerConfig.baseUrl
+  };
+};
+
+const resolveEmbeddingDimension = (provider: OpenVikingProvider, model: string): number => {
+  if (provider === "openai" && model === "text-embedding-3-large") {
+    return 3072;
+  }
+  if (provider === "volcengine" && model === "doubao-embedding-vision-250615") {
+    return 1024;
+  }
+  return 1024;
+};
+
+const buildDenseEmbeddingConfig = (profile: BoundProfileConfig): DenseEmbeddingConfig => {
+  return {
+    model: profile.model,
+    api_key: profile.apiKey,
+    api_base: profile.apiBase,
+    dimension: resolveEmbeddingDimension(profile.provider, profile.model),
+    provider: profile.provider,
+    input: profile.provider === "volcengine" ? "multimodal" : "text"
   };
 };
 
 export const buildOpenVikingConfig = (input: BuildOpenVikingConfigInput): Record<string, unknown> => {
-  const vlmProvider = input.config.llm.defaultProvider;
-  const vlmConfig = input.config.providers[vlmProvider];
-  const denseEmbedding = buildDenseEmbeddingConfig(input.config);
+  const vlm = resolveBoundProfileConfig(input.config, input.config.openviking.vlmProfileId, "vlmProfileId");
+  const embedding = resolveBoundProfileConfig(
+    input.config,
+    input.config.openviking.embeddingProfileId,
+    "embeddingProfileId"
+  );
+  const denseEmbedding = buildDenseEmbeddingConfig(embedding);
 
   return {
     default_account: "bandry",
@@ -70,12 +115,12 @@ export const buildOpenVikingConfig = (input: BuildOpenVikingConfigInput): Record
       dense: denseEmbedding
     },
     vlm: {
-      model: vlmConfig.model,
-      api_key: vlmConfig.apiKey,
-      api_base: vlmConfig.baseUrl,
+      model: vlm.model,
+      api_key: vlm.apiKey,
+      api_base: vlm.apiBase,
       temperature: 0,
       max_retries: 2,
-      provider: vlmProvider,
+      provider: vlm.provider,
       thinking: false
     }
   };

@@ -207,7 +207,25 @@ flowchart TD
 - `已实现`：SQLite schema、会话/消息存储、IPC 对接。
 - `已实现（基础）`：模型/员工相关表结构已纳入 schema。
 
-### 4.10 Skills（能力包协议层）
+### 4.10 Channels（外部消息通道）
+
+设计目标：
+
+- 将外部 IM 平台（飞书、Slack 等）的消息统一接入编排层，复用已有 ChatAgent 能力。
+- 提供 Channel 抽象接口，新平台只需实现 `start/stop/sendReply/onMessage`。
+- 支持 Headless Gateway 模式，无需 Electron 即可独立运行通道服务。
+
+当前状态：
+
+- `已实现`：Channel 抽象接口与 ChannelManager 生命周期管理。
+- `已实现`：飞书（Lark）通道，基于 WebSocket 长连接接收消息、REST API 回复。
+- `已实现`：消息命令解析（`/think`、`/agents`、`/model:<id>`）。
+- `已实现`：Headless Gateway 入口（`src/main/gateway.ts`，`pnpm gateway` 启动）。
+- `已实现`：配置层支持（环境变量 `CHANNELS_ENABLED`、`FEISHU_*`）。
+- `规划中`：更多平台适配（Slack、Discord 等）。
+- `规划中`：渲染进程通道状态展示（preload 桥接 `channel:status` 事件）。
+
+### 4.11 Skills（能力包协议层）
 
 设计目标：
 
@@ -256,6 +274,8 @@ flowchart TD
 src/main/
 ├── app/
 ├── automation/
+├── channels/          # 外部消息通道（飞书等）
+│   └── feishu/
 ├── common/
 ├── config/
 ├── ipc/
@@ -265,7 +285,8 @@ src/main/
 ├── orchestration/
 ├── persistence/sqlite/
 ├── sandbox/
-└── settings/
+├── settings/
+└── gateway.ts         # Headless 通道网关入口
 ```
 
 说明：上述模块化结构已完成重组，测试约定为模块内 `tests/` 目录。
@@ -304,6 +325,7 @@ TODO：
 - 工具规划型 chat 与本地任务执行能力。
 - SQLite 会话与消息存储。
 - 配置分层与路径系统。
+- Channel 通道抽象与飞书集成、Headless Gateway。
 
 ### 9.2 已实现但未完全接入主链
 

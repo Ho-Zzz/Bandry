@@ -83,6 +83,8 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
 
   config.openviking.host = config.openviking.host.trim() || "127.0.0.1";
   config.openviking.port = Math.max(1, Math.min(65535, Math.floor(config.openviking.port)));
+  config.openviking.vlmProfileId = config.openviking.vlmProfileId.trim();
+  config.openviking.embeddingProfileId = config.openviking.embeddingProfileId.trim();
   config.openviking.serverCommand = config.openviking.serverCommand.trim() || "openviking";
   config.openviking.serverArgs = config.openviking.serverArgs.map((arg) => arg.trim()).filter(Boolean);
   if (config.openviking.serverArgs.length === 0) {
@@ -102,6 +104,7 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
 
   for (const provider of Object.values(config.providers)) {
     provider.baseUrl = normalizeProviderBaseUrl(provider.baseUrl);
+    provider.embeddingModel = provider.embeddingModel.trim();
   }
 
   const normalizedProfiles = new Map<string, AppConfig["modelProfiles"][number]>();
@@ -152,6 +155,10 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.tools.webFetch.provider = "jina";
   config.tools.webFetch.baseUrl = config.tools.webFetch.baseUrl.trim() || "https://r.jina.ai/http://";
   config.tools.webFetch.timeoutMs = Math.max(500, Math.floor(config.tools.webFetch.timeoutMs));
+
+  config.channels.channels = config.channels.channels.filter(
+    (ch) => ch.type && ch.appId && ch.appSecret
+  );
 
   config.runtime.devServerUrl = config.runtime.devServerUrl?.trim() || undefined;
   config.runtime.inheritedEnv = Object.fromEntries(

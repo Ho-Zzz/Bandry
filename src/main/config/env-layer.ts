@@ -78,6 +78,8 @@ export const envToLayer = (env: NodeJS.ProcessEnv): ConfigLayer => {
       host: toStringValue(env.OPENVIKING_HOST),
       port: toNumberValue(env.OPENVIKING_PORT),
       apiKey: toStringValue(env.OPENVIKING_API_KEY),
+      vlmProfileId: toStringValue(env.OPENVIKING_VLM_PROFILE_ID),
+      embeddingProfileId: toStringValue(env.OPENVIKING_EMBEDDING_PROFILE_ID),
       serverCommand: toStringValue(env.OPENVIKING_SERVER_COMMAND),
       serverArgs: toStringListValue(env.OPENVIKING_SERVER_ARGS),
       startTimeoutMs: toNumberValue(env.OPENVIKING_START_TIMEOUT_MS),
@@ -125,52 +127,72 @@ export const envToLayer = (env: NodeJS.ProcessEnv): ConfigLayer => {
         timeoutMs: toNumberValue(env.WEB_FETCH_TIMEOUT_MS)
       }
     },
+    channels: {
+      enabled: toBooleanValue(env.CHANNELS_ENABLED),
+      channels: env.FEISHU_APP_ID && env.FEISHU_APP_SECRET
+        ? [{
+            type: "feishu" as const,
+            appId: env.FEISHU_APP_ID,
+            appSecret: env.FEISHU_APP_SECRET,
+            allowedChatIds: toStringListValue(env.FEISHU_ALLOWED_CHAT_IDS),
+          }]
+        : undefined,
+    },
     providers: {
       openai: {
         apiKey: toStringValue(env.OPENAI_API_KEY),
         baseUrl: toBaseUrlValue(env.OPENAI_BASE_URL),
         orgId: toStringValue(env.OPENAI_ORG_ID),
-        model: toStringValue(env.OPENAI_MODEL)
+        model: toStringValue(env.OPENAI_MODEL),
+        embeddingModel: toStringValue(env.OPENAI_EMBEDDING_MODEL)
       },
       deepseek: {
         apiKey: toStringValue(env.DEEPSEEK_API_KEY),
         baseUrl: toBaseUrlValue(env.DEEPSEEK_BASE_URL),
-        model: toStringValue(env.DEEPSEEK_MODEL)
+        model: toStringValue(env.DEEPSEEK_MODEL),
+        embeddingModel: toStringValue(env.DEEPSEEK_EMBEDDING_MODEL)
       },
       volcengine: {
         apiKey: volcengineApiKey,
         baseUrl: volcengineBaseUrl,
-        model: toStringValue(env.BYTEDANCE_MODEL ?? env.VOLCENGINE_MODEL)
+        model: toStringValue(env.BYTEDANCE_MODEL ?? env.VOLCENGINE_MODEL),
+        embeddingModel: toStringValue(env.BYTEDANCE_EMBEDDING_MODEL ?? env.VOLCENGINE_EMBEDDING_MODEL)
       },
       openrouter: {
         apiKey: toStringValue(env.OPENROUTER_API_KEY),
         baseUrl: toBaseUrlValue(env.OPENROUTER_BASE_URL),
-        model: toStringValue(env.OPENROUTER_MODEL)
+        model: toStringValue(env.OPENROUTER_MODEL),
+        embeddingModel: toStringValue(env.OPENROUTER_EMBEDDING_MODEL)
       },
       groq: {
         apiKey: toStringValue(env.GROQ_API_KEY),
         baseUrl: toBaseUrlValue(env.GROQ_BASE_URL),
-        model: toStringValue(env.GROQ_MODEL)
+        model: toStringValue(env.GROQ_MODEL),
+        embeddingModel: toStringValue(env.GROQ_EMBEDDING_MODEL)
       },
       moonshot: {
         apiKey: toStringValue(env.MOONSHOT_API_KEY),
         baseUrl: toBaseUrlValue(env.MOONSHOT_BASE_URL),
-        model: toStringValue(env.MOONSHOT_MODEL)
+        model: toStringValue(env.MOONSHOT_MODEL),
+        embeddingModel: toStringValue(env.MOONSHOT_EMBEDDING_MODEL)
       },
       qwen: {
         apiKey: toStringValue(env.QWEN_API_KEY),
         baseUrl: toBaseUrlValue(env.QWEN_BASE_URL),
-        model: toStringValue(env.QWEN_MODEL)
+        model: toStringValue(env.QWEN_MODEL),
+        embeddingModel: toStringValue(env.QWEN_EMBEDDING_MODEL)
       },
       siliconflow: {
         apiKey: toStringValue(env.SILICONFLOW_API_KEY),
         baseUrl: toBaseUrlValue(env.SILICONFLOW_BASE_URL),
-        model: toStringValue(env.SILICONFLOW_MODEL)
+        model: toStringValue(env.SILICONFLOW_MODEL),
+        embeddingModel: toStringValue(env.SILICONFLOW_EMBEDDING_MODEL)
       },
       together: {
         apiKey: toStringValue(env.TOGETHER_API_KEY),
         baseUrl: toBaseUrlValue(env.TOGETHER_BASE_URL),
-        model: toStringValue(env.TOGETHER_MODEL)
+        model: toStringValue(env.TOGETHER_MODEL),
+        embeddingModel: toStringValue(env.TOGETHER_EMBEDDING_MODEL)
       }
     }
   };

@@ -100,6 +100,8 @@ const parsePlannerInput = (inputRaw: unknown): PlannerActionTool["input"] => {
 
   return {
     path: typeof obj.path === "string" ? obj.path : undefined,
+    content: typeof obj.content === "string" ? obj.content : undefined,
+    overwrite: typeof obj.overwrite === "boolean" ? obj.overwrite : undefined,
     command: typeof obj.command === "string" ? obj.command : undefined,
     args: Array.isArray(obj.args) ? obj.args.filter((item): item is string => typeof item === "string") : undefined,
     cwd: typeof obj.cwd === "string" ? obj.cwd : undefined,
@@ -137,12 +139,14 @@ export const parsePlannerAction = (rawText: string): PlannerAction | null => {
       root.action === "tool" &&
       (root.tool === "list_dir" ||
         root.tool === "read_file" ||
+        root.tool === "write_file" ||
         root.tool === "exec" ||
         root.tool === "web_search" ||
         root.tool === "web_fetch" ||
         root.tool === "github_search" ||
         root.tool === "delegate_sub_tasks" ||
         root.tool === "ask_clarification" ||
+        root.tool === "memory_search" ||
         root.tool === "write_todos" ||
         root.tool === "task")
     ) {

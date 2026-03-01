@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, ArrowRight, Brain, CheckCircle2, XCircle } from "lucide-react";
 import { Button, Card, CardBody, CardHeader, Input, Switch } from "@heroui/react";
-import type { GlobalSettingsState, MemoryStatusResult } from "../../../shared/ipc";
+import type { ConnectedModelResult, GlobalSettingsState, MemoryStatusResult } from "../../../shared/ipc";
 
 export const GlobalConfigManager = () => {
   const navigate = useNavigate();
@@ -11,6 +11,7 @@ export const GlobalConfigManager = () => {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string>("");
   const [visibleApiKeys, setVisibleApiKeys] = useState<Record<string, boolean>>({});
+  const [connectedModels, setConnectedModels] = useState<ConnectedModelResult[]>([]);
 
   const isApiKeyVisible = (fieldId: string) => Boolean(visibleApiKeys[fieldId]);
   const toggleApiKeyVisibility = (fieldId: string) => {
@@ -31,6 +32,39 @@ export const GlobalConfigManager = () => {
   );
 
   const [memoryStatus, setMemoryStatus] = useState<MemoryStatusResult | null>(null);
+  const openVikingCandidates = useMemo(() => {
+    return connectedModels.filter((model) => (
+      model.enabled &&
+      model.providerConfigured &&
+      (model.provider === "openai" || model.provider === "volcengine")
+    ));
+  }, [connectedModels]);
+
+  const validateMemoryBindings = useCallback((draft: GlobalSettingsState): string | null => {
+    if (!draft.memory.enableMemory || !draft.memory.openviking.enabled) {
+      return null;
+    }
+
+    const byId = new Map(openVikingCandidates.map((item) => [item.profileId, item]));
+    const ensure = (
+      label: "VLM" | "Embedding",
+      profileId: string
+    ): string | null => {
+      const id = profileId.trim();
+      if (!id) {
+        return `OpenViking ${label} Profile 未配置，请先选择可用模型。`;
+      }
+      if (!byId.has(id)) {
+        return `OpenViking ${label} Profile 不可用（需 OpenAI/Volcengine 且凭证可用）。`;
+      }
+      return null;
+    };
+
+    return (
+      ensure("VLM", draft.memory.openviking.vlmProfileId) ??
+      ensure("Embedding", draft.memory.openviking.embeddingProfileId)
+    );
+  }, [openVikingCandidates]);
 
   const refreshMemoryStatus = useCallback(async () => {
     try {
@@ -45,8 +79,12 @@ export const GlobalConfigManager = () => {
     const load = async () => {
       try {
         setLoading(true);
-        const result = await window.api.getSettingsState();
+        const [result, connected] = await Promise.all([
+          window.api.getSettingsState(),
+          window.api.modelsListConnected()
+        ]);
         setState(result);
+        setConnectedModels(connected.models);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "加载配置失败");
       } finally {
@@ -69,11 +107,31 @@ export const GlobalConfigManager = () => {
     setSaving(true);
     setMessage("");
     try {
+      const validationError = validateMemoryBindings(state);
+      if (validationError) {
+        setState((current) => (
+          current
+            ? {
+                ...current,
+                memory: {
+                  ...current.memory,
+                  enableMemory: false
+                }
+              }
+            : current
+        ));
+        setMessage(validationError);
+        return;
+      }
       const result = await window.api.saveSettingsState({ state });
       setMessage(result.message);
       if (result.ok) {
-        const latest = await window.api.getSettingsState();
+        const [latest, connected] = await Promise.all([
+          window.api.getSettingsState(),
+          window.api.modelsListConnected()
+        ]);
         setState(latest);
+        setConnectedModels(connected.models);
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "保存失败");
@@ -149,19 +207,47 @@ export const GlobalConfigManager = () => {
             </div>
             <Switch
               isSelected={state.memory.enableMemory}
-              onValueChange={(value) =>
-                setState((current) => (
-                  current
-                    ? {
-                        ...current,
-                        memory: {
-                          ...current.memory,
-                          enableMemory: value
+              onValueChange={(value) => {
+                if (!value) {
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          memory: {
+                            ...current.memory,
+                            enableMemory: false
+                          }
                         }
-                      }
-                    : current
-                ))
-              }
+                      : current
+                  ));
+                  return;
+                }
+
+                const nextState = {
+                  ...state,
+                  memory: {
+                    ...state.memory,
+                    enableMemory: true
+                  }
+                };
+                const validationError = validateMemoryBindings(nextState);
+                if (validationError) {
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          memory: {
+                            ...current.memory,
+                            enableMemory: false
+                          }
+                        }
+                      : current
+                  ));
+                  setMessage(validationError);
+                  return;
+                }
+                setState(nextState);
+              }}
             />
           </div>
           <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
@@ -208,6 +294,66 @@ export const GlobalConfigManager = () => {
                 ))
               }
             />
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500">OpenViking VLM Profile</label>
+              <select
+                value={state.memory.openviking.vlmProfileId}
+                onChange={(event) =>
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          memory: {
+                            ...current.memory,
+                            openviking: {
+                              ...current.memory.openviking,
+                              vlmProfileId: event.target.value
+                            }
+                          }
+                        }
+                      : current
+                  ))
+                }
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Select OpenAI/Volcengine model profile...</option>
+                {openVikingCandidates.map((item) => (
+                  <option key={item.profileId} value={item.profileId}>
+                    {item.providerName} / {item.model}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500">OpenViking Embedding Profile</label>
+              <select
+                value={state.memory.openviking.embeddingProfileId}
+                onChange={(event) =>
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          memory: {
+                            ...current.memory,
+                            openviking: {
+                              ...current.memory.openviking,
+                              embeddingProfileId: event.target.value
+                            }
+                          }
+                        }
+                      : current
+                  ))
+                }
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Select OpenAI/Volcengine model profile...</option>
+                {openVikingCandidates.map((item) => (
+                  <option key={item.profileId} value={item.profileId}>
+                    {item.providerName} / {item.model}
+                  </option>
+                ))}
+              </select>
+            </div>
             <Input
               label="Top K"
               description="每次检索返回的最大记忆条数"

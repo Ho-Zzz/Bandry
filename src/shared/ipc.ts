@@ -153,6 +153,7 @@ export type CatalogModelCapabilities = {
   reasoning: boolean;
   inputModalities: string[];
   outputModalities: string[];
+  isEmbeddingModel: boolean;
 };
 
 export type CatalogModelItem = {
@@ -259,6 +260,7 @@ export type GlobalSettingsState = {
       apiKey: string;
       baseUrl: string;
       model: string;
+      embeddingModel: string;
       orgId?: string;
     }
   >;
@@ -271,6 +273,8 @@ export type GlobalSettingsState = {
       host: string;
       port: number;
       apiKey: string;
+      vlmProfileId: string;
+      embeddingProfileId: string;
       serverCommand: string;
       serverArgs: string[];
       startTimeoutMs: number;
@@ -527,4 +531,12 @@ export type SkillOperationResult = {
 export type SkillToggleInput = {
   name: string;
   enabled: boolean;
+};
+
+// Channel types
+export type ChannelStatusEvent = {
+  channelId: string;
+  status: "stopped" | "starting" | "running" | "error";
+  message?: string;
+  timestamp: number;
 };

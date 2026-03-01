@@ -13,7 +13,7 @@ import {
  * Build the list of enabled tools based on config
  */
 const buildEnabledToolsList = (config: AppConfig, mode: ChatMode): string[] => {
-  const baseTools = ["list_dir", "read_file", "exec", "ask_clarification"];
+  const baseTools = ["list_dir", "read_file", "write_file", "exec", "ask_clarification"];
 
   // Mode-specific tools
   if (mode === "subagents") {
@@ -59,7 +59,9 @@ export const buildPlannerSystemPrompt = (
     enabledTools: buildEnabledToolsList(config, mode).join(", "),
     memoryContext: options?.memoryContext ?? "",
     maxSubTasks: config.subagent?.maxConcurrent ?? 3,
-    currentDate: new Date().toISOString().split("T")[0]
+    currentDate: new Date().toISOString().split("T")[0],
+    persistRequired: Boolean(options?.persistRequired),
+    persistPathHint: options?.persistPathHint ?? ""
   };
 
   switch (mode) {

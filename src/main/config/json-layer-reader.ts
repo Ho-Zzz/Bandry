@@ -65,6 +65,8 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
     host: toStringValue(openvikingRaw.host),
     port: toNumberValue(openvikingRaw.port),
     apiKey: toStringValue(openvikingRaw.apiKey),
+    vlmProfileId: toStringValue(openvikingRaw.vlmProfileId),
+    embeddingProfileId: toStringValue(openvikingRaw.embeddingProfileId),
     serverCommand: toStringValue(openvikingRaw.serverCommand),
     serverArgs: toStringListValue(openvikingRaw.serverArgs),
     startTimeoutMs: toNumberValue(openvikingRaw.startTimeoutMs),
@@ -160,6 +162,7 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
       apiKey: toStringValue(providerConfig.apiKey),
       baseUrl: toStringValue(providerConfig.baseUrl),
       model: toStringValue(providerConfig.model),
+      embeddingModel: toStringValue(providerConfig.embeddingModel),
       orgId: toStringValue(providerConfig.orgId)
     };
   }

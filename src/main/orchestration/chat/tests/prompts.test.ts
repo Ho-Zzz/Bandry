@@ -4,6 +4,50 @@ import { applyTemplate, buildSection, joinSections } from "../prompts/template-e
 import { TOOL_CATALOG, getToolGuidance, getToolsByPriority } from "../prompts/tool-catalog";
 import { buildPlannerSystemPrompt, buildFinalSystemPrompt } from "../prompts";
 import type { AppConfig } from "../../../config";
+import { MODEL_PROVIDER_DEFAULTS, MODEL_PROVIDERS } from "../../../../shared/model-providers";
+
+const createMockProviders = (): AppConfig["providers"] => {
+  const providers = Object.fromEntries(
+    MODEL_PROVIDERS.map((provider) => {
+      const defaults = MODEL_PROVIDER_DEFAULTS[provider];
+      return [
+        provider,
+        {
+          enabled: false,
+          apiKey: "",
+          baseUrl: defaults.baseUrl,
+          model: defaults.model,
+          embeddingModel: defaults.embeddingModel,
+          ...(defaults.orgId !== undefined ? { orgId: defaults.orgId } : {})
+        }
+      ];
+    })
+  ) as AppConfig["providers"];
+
+  providers.deepseek = {
+    ...providers.deepseek,
+    enabled: true,
+    apiKey: "test-key",
+    baseUrl: "https://api.deepseek.com",
+    model: "deepseek-chat"
+  };
+  providers.openai = {
+    ...providers.openai,
+    enabled: false,
+    apiKey: "",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4"
+  };
+  providers.volcengine = {
+    ...providers.volcengine,
+    enabled: false,
+    apiKey: "",
+    baseUrl: "",
+    model: ""
+  };
+
+  return providers;
+};
 
 // Minimal mock config for testing
 const createMockConfig = (overrides?: Partial<AppConfig>): AppConfig => ({
@@ -31,26 +75,7 @@ const createMockConfig = (overrides?: Partial<AppConfig>): AppConfig => ({
     maxConcurrent: 3,
     timeoutMs: 900000
   },
-  providers: {
-    deepseek: {
-      enabled: true,
-      apiKey: "test-key",
-      baseUrl: "https://api.deepseek.com",
-      model: "deepseek-chat"
-    },
-    openai: {
-      enabled: false,
-      apiKey: "",
-      baseUrl: "https://api.openai.com/v1",
-      model: "gpt-4"
-    },
-    volcengine: {
-      enabled: false,
-      apiKey: "",
-      baseUrl: "",
-      model: ""
-    }
-  },
+  providers: createMockProviders(),
   features: {
     enableMemory: false,
     enableMCP: false,
@@ -62,6 +87,8 @@ const createMockConfig = (overrides?: Partial<AppConfig>): AppConfig => ({
     host: "localhost",
     port: 8080,
     apiKey: "",
+    vlmProfileId: "default",
+    embeddingProfileId: "default",
     serverCommand: "",
     serverArgs: [],
     startTimeoutMs: 10000,
@@ -134,6 +161,10 @@ const createMockConfig = (overrides?: Partial<AppConfig>): AppConfig => ({
     databasePath: "/test/.bandry/data.db",
     dotenvPath: "/test/.env"
   },
+  channels: {
+    enabled: false,
+    channels: []
+  },
   runtime: {
     inheritedEnv: {}
   },
@@ -197,6 +228,7 @@ describe("tool-catalog", () => {
     expect(TOOL_CATALOG.has("github_search")).toBe(true);
     expect(TOOL_CATALOG.has("web_search")).toBe(true);
     expect(TOOL_CATALOG.has("list_dir")).toBe(true);
+    expect(TOOL_CATALOG.has("write_file")).toBe(true);
   });
 
   it("returns tool guidance by name", () => {
@@ -251,6 +283,19 @@ describe("buildPlannerSystemPrompt", () => {
     expect(prompt).toContain("task");
   });
 
+  it("injects persist requirement when requested", () => {
+    const config = createMockConfig();
+    const prompt = buildPlannerSystemPrompt(config, {
+      userMessage: "生成 md 并保存",
+      persistRequired: true,
+      persistPathHint: "/mnt/workspace/output/report.md"
+    });
+
+    expect(prompt).toContain("<persist_requirement>");
+    expect(prompt).toContain("MUST call write_file");
+    expect(prompt).toContain("/mnt/workspace/output/report.md");
+  });
+
   it("detects user language and includes hint", () => {
     const config = createMockConfig();
     const promptZh = buildPlannerSystemPrompt(config, {
@@ -281,8 +326,8 @@ describe("buildPlannerSystemPrompt", () => {
     const promptNoTools = buildPlannerSystemPrompt(configWithoutTools);
     // Check that the enabled tools list doesn't include the disabled tools
     // The tool selection guidance section still mentions them as examples
-    expect(promptNoTools).toContain("Available tools: list_dir, read_file, exec, ask_clarification, delegate_sub_tasks");
-    expect(promptNoTools).not.toContain("Available tools: list_dir, read_file, exec, ask_clarification, delegate_sub_tasks, github_search");
+    expect(promptNoTools).toContain("Available tools: list_dir, read_file, write_file, exec, ask_clarification, delegate_sub_tasks");
+    expect(promptNoTools).not.toContain("Available tools: list_dir, read_file, write_file, exec, ask_clarification, delegate_sub_tasks, github_search");
   });
 });
 

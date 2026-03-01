@@ -58,6 +58,39 @@ const createServices = async (seed: string) => {
 };
 
 describe("ModelOnboardingService", () => {
+  it("patches Volcengine provider and embedding model when catalog source misses it", async () => {
+    const { onboardingService } = await createServices("patch-volcengine");
+
+    const catalog = await onboardingService.listCatalog();
+    const volcengine = catalog.providers.find((provider) => provider.id === "volcengine");
+    expect(volcengine).toBeDefined();
+
+    const embedding = volcengine?.models.find((model) => model.id === "doubao-embedding-vision-250615");
+    expect(embedding).toBeDefined();
+    expect(embedding?.capabilities.isEmbeddingModel).toBe(true);
+    expect(embedding?.capabilities.inputModalities).toContain("image");
+    expect(volcengine?.models.some((model) => model.id === "doubao-seed-2-0-lite-260215")).toBe(true);
+    expect(volcengine?.models.some((model) => model.id === "doubao-seed-2-0-mini-260215")).toBe(true);
+    expect(volcengine?.models.some((model) => model.id === "doubao-seed-2-0-pro-260215")).toBe(true);
+
+    const proResult = await onboardingService.connect({
+      provider: "volcengine",
+      modelId: "doubao-seed-2-0-pro-260215",
+      apiKey: "ark-test-key"
+    });
+    expect(proResult.ok).toBe(true);
+    expect(proResult.profile.model).toBe("doubao-seed-2-0-pro-260215");
+
+    const result = await onboardingService.connect({
+      provider: "volcengine",
+      modelId: "doubao-embedding-vision-250615",
+      apiKey: "ark-test-key"
+    });
+    expect(result.ok).toBe(true);
+    expect(result.profile.provider).toBe("volcengine");
+    expect(result.profile.model).toBe("doubao-embedding-vision-250615");
+  });
+
   it("connects a new model profile and can set it as chat default", async () => {
     const { onboardingService } = await createServices("connect");
 

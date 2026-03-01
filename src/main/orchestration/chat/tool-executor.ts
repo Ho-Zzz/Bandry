@@ -2,10 +2,15 @@ import type { SandboxExecInput, ChatUpdateStage, SubagentProgressPayload } from 
 import type { AppConfig } from "../../config";
 import type { MemoryProvider } from "../../memory/contracts/types";
 import type { SandboxService } from "../../sandbox";
+import { SandboxViolationError } from "../../sandbox/errors";
 import type { DAGPlan, AgentResult } from "../workflow/dag/agents";
 import { DelegationEngine } from "../workflow/dag/delegation-engine";
 import { validateDelegationTasks } from "./delegation-schema";
 import { runWebFetch, runWebSearch, runGitHubSearch } from "./internal-web-tools";
+import {
+  resolvePersistWritePath,
+  validatePersistContent
+} from "./persist-policy";
 import { formatExec, formatListDir, formatReadFile } from "./observation-formatters";
 import type { PlannerActionTool, ToolObservation, TodoInput, SubagentType } from "./planner-types";
 import { normalizeSpaces } from "./text-utils";
@@ -70,6 +75,55 @@ export const executePlannerTool = async ({
         input: { path: targetPath },
         ok: true,
         output: formatReadFile(result)
+      };
+    }
+
+    if (action.tool === "write_file") {
+      const content = action.input?.content;
+      if (typeof content !== "string") {
+        return {
+          tool: "write_file",
+          input: action.input ?? {},
+          ok: false,
+          output: "Missing required field: input.content"
+        };
+      }
+
+      const contentError = validatePersistContent(content);
+      if (contentError) {
+        return {
+          tool: "write_file",
+          input: action.input ?? {},
+          ok: false,
+          output: `CONTENT_LIMIT: ${contentError}`
+        };
+      }
+
+      const writePathResult = resolvePersistWritePath({
+        requestedPath: action.input?.path,
+        defaultPath: "output/document.md",
+        virtualRoot: config.sandbox.virtualRoot
+      });
+      if (!writePathResult.ok) {
+        return {
+          tool: "write_file",
+          input: action.input ?? {},
+          ok: false,
+          output: `${writePathResult.code}: ${writePathResult.message}`
+        };
+      }
+
+      const result = await sandboxService.writeFile({
+        path: writePathResult.path,
+        content,
+        createDirs: true,
+        overwrite: false
+      });
+      return {
+        tool: "write_file",
+        input: { path: writePathResult.path, overwrite: false },
+        ok: true,
+        output: `Wrote file successfully: path=${result.path}, bytes=${result.bytesWritten}`
       };
     }
 
@@ -299,6 +353,15 @@ export const executePlannerTool = async ({
       output: formatExec(result)
     };
   } catch (error) {
+    if (error instanceof SandboxViolationError) {
+      return {
+        tool: action.tool,
+        input: action.input ?? {},
+        ok: false,
+        output: `${error.code}: ${normalizeSpaces(error.message)}`
+      };
+    }
+
     return {
       tool: action.tool,
       input: action.input ?? {},

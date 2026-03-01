@@ -23,10 +23,12 @@ Bandry 通过集成 [OpenViking](https://github.com/volcengine/OpenViking)（字
 │    └── syncOpenViking()                                          │
 │          ├── OpenVikingProcessManager.start()                    │
 │          │     ├── prepareEnvironment()  // patch + warm-up      │
+│          │     ├── removeStaleLockFiles()  // 清理残留 LOCK      │
 │          │     ├── writeOpenVikingConfig()  // 生成 ov.conf      │
 │          │     ├── resolveOpenVikingCommand()  // 解析命令路径    │
 │          │     ├── spawn(openviking serve)  // 启动 Python 进程  │
-│          │     └── waitForHealthy()  // GET /health 轮询         │
+│          │     ├── waitForHealthy()  // GET /health 轮询         │
+│          │     └── attachCrashWatcher()  // 崩溃监听+自动重启    │
 │          │                                                       │
 │          ├── OpenVikingMemoryProvider(httpClient)                 │
 │          └── chatAgent.setMemoryProvider(provider)                │
@@ -213,8 +215,44 @@ pnpm dev
 |-----|------|
 | Settings 保存（enableMemory=true） | `syncOpenViking()` 启动进程 |
 | Settings 保存（enableMemory=false） | `shutdownOpenViking()` 停止进程 |
+| 运行期间进程意外崩溃 | crash watcher 检测 → 清理 stale lock → 自动重启（最多 3 次） → 重建 MemoryProvider |
+| 自动重启全部失败 | 通知 bootstrap 清空引用，记忆功能优雅降级 |
 | 窗口全部关闭 | `flush()` + `stop()` |
 | 应用退出前 | `flush()` + `stop()` |
+
+### 容错与自动恢复
+
+OpenViking 子进程可能因 OOM、Python 异常、外部信号等原因在运行期间意外退出。`process-manager.ts` 提供了两层保障机制：
+
+#### Stale Lock 清理
+
+LevelDB 使用文件锁（`vectordb/<collection>/store/LOCK`）保证单进程访问。如果进程异常退出未释放锁，下次启动会报 `Resource temporarily unavailable`。
+
+`removeStaleLockFiles()` 在每次 `doStart()` 启动子进程前，遍历 `vectordb/` 下所有 collection 的 `store/LOCK` 文件并删除。此时 `this.child` 已确认为空（要么首次启动，要么上一个进程已 stop/崩溃），因此删除是安全的。
+
+#### Crash Watcher 自动重启
+
+`attachCrashWatcher()` 在 health check 通过后挂载到子进程的 `exit` 事件上：
+
+| 参数 | 值 | 说明 |
+|-----|------|------|
+| `MAX_RESTART_ATTEMPTS` | 3 | 最大连续重启次数 |
+| `RESTART_DELAY_MS` | 2000 | 基础延迟，实际延迟 = 基础延迟 × 当前重试次数 |
+| `RESTART_ATTEMPTS_RESET_MS` | 120000 | 进程稳定运行超过此时长后重置重试计数 |
+
+**恢复流程**：
+
+1. 子进程 `exit` 事件触发，crash watcher 清空 `this.child` 和 `this.runtime`
+2. 判断重试次数：若进程已稳定运行 > 2 分钟则重置计数
+3. 若未耗尽重试次数，等待递增延迟后调用 `start()` 重启（包含 stale lock 清理）
+4. 重启成功：通过 `onCrash` 回调通知 `bootstrap.ts`，重建 `OpenVikingMemoryProvider` 并重新绑定到 chat agent
+5. 重启失败或重试耗尽：回调 `willRestart: false`，bootstrap 清空所有 OpenViking 引用，记忆功能优雅降级
+
+**安全边界**：
+
+- `stop()` 在 kill 子进程前先将 `this.child` 置空，crash watcher 检查 `this.child !== child` 后直接忽略，不会误触发重启
+- crash watcher 在 `doStart()` 成功通过 health check 后才挂载，启动阶段的失败不会触发自动重启（由调用方处理）
+- `startPromise` 去重机制保证 crash watcher 的 `start()` 调用与外部调用不会并发启动多个进程
 
 ---
 
@@ -325,6 +363,11 @@ type MemoryListResourcesResult = {
 | `[OpenViking] started at http://...` | 启动成功 |
 | `[OpenViking] Patched AGFS timeout` | AGFS 超时已修正（首次） |
 | `[OpenViking] AGFS binary warm-up done` | macOS Gatekeeper 预热完成 |
+| `[OpenViking] Removed stale lock: ...` | 启动前清理了残留的 LevelDB LOCK 文件 |
+| `[OpenViking] Process exited unexpectedly` | 运行期间子进程崩溃，crash watcher 已检测 |
+| `[OpenViking] Scheduling restart in ...ms` | 正在等待延迟后自动重启 |
+| `[OpenViking] Auto-restart succeeded` | 崩溃后自动重启成功 |
+| `[OpenViking] Max restart attempts exhausted` | 连续 3 次重启均失败，记忆功能已降级 |
 | `POST /api/v1/search/search` | 记忆检索（被动或主动） |
 | `POST /api/v1/sessions/.../commit` | 对话已提交，触发记忆提取 |
 | `[OpenViking] failed to start` | 启动失败，查看后续错误详情 |
@@ -352,6 +395,8 @@ ls -la ~/.bandry/resources/openviking/data/vectordb/
 | SOCKS proxy ImportError | 系统代理 + 缺少 socksio | `pip install httpx[socks]`（setup 脚本已包含） |
 | Agent 无法回忆 | 记忆未处理完 / scoreThreshold 过高 | 等 1-2 分钟或降低 threshold |
 | 端口占用 | 残留 AGFS 进程 | `pkill -f agfs-server` |
+| `Resource temporarily unavailable` (LOCK) | 进程异常退出残留 LevelDB 文件锁 | 启动前已自动清理；若仍出现可手动 `rm ~/.bandry/resources/openviking/data/vectordb/*/store/LOCK` |
+| 运行中记忆突然不可用 | 子进程崩溃 | crash watcher 会自动重启（最多 3 次），查看日志确认恢复状态 |
 
 ---
 
