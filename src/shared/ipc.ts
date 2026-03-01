@@ -482,6 +482,73 @@ export type MemoryStatusResult = {
   error?: string;
 };
 
+// Soul types
+export type SoulState = {
+  soulContent: string;
+  identityContent: string;
+};
+
+export type SoulUpdateInput = {
+  soulContent?: string;
+  identityContent?: string;
+};
+
+export type SoulOperationResult = {
+  ok: boolean;
+  message: string;
+};
+
+export type SoulInterviewInput = {
+  history: { role: "user" | "assistant"; content: string }[];
+};
+
+export type SoulInterviewResult = {
+  reply: string;
+  done: boolean;
+};
+
+export type SoulInterviewSummarizeInput = {
+  history: { role: "user" | "assistant"; content: string }[];
+};
+
+export type SoulInterviewSummarizeResult = {
+  soulContent: string;
+  identityContent: string;
+};
+
+// Skill types
+export type SkillItem = {
+  name: string;
+  description: string;
+  tags: string[];
+  content: string;
+  isBundled: boolean;
+  enabled: boolean;
+};
+
+export type SkillCreateInput = {
+  name: string;
+  description: string;
+  tags: string[];
+  content: string;
+};
+
+export type SkillUpdateInput = {
+  description?: string;
+  tags?: string[];
+  content?: string;
+};
+
+export type SkillOperationResult = {
+  ok: boolean;
+  message: string;
+};
+
+export type SkillToggleInput = {
+  name: string;
+  enabled: boolean;
+};
+
 // Channel types
 export type ChannelStatusEvent = {
   channelId: string;

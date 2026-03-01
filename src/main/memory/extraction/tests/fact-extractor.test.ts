@@ -96,7 +96,9 @@ const createMockConfig = (): AppConfig => ({
   },
   features: {
     enableMemory: false,
-    enableMCP: false
+    enableMCP: false,
+    enableSkills: false,
+    enableSoul: false
   },
   openviking: {
     enabled: true,
@@ -186,6 +188,8 @@ const createMockConfig = (): AppConfig => ({
     databasePath: "",
     traceDir: "",
     resourcesDir: "",
+    skillsDir: "",
+    soulDir: "",
     dotenvPath: ""
   },
   runtime: {

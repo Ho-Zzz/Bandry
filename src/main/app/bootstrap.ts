@@ -4,6 +4,9 @@ import { createIpcEventBus } from "../ipc/event-bus";
 import { registerIpcHandlers } from "../ipc/register-handlers";
 import { buildConfiguredChannels, createCompositionRoot } from "./composition-root";
 import { createMainWindow } from "./window";
+import { ensureSoulFiles } from "../soul";
+import { SoulService } from "../soul/soul-service";
+import { SkillService } from "../skills/skill-service";
 
 export const startMainApp = (): void => {
   const eventBus = createIpcEventBus();
@@ -102,6 +105,9 @@ export const startMainApp = (): void => {
         ? composition.openViking.processManager.createHttpClient()
         : null
     }),
+    soulService: new SoulService(composition.config.paths.soulDir),
+    skillService: new SkillService(composition.config.paths.skillsDir),
+    modelsFactory: composition.modelsFactory,
     onSettingsSaved: () => {
       void syncChannels();
       void syncOpenViking();
@@ -109,6 +115,7 @@ export const startMainApp = (): void => {
   });
 
   app.whenReady().then(async () => {
+    await ensureSoulFiles(composition.config.paths.soulDir);
     await syncOpenViking();
     await syncChannels();
     await createMainWindow({

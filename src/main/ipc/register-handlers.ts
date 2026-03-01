@@ -43,11 +43,22 @@ import type {
   TaskStartInput,
   TaskStartResult,
   TaskStatus,
-  TaskUpdateEvent
+  TaskUpdateEvent,
+  SoulUpdateInput,
+  SkillCreateInput,
+  SkillUpdateInput,
+  SoulInterviewInput,
+  SoulInterviewSummarizeInput,
+  SkillToggleInput
 } from "../../shared/ipc";
 import type { OpenVikingHttpClient } from "../memory/openviking/http-client";
 import type { OpenVikingProcessManager } from "../memory/openviking/process-manager";
 import type { IpcEventBus } from "./event-bus";
+import type { SoulService } from "../soul/soul-service";
+import type { SkillService } from "../skills/skill-service";
+import type { ModelsFactory } from "../llm/runtime";
+import { INTERVIEW_SYSTEM_PROMPT, SUMMARIZE_SYSTEM_PROMPT } from "../soul/interview-prompts";
+import { resolveRuntimeTarget } from "../llm/runtime/runtime-target";
 
 type RegisterIpcHandlersInput = {
   config: AppConfig;
@@ -62,6 +73,9 @@ type RegisterIpcHandlersInput = {
     processManager: OpenVikingProcessManager | null;
     httpClient: OpenVikingHttpClient | null;
   };
+  soulService: SoulService;
+  skillService: SkillService;
+  modelsFactory: ModelsFactory;
   onSettingsSaved?: () => void;
 };
 
@@ -367,6 +381,97 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
       };
     }
   );
+
+  // Soul API
+  ipcMain.handle("soul:get", async () => {
+    return input.soulService.get();
+  });
+
+  ipcMain.handle("soul:update", async (_event, updateInput: SoulUpdateInput) => {
+    return input.soulService.update(updateInput);
+  });
+
+  ipcMain.handle("soul:reset", async () => {
+    return input.soulService.reset();
+  });
+
+  ipcMain.handle("soul:interview", async (_event, interviewInput: SoulInterviewInput) => {
+    const target = resolveRuntimeTarget(input.config, "lead.planner");
+    const history = interviewInput.history.map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content
+    }));
+
+    const result = await input.modelsFactory.generateText({
+      systemPrompt: INTERVIEW_SYSTEM_PROMPT,
+      ...(history.length > 0
+        ? { messages: history }
+        : { prompt: "Start the interview. Greet the user and ask your first question." }),
+      runtimeConfig: target.runtimeConfig,
+      model: target.model,
+      temperature: 0.8,
+      maxTokens: 500
+    });
+
+    const done = result.text.includes("[INTERVIEW_COMPLETE]");
+    const reply = result.text.replace("[INTERVIEW_COMPLETE]", "").trim();
+
+    return { reply, done };
+  });
+
+  ipcMain.handle("soul:interview:summarize", async (_event, summarizeInput: SoulInterviewSummarizeInput) => {
+    const target = resolveRuntimeTarget(input.config, "lead.planner");
+    const transcript = summarizeInput.history
+      .map((m) => `${m.role === "user" ? "User" : "AI"}: ${m.content}`)
+      .join("\n\n");
+
+    const result = await input.modelsFactory.generateText({
+      systemPrompt: SUMMARIZE_SYSTEM_PROMPT,
+      prompt: transcript,
+      runtimeConfig: target.runtimeConfig,
+      model: target.model,
+      temperature: 0.3,
+      maxTokens: 2000
+    });
+
+    try {
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error("No JSON found in response");
+      }
+      const parsed = JSON.parse(jsonMatch[0]) as { soulContent: string; identityContent: string };
+      return {
+        soulContent: parsed.soulContent,
+        identityContent: parsed.identityContent
+      };
+    } catch {
+      return {
+        soulContent: result.text,
+        identityContent: "---\nname: Bandry\ntagline: Your local AI coding companion\n---\n\n# Identity\n"
+      };
+    }
+  });
+
+  // Skills API
+  ipcMain.handle("skills:list", async () => {
+    return input.skillService.list();
+  });
+
+  ipcMain.handle("skills:create", async (_event, createInput: SkillCreateInput) => {
+    return input.skillService.create(createInput);
+  });
+
+  ipcMain.handle("skills:update", async (_event, name: string, updateInput: SkillUpdateInput) => {
+    return input.skillService.update(name, updateInput);
+  });
+
+  ipcMain.handle("skills:delete", async (_event, name: string) => {
+    return input.skillService.delete(name);
+  });
+
+  ipcMain.handle("skills:toggle", async (_event, toggleInput: SkillToggleInput) => {
+    return input.skillService.toggle(toggleInput);
+  });
 
   return {
     clearRunningTasks: (): void => {

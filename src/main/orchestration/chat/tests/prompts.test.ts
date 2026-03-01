@@ -78,7 +78,9 @@ const createMockConfig = (overrides?: Partial<AppConfig>): AppConfig => ({
   providers: createMockProviders(),
   features: {
     enableMemory: false,
-    enableMCP: false
+    enableMCP: false,
+    enableSkills: false,
+    enableSoul: false
   },
   openviking: {
     enabled: false,
@@ -150,6 +152,8 @@ const createMockConfig = (overrides?: Partial<AppConfig>): AppConfig => ({
     resourcesDir: "/test/resources",
     pluginsDir: "/test/plugins",
     traceDir: "/test/traces",
+    skillsDir: "/test/skills",
+    soulDir: "/test/soul",
     projectConfigPath: "/test/bandry.config.json",
     userConfigPath: "/test/.bandry/config/user.json",
     auditLogPath: "/test/.bandry/logs/audit.log",
