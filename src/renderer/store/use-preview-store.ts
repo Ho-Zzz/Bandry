@@ -36,7 +36,7 @@ interface PreviewState {
 
   setWorkspacePath: (path: string | null) => void;
   setVirtualRoot: (root: string) => void;
-  openPreview: (filePath: string, fileName: string) => Promise<void>;
+  openPreview: (filePath: string, fileName: string, workspacePathOverride?: string | null) => Promise<void>;
   closePreview: () => void;
 }
 
@@ -58,7 +58,7 @@ export const usePreviewStore = create<PreviewState>()((set, get) => ({
     set({ virtualRoot: root || DEFAULT_VIRTUAL_ROOT });
   },
 
-  openPreview: async (filePath: string, fileName: string) => {
+  openPreview: async (filePath: string, fileName: string, workspacePathOverride?: string | null) => {
     const current = get();
     if (current.filePath === filePath && current.isOpen) {
       return;
@@ -75,10 +75,11 @@ export const usePreviewStore = create<PreviewState>()((set, get) => ({
 
     try {
       const { workspacePath: currentWorkspace, virtualRoot } = get();
+      const effectiveWorkspace = workspacePathOverride ?? currentWorkspace;
       const normalizedPath = normalizeToVirtualPath(filePath, virtualRoot);
       const result = await window.api.sandboxReadFile({
         path: normalizedPath,
-        ...(currentWorkspace ? { workspacePath: currentWorkspace } : {})
+        ...(effectiveWorkspace ? { workspacePath: effectiveWorkspace } : {})
       });
       // Guard against race: if user switched to a different file while loading,
       // discard this result to avoid mismatched content.
