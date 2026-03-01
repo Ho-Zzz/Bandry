@@ -1,6 +1,7 @@
 import { loadAppConfig } from "../config";
 import { ChannelManager } from "../channels/channel-manager";
 import { FeishuChannel } from "../channels/feishu";
+import type { Channel } from "../channels";
 import { ModelsCatalogService } from "../llm";
 import { ModelsFactory } from "../llm/runtime";
 import { OpenVikingMemoryProvider, OpenVikingProcessManager } from "../memory/openviking";
@@ -27,6 +28,26 @@ export type MainCompositionRoot = {
   };
 };
 
+export const buildConfiguredChannels = (
+  channelsConfig: ReturnType<typeof loadAppConfig>["channels"]
+): Channel[] => {
+  const channels: Channel[] = [];
+  for (const channelCfg of channelsConfig.channels) {
+    if (channelCfg.type !== "feishu" || channelCfg.enabled === false) {
+      continue;
+    }
+    channels.push(
+      new FeishuChannel({
+        type: "feishu",
+        appId: channelCfg.appId,
+        appSecret: channelCfg.appSecret,
+        allowedChatIds: channelCfg.allowedChatIds
+      })
+    );
+  }
+  return channels;
+};
+
 export const createCompositionRoot = (eventBus: IpcEventBus): MainCompositionRoot => {
   const config = loadAppConfig();
   const modelsFactory = new ModelsFactory(config);
@@ -51,17 +72,8 @@ export const createCompositionRoot = (eventBus: IpcEventBus): MainCompositionRoo
     config.channels
   );
 
-  for (const channelCfg of config.channels.channels) {
-    if (channelCfg.type === "feishu") {
-      channelManager.register(
-        new FeishuChannel({
-          type: "feishu",
-          appId: channelCfg.appId,
-          appSecret: channelCfg.appSecret,
-          allowedChatIds: channelCfg.allowedChatIds,
-        })
-      );
-    }
+  for (const channel of buildConfiguredChannels(config.channels)) {
+    channelManager.register(channel);
   }
 
   return {

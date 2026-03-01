@@ -190,10 +190,13 @@ export type PathsLayerConfig = Partial<
 export type ChannelsLayerConfig = Partial<{
   enabled: boolean;
   channels: Array<{
+    id?: string;
+    name?: string;
     type: string;
     appId?: string;
     appSecret?: string;
     allowedChatIds?: string[];
+    enabled?: boolean;
   }>;
 }>;
 
@@ -282,10 +285,13 @@ export type AppConfig = {
   channels: {
     enabled: boolean;
     channels: Array<{
+      id?: string;
+      name?: string;
       type: string;
       appId: string;
       appSecret: string;
       allowedChatIds?: string[];
+      enabled?: boolean;
     }>;
   };
   paths: AppPaths;

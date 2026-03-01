@@ -2,7 +2,7 @@ import { app, BrowserWindow } from "electron";
 import { OpenVikingMemoryProvider, OpenVikingProcessManager } from "../memory/openviking";
 import { createIpcEventBus } from "../ipc/event-bus";
 import { registerIpcHandlers } from "../ipc/register-handlers";
-import { createCompositionRoot } from "./composition-root";
+import { buildConfiguredChannels, createCompositionRoot } from "./composition-root";
 import { createMainWindow } from "./window";
 import { ensureSoulFiles } from "../soul";
 import { SoulService } from "../soul/soul-service";
@@ -83,6 +83,13 @@ export const startMainApp = (): void => {
     }
   };
 
+  const syncChannels = async (): Promise<void> => {
+    await composition.channelManager.reconfigure(
+      composition.config.channels,
+      buildConfiguredChannels(composition.config.channels)
+    );
+  };
+
   const { clearRunningTasks } = registerIpcHandlers({
     config: composition.config,
     toolPlanningChatAgent: composition.toolPlanningChatAgent,
@@ -102,6 +109,7 @@ export const startMainApp = (): void => {
     skillService: new SkillService(composition.config.paths.skillsDir),
     modelsFactory: composition.modelsFactory,
     onSettingsSaved: () => {
+      void syncChannels();
       void syncOpenViking();
     }
   });
@@ -109,7 +117,7 @@ export const startMainApp = (): void => {
   app.whenReady().then(async () => {
     await ensureSoulFiles(composition.config.paths.soulDir);
     await syncOpenViking();
-    await composition.channelManager.startAll();
+    await syncChannels();
     await createMainWindow({
       devServerUrl: composition.config.runtime.devServerUrl
     });

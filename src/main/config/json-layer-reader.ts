@@ -32,6 +32,7 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
   const catalogSourceRaw = asObject(catalogRaw.source);
   const routingRaw = asObject(root.routing);
   const toolsRaw = asObject(root.tools);
+  const channelsRaw = asObject(root.channels);
   type LlmLayer = NonNullable<ConfigLayer["llm"]>;
   const llmLayer: ConfigLayer["llm"] = {
     defaultProvider: toStringValue(llmRaw.defaultProvider) as LlmLayer["defaultProvider"] | undefined,
@@ -130,6 +131,7 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
 
   const webSearchRaw = asObject(toolsRaw.webSearch);
   const webFetchRaw = asObject(toolsRaw.webFetch);
+  const githubSearchRaw = asObject(toolsRaw.githubSearch);
   const toolsLayer: ConfigLayer["tools"] = {
     webSearch: {
       enabled: toBooleanValue(webSearchRaw.enabled),
@@ -145,7 +147,31 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
       apiKey: toStringValue(webFetchRaw.apiKey),
       baseUrl: toStringValue(webFetchRaw.baseUrl),
       timeoutMs: toNumberValue(webFetchRaw.timeoutMs)
+    },
+    githubSearch: {
+      enabled: toBooleanValue(githubSearchRaw.enabled),
+      apiKey: toStringValue(githubSearchRaw.apiKey),
+      baseUrl: toStringValue(githubSearchRaw.baseUrl),
+      timeoutMs: toNumberValue(githubSearchRaw.timeoutMs),
+      maxResults: toNumberValue(githubSearchRaw.maxResults)
     }
+  };
+
+  const channelsLayer: ConfigLayer["channels"] = {
+    enabled: toBooleanValue(channelsRaw.enabled),
+    channels: Array.isArray(channelsRaw.channels)
+      ? channelsRaw.channels
+          .map((item) => asObject(item))
+          .map((item) => ({
+            id: toStringValue(item.id),
+            name: toStringValue(item.name),
+            type: toStringValue(item.type) ?? "feishu",
+            appId: toStringValue(item.appId),
+            appSecret: toStringValue(item.appSecret),
+            allowedChatIds: toStringListValue(item.allowedChatIds),
+            enabled: toBooleanValue(item.enabled)
+          }))
+      : undefined
   };
 
   const providerRoot = asObject(root.providers);
@@ -177,6 +203,7 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
     modelProfiles: modelProfilesLayer,
     routing: routingLayer,
     tools: toolsLayer,
+    channels: channelsLayer,
     providers
   };
 };

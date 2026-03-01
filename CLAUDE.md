@@ -116,11 +116,8 @@ Create `.env` file with:
 DEEPSEEK_API_KEY=your_key_here
 DEEPSEEK_MODEL=deepseek-chat  # optional, defaults to deepseek-chat
 
-# Channel integration (optional)
-CHANNELS_ENABLED=false
-FEISHU_APP_ID=your_app_id
-FEISHU_APP_SECRET=your_app_secret
-FEISHU_ALLOWED_CHAT_IDS=chat_id_1,chat_id_2  # optional whitelist
+# Feishu/Lark channel is configured in app:
+# Settings -> Channels
 ```
 
 ## Testing

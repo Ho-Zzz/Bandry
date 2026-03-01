@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, ArrowRight, Brain, CheckCircle2, XCircle } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Brain, CheckCircle2, XCircle, Plus, Trash2 } from "lucide-react";
 import { Button, Card, CardBody, CardHeader, Input, Switch } from "@heroui/react";
 import type { ConnectedModelResult, GlobalSettingsState, MemoryStatusResult } from "../../../shared/ipc";
 
@@ -74,6 +74,40 @@ export const GlobalConfigManager = () => {
       setMemoryStatus(null);
     }
   }, []);
+
+  const updateChannelsState = useCallback(
+    (updater: (channels: GlobalSettingsState["channels"]) => GlobalSettingsState["channels"]) => {
+      setState((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          channels: updater(current.channels)
+        };
+      });
+    },
+    []
+  );
+
+  const addFeishuChannel = useCallback(() => {
+    const id = `feishu_${Date.now().toString(36)}`;
+    updateChannelsState((channels) => ({
+      ...channels,
+      channels: [
+        ...channels.channels,
+        {
+          id,
+          name: "",
+          type: "feishu",
+          appId: "",
+          appSecret: "",
+          allowedChatIds: [],
+          enabled: true
+        }
+      ]
+    }));
+  }, [updateChannelsState]);
 
   useEffect(() => {
     const load = async () => {
@@ -655,6 +689,182 @@ export const GlobalConfigManager = () => {
               />
             </div>
           </div>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Channels（Feishu）</h3>
+          <Button
+            color="primary"
+            variant="flat"
+            size="sm"
+            startContent={<Plus size={14} />}
+            onPress={addFeishuChannel}
+          >
+            新增 Feishu Channel
+          </Button>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <span className="font-medium">启用 Channels</span>
+              <p className="text-xs text-gray-500 mt-0.5">关闭后不会启动任何外部消息通道。</p>
+            </div>
+            <Switch
+              isSelected={state.channels.enabled}
+              onValueChange={(value) =>
+                updateChannelsState((channels) => ({
+                  ...channels,
+                  enabled: value
+                }))
+              }
+            />
+          </div>
+
+          {state.channels.channels.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-4 text-sm text-gray-500">
+              暂无 Channel 配置。点击“新增 Feishu Channel”创建一条配置。
+            </div>
+          ) : null}
+
+          {state.channels.channels.map((channel, index) => (
+            <div key={channel.id || `${channel.type}_${index}`} className="rounded-lg border p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">
+                  {channel.name?.trim() || `Feishu Channel #${index + 1}`}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">启用</span>
+                  <Switch
+                    size="sm"
+                    isSelected={channel.enabled}
+                    onValueChange={(value) =>
+                      updateChannelsState((channels) => ({
+                        ...channels,
+                        channels: channels.channels.map((item, itemIndex) =>
+                          itemIndex === index
+                            ? {
+                                ...item,
+                                enabled: value
+                              }
+                            : item
+                        )
+                      }))
+                    }
+                  />
+                  <Button
+                    variant="light"
+                    color="danger"
+                    size="sm"
+                    isIconOnly
+                    onPress={() =>
+                      updateChannelsState((channels) => ({
+                        ...channels,
+                        channels: channels.channels.filter((_, itemIndex) => itemIndex !== index)
+                      }))
+                    }
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Input
+                  label="显示名称（可选）"
+                  value={channel.name ?? ""}
+                  onValueChange={(value) =>
+                    updateChannelsState((channels) => ({
+                      ...channels,
+                      channels: channels.channels.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...item,
+                              name: value
+                            }
+                          : item
+                      )
+                    }))
+                  }
+                />
+                <Input
+                  label="Channel ID（唯一）"
+                  value={channel.id}
+                  onValueChange={(value) =>
+                    updateChannelsState((channels) => ({
+                      ...channels,
+                      channels: channels.channels.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...item,
+                              id: value
+                            }
+                          : item
+                      )
+                    }))
+                  }
+                />
+                <Input
+                  label="Feishu App ID"
+                  value={channel.appId}
+                  onValueChange={(value) =>
+                    updateChannelsState((channels) => ({
+                      ...channels,
+                      channels: channels.channels.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...item,
+                              appId: value
+                            }
+                          : item
+                      )
+                    }))
+                  }
+                />
+                <Input
+                  label="Feishu App Secret"
+                  type={isApiKeyVisible(`channels.${index}.appSecret`) ? "text" : "password"}
+                  value={channel.appSecret}
+                  endContent={renderApiKeyToggle(`channels.${index}.appSecret`)}
+                  onValueChange={(value) =>
+                    updateChannelsState((channels) => ({
+                      ...channels,
+                      channels: channels.channels.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...item,
+                              appSecret: value
+                            }
+                          : item
+                      )
+                    }))
+                  }
+                />
+                <Input
+                  className="md:col-span-2"
+                  label="Allowed Chat IDs（逗号分隔，可选）"
+                  value={channel.allowedChatIds.join(",")}
+                  onValueChange={(value) =>
+                    updateChannelsState((channels) => ({
+                      ...channels,
+                      channels: channels.channels.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...item,
+                              allowedChatIds: value
+                                .split(",")
+                                .map((part) => part.trim())
+                                .filter(Boolean)
+                            }
+                          : item
+                      )
+                    }))
+                  }
+                />
+              </div>
+            </div>
+          ))}
         </CardBody>
       </Card>
 

@@ -71,7 +71,7 @@ const main = async (): Promise<void> => {
     console.log("[Gateway] Channels enabled, starting channel manager...");
     await composition.channelManager.startAll();
   } else {
-    console.log("[Gateway] No channels enabled. Set CHANNELS_ENABLED=true to activate.");
+    console.log("[Gateway] No channels enabled. Configure channels in Settings to activate.");
   }
 
   console.log("[Gateway] Gateway running. Press Ctrl+C to stop.");

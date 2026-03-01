@@ -85,10 +85,19 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.openviking.port = Math.max(1, Math.min(65535, Math.floor(config.openviking.port)));
   config.openviking.vlmProfileId = config.openviking.vlmProfileId.trim();
   config.openviking.embeddingProfileId = config.openviking.embeddingProfileId.trim();
-  config.openviking.serverCommand = config.openviking.serverCommand.trim() || "openviking";
+  config.openviking.serverCommand = config.openviking.serverCommand.trim() || "openviking-server";
+  if (config.openviking.serverCommand === "openviking") {
+    // One-time config normalization from legacy default entry.
+    config.openviking.serverCommand = "openviking-server";
+  }
   config.openviking.serverArgs = config.openviking.serverArgs.map((arg) => arg.trim()).filter(Boolean);
-  if (config.openviking.serverArgs.length === 0) {
-    config.openviking.serverArgs = ["serve"];
+  if (
+    config.openviking.serverCommand === "openviking-server" &&
+    config.openviking.serverArgs.length === 1 &&
+    config.openviking.serverArgs[0] === "serve"
+  ) {
+    // Legacy default args are not needed for openviking-server.
+    config.openviking.serverArgs = [];
   }
   config.openviking.startTimeoutMs = Math.max(1_000, Math.floor(config.openviking.startTimeoutMs));
   config.openviking.healthcheckIntervalMs = Math.max(100, Math.floor(config.openviking.healthcheckIntervalMs));
@@ -156,9 +165,19 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.tools.webFetch.baseUrl = config.tools.webFetch.baseUrl.trim() || "https://r.jina.ai/http://";
   config.tools.webFetch.timeoutMs = Math.max(500, Math.floor(config.tools.webFetch.timeoutMs));
 
-  config.channels.channels = config.channels.channels.filter(
-    (ch) => ch.type && ch.appId && ch.appSecret
-  );
+  config.channels.channels = config.channels.channels
+    .map((ch, index) => ({
+      id: ch.id?.trim() || `channel_${index + 1}`,
+      ...(ch.name?.trim() ? { name: ch.name.trim() } : {}),
+      type: (ch.type || "feishu").trim().toLowerCase(),
+      appId: ch.appId?.trim() || "",
+      appSecret: ch.appSecret?.trim() || "",
+      allowedChatIds: Array.from(
+        new Set((ch.allowedChatIds ?? []).map((item) => item.trim()).filter(Boolean))
+      ),
+      enabled: ch.enabled !== false
+    }))
+    .filter((ch) => ch.type === "feishu" && ch.appId && ch.appSecret);
 
   config.runtime.devServerUrl = config.runtime.devServerUrl?.trim() || undefined;
   config.runtime.inheritedEnv = Object.fromEntries(

@@ -276,10 +276,13 @@ export const applyLayer = (target: AppConfig, layer: ConfigLayer): void => {
     }
     if (channelsLayer.channels !== undefined) {
       target.channels.channels = channelsLayer.channels.map((ch) => ({
+        ...(ch.id !== undefined ? { id: ch.id } : {}),
+        ...(ch.name !== undefined ? { name: ch.name } : {}),
         type: ch.type ?? "feishu",
         appId: ch.appId ?? "",
         appSecret: ch.appSecret ?? "",
         ...(ch.allowedChatIds ? { allowedChatIds: ch.allowedChatIds } : {}),
+        enabled: ch.enabled ?? true,
       }));
     }
   }

@@ -252,6 +252,18 @@ export type SettingsModelProfile = {
   maxTokens?: number;
 };
 
+export type SettingsChannelType = "feishu";
+
+export type SettingsChannelItem = {
+  id: string;
+  name?: string;
+  type: SettingsChannelType;
+  appId: string;
+  appSecret: string;
+  allowedChatIds: string[];
+  enabled: boolean;
+};
+
 export type GlobalSettingsState = {
   providers: Record<
     ModelProvider,
@@ -306,6 +318,10 @@ export type GlobalSettingsState = {
       timeoutMs: number;
       maxResults: number;
     };
+  };
+  channels: {
+    enabled: boolean;
+    channels: SettingsChannelItem[];
   };
 };
 

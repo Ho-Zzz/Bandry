@@ -101,7 +101,7 @@ export const buildOpenVikingConfig = (input: BuildOpenVikingConfigInput): Record
     server: {
       host: input.host,
       port: input.port,
-      api_key: input.apiKey,
+      root_api_key: input.apiKey,
       cors_origins: ["*"]
     },
     storage: {
