@@ -27,6 +27,7 @@ export type TodoInput = {
 export type BasePlannerToolName =
   | "list_dir"
   | "read_file"
+  | "write_file"
   | "exec"
   | "web_search"
   | "web_fetch"
@@ -56,6 +57,7 @@ export type PlannerActionTool = {
   input?: {
     // Base tool inputs
     path?: string;
+    content?: string;
     command?: string;
     args?: string[];
     cwd?: string;

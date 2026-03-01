@@ -13,7 +13,7 @@ import {
  * Build the list of enabled tools based on config
  */
 const buildEnabledToolsList = (config: AppConfig, mode: ChatMode): string[] => {
-  const baseTools = ["list_dir", "read_file", "exec", "ask_clarification"];
+  const baseTools = ["list_dir", "read_file", "write_file", "exec", "ask_clarification"];
 
   // Mode-specific tools
   if (mode === "subagents") {

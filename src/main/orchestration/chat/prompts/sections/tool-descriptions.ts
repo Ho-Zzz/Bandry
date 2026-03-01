@@ -29,7 +29,10 @@ export const buildToolSelectionSection = (): string => {
 **Local File Operations:**
 - list_dir: Explore directory structure, find files
 - read_file: Read file contents for analysis
+- write_file: Create or overwrite a file. Input: {"path":"<virtual_path>","content":"<file_content>"}
 - exec: Run shell commands (only allowed commands)
+
+**IMPORTANT: When user asks to create a file, note, TODO, or save content, you MUST use write_file tool. Do NOT pretend to write a file in your answer text.**
 
 **When to Answer Directly (NO tools needed):**
 - Greetings, chit-chat, or conceptual Q&A

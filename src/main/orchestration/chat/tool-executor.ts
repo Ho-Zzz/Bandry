@@ -73,6 +73,40 @@ export const executePlannerTool = async ({
       };
     }
 
+    if (action.tool === "write_file") {
+      const targetPath = action.input?.path?.trim();
+      const content = action.input?.content;
+      if (!targetPath) {
+        return {
+          tool: "write_file",
+          input: {},
+          ok: false,
+          output: "Missing required field: input.path"
+        };
+      }
+      if (content === undefined || content === null) {
+        return {
+          tool: "write_file",
+          input: { path: targetPath },
+          ok: false,
+          output: "Missing required field: input.content"
+        };
+      }
+
+      const result = await sandboxService.writeFile({
+        path: targetPath,
+        content: String(content),
+        createDirs: true,
+        overwrite: true
+      });
+      return {
+        tool: "write_file",
+        input: { path: targetPath },
+        ok: true,
+        output: `File written: ${result.path} (${result.bytesWritten} bytes)`
+      };
+    }
+
     if (action.tool === "web_search") {
       const query = action.input?.query?.trim();
       if (!query) {

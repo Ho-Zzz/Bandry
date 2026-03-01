@@ -101,6 +101,24 @@ export const TOOL_CATALOG: Map<string, ToolGuidance> = new Map([
   ],
 
   [
+    "write_file",
+    {
+      name: "write_file",
+      description: "Write content to a file in the workspace (creates directories if needed)",
+      whenToUse: [
+        "User asks to create a file, note, TODO, or document",
+        "User wants to save content to workspace",
+        "Need to persist generated output to a file"
+      ],
+      whenNotToUse: [
+        "User only asks to see file contents (use read_file)",
+        "User asks about directory structure (use list_dir)"
+      ],
+      priority: 2
+    }
+  ],
+
+  [
     "exec",
     {
       name: "exec",
