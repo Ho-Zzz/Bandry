@@ -2,6 +2,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { ChatSendInput } from "../../../../shared/ipc";
 import { createDefaultConfig } from "../../../config/default-config";
+import { SandboxViolationError } from "../../../sandbox/errors";
 import { ToolPlanningChatAgent } from "../planner-chat-agent";
 
 const createConfig = () => {
@@ -408,5 +409,144 @@ describe("ToolPlanningChatAgent", () => {
       message.content.includes("Planner draft answer")
     );
     expect(hasPlannerDraft).toBe(false);
+  });
+
+  it("forces write_file before answer when explicit persist is requested", async () => {
+    const config = createConfig();
+    const modelsFactory = {
+      isProviderConfigured: vi.fn(() => true),
+      generateText: vi
+        .fn()
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"answer","answer":"先给你结论"}',
+          latencyMs: 20
+        })
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"tool","tool":"write_file","input":{"path":"output/report.md","content":"# 市场简报"}}',
+          latencyMs: 20
+        })
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"answer","answer":"已完成简报"}',
+          latencyMs: 20
+        }),
+      generateTextStream: vi.fn(async () => ({
+        provider: "deepseek",
+        model: "deepseek-chat",
+        text: "这是最终简报内容",
+        latencyMs: 30
+      }))
+    };
+
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(async (payload: { path: string; content: string }) => ({
+        path: payload.path,
+        bytesWritten: Buffer.byteLength(payload.content, "utf8")
+      })),
+      exec: vi.fn()
+    };
+
+    const agent = new ToolPlanningChatAgent(config, modelsFactory as never, sandboxService as never);
+
+    const result = await agent.send({
+      message: "请你调研一下今天的美股市场大跌原因，生成一个 md 简报并保存到 output/report.md",
+      history: []
+    });
+
+    expect(sandboxService.writeFile).toHaveBeenCalledTimes(1);
+    expect(result.reply).toContain("已保存到文件：/mnt/workspace/output/report.md");
+  });
+
+  it("asks clarification when explicit write target already exists", async () => {
+    const config = createConfig();
+    const modelsFactory = {
+      isProviderConfigured: vi.fn(() => true),
+      generateText: vi
+        .fn()
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"tool","tool":"write_file","input":{"path":"output/report.md","content":"# 内容"}}',
+          latencyMs: 20
+        })
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '[{"label":"改用默认路径","value":"请保存到 output/document.md"},{"label":"指定新路径","value":"请保存到 output/report-new.md"},{"label":"仅输出草稿","value":"先不要保存到文件"}]',
+          latencyMs: 20
+        }),
+      generateTextStream: vi.fn()
+    };
+
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(async () => {
+        throw new SandboxViolationError("FILE_EXISTS", "Target file already exists");
+      }),
+      exec: vi.fn()
+    };
+
+    const updates: Array<{ stage: string; message: string }> = [];
+    const agent = new ToolPlanningChatAgent(config, modelsFactory as never, sandboxService as never);
+
+    const result = await agent.send(
+      {
+        message: "把简报写入 output/report.md",
+        history: []
+      },
+      (stage, detail) => {
+        updates.push({ stage, message: detail });
+      }
+    );
+
+    expect(result.reply).toContain("需要进一步确认");
+    expect(modelsFactory.generateTextStream).not.toHaveBeenCalled();
+    expect(updates.some((item) => item.stage === "clarification")).toBe(true);
+  });
+
+  it("falls back to backend write when planner never performs write_file", async () => {
+    const config = createConfig();
+    const modelsFactory = {
+      isProviderConfigured: vi.fn(() => true),
+      generateText: vi.fn(async () => ({
+        provider: "deepseek",
+        model: "deepseek-chat",
+        text: '{"action":"answer","answer":"直接回答"}',
+        latencyMs: 20
+      })),
+      generateTextStream: vi.fn(async () => ({
+        provider: "deepseek",
+        model: "deepseek-chat",
+        text: "最终正文",
+        latencyMs: 20
+      }))
+    };
+
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(async (payload: { path: string; content: string }) => ({
+        path: payload.path,
+        bytesWritten: Buffer.byteLength(payload.content, "utf8")
+      })),
+      exec: vi.fn()
+    };
+
+    const agent = new ToolPlanningChatAgent(config, modelsFactory as never, sandboxService as never);
+    const result = await agent.send({
+      message: "请输出 markdown 文档并保存到文件",
+      history: []
+    });
+
+    expect(sandboxService.writeFile).toHaveBeenCalledTimes(1);
+    expect(result.reply).toContain("已保存到文件：/mnt/workspace/output/");
   });
 });

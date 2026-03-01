@@ -27,6 +27,7 @@ export const MODEL_PROVIDER_NAME_MAP: Record<ModelProvider, string> = {
 export type ModelProviderDefaults = {
   baseUrl: string;
   model: string;
+  embeddingModel: string;
   orgId?: string;
 };
 
@@ -34,39 +35,48 @@ export const MODEL_PROVIDER_DEFAULTS: Record<ModelProvider, ModelProviderDefault
   openai: {
     baseUrl: "https://api.openai.com/v1",
     model: "gpt-4.1-mini",
+    embeddingModel: "text-embedding-3-large",
     orgId: ""
   },
   deepseek: {
     baseUrl: "https://api.deepseek.com",
-    model: "deepseek-chat"
+    model: "deepseek-chat",
+    embeddingModel: ""
   },
   volcengine: {
     baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
-    model: "doubao-seed-1-6-250615"
+    model: "doubao-seed-1-6-250615",
+    embeddingModel: "doubao-embedding-vision-250615"
   },
   openrouter: {
     baseUrl: "https://openrouter.ai/api/v1",
-    model: "openai/gpt-4o-mini"
+    model: "openai/gpt-4o-mini",
+    embeddingModel: ""
   },
   groq: {
     baseUrl: "https://api.groq.com/openai/v1",
-    model: "llama-3.1-8b-instant"
+    model: "llama-3.1-8b-instant",
+    embeddingModel: ""
   },
   moonshot: {
     baseUrl: "https://api.moonshot.cn/v1",
-    model: "moonshot-v1-8k"
+    model: "moonshot-v1-8k",
+    embeddingModel: ""
   },
   qwen: {
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    model: "qwen-plus"
+    model: "qwen-plus",
+    embeddingModel: ""
   },
   siliconflow: {
     baseUrl: "https://api.siliconflow.cn/v1",
-    model: "Qwen/Qwen2.5-7B-Instruct"
+    model: "Qwen/Qwen2.5-7B-Instruct",
+    embeddingModel: ""
   },
   together: {
     baseUrl: "https://api.together.xyz/v1",
-    model: "meta-llama/Llama-3.1-8B-Instruct-Turbo"
+    model: "meta-llama/Llama-3.1-8B-Instruct-Turbo",
+    embeddingModel: ""
   }
 };
 

@@ -16,13 +16,29 @@ const sleep = async (ms: number): Promise<void> => {
   });
 };
 
+export type CrashEvent = {
+  exitCode: number | null;
+  signal: string | null;
+  willRestart: boolean;
+};
+
 export class OpenVikingProcessManager {
   private child?: ChildProcessWithoutNullStreams;
   private runtime?: OpenVikingRuntime;
   private startPromise: Promise<OpenVikingLaunchResult> | null = null;
   private stderrBuffer: string[] = [];
+  private restartAttempts = 0;
+  private onCrashCallback?: (event: CrashEvent) => void;
+
+  private static readonly MAX_RESTART_ATTEMPTS = 3;
+  private static readonly RESTART_DELAY_MS = 2_000;
+  private static readonly RESTART_ATTEMPTS_RESET_MS = 120_000;
 
   constructor(private config: AppConfig) {}
+
+  onCrash(callback: (event: CrashEvent) => void): void {
+    this.onCrashCallback = callback;
+  }
 
   getRuntime(): OpenVikingRuntime | undefined {
     return this.runtime;
@@ -146,6 +162,33 @@ export class OpenVikingProcessManager {
     this.warmUpAgfsBinary(sitePackages);
   }
 
+  /**
+   * Remove stale LevelDB LOCK files left behind by a previous OpenViking
+   * process that exited without cleanup. Safe to call because we only start
+   * one OpenViking child at a time and `this.child` is already confirmed dead
+   * or absent before reaching here.
+   */
+  private removeStaleLockFiles(dataDir: string): void {
+    const vectordbDir = path.join(dataDir, "vectordb");
+    try {
+      if (!fsSync.existsSync(vectordbDir)) return;
+
+      const collections = fsSync.readdirSync(vectordbDir);
+      for (const collection of collections) {
+        const lockPath = path.join(vectordbDir, collection, "store", "LOCK");
+        try {
+          if (!fsSync.existsSync(lockPath)) continue;
+          fsSync.unlinkSync(lockPath);
+          console.log(`[OpenViking] Removed stale lock: ${lockPath}`);
+        } catch {
+          // Best-effort: if we can't remove it, let OpenViking report the error
+        }
+      }
+    } catch (error) {
+      console.warn("[OpenViking] Could not clean stale locks:", error);
+    }
+  }
+
   private async doStart(): Promise<OpenVikingLaunchResult> {
     this.prepareEnvironment();
 
@@ -157,6 +200,8 @@ export class OpenVikingProcessManager {
     const runtimeRoot = path.join(this.config.paths.resourcesDir, "openviking");
     const dataDir = path.join(runtimeRoot, "data");
     const configPath = path.join(runtimeRoot, "ov.conf");
+
+    this.removeStaleLockFiles(dataDir);
 
     await fs.mkdir(dataDir, { recursive: true });
     await writeOpenVikingConfig(configPath, {
@@ -185,7 +230,7 @@ export class OpenVikingProcessManager {
       String(port)
     ];
 
-    const spawnEnv = {
+    const spawnEnv: Record<string, string> = {
       ...this.config.runtime.inheritedEnv,
       OPENVIKING_CONFIG_FILE: configPath,
       NO_PROXY: "localhost,127.0.0.1,::1",
@@ -246,7 +291,54 @@ export class OpenVikingProcessManager {
         });
       })
     ]);
+
+    this.restartAttempts = 0;
+    this.attachCrashWatcher(child);
     return { runtime: this.runtime, child };
+  }
+
+  private attachCrashWatcher(child: ChildProcessWithoutNullStreams): void {
+    const startedAt = Date.now();
+
+    child.once("exit", (code, signal) => {
+      if (this.child !== child) return;
+
+      this.child = undefined;
+      this.runtime = undefined;
+
+      if (Date.now() - startedAt > OpenVikingProcessManager.RESTART_ATTEMPTS_RESET_MS) {
+        this.restartAttempts = 0;
+      }
+
+      const canRestart = this.restartAttempts < OpenVikingProcessManager.MAX_RESTART_ATTEMPTS;
+      this.restartAttempts += 1;
+
+      console.warn(
+        `[OpenViking] Process exited unexpectedly (code=${code}, signal=${signal}). ` +
+        `Restart attempt ${this.restartAttempts}/${OpenVikingProcessManager.MAX_RESTART_ATTEMPTS}.`
+      );
+
+      if (!canRestart) {
+        console.error("[OpenViking] Max restart attempts exhausted, giving up.");
+        this.onCrashCallback?.({ exitCode: code, signal: signal?.toString() ?? null, willRestart: false });
+        return;
+      }
+
+      const delay = OpenVikingProcessManager.RESTART_DELAY_MS * this.restartAttempts;
+      console.log(`[OpenViking] Scheduling restart in ${delay}ms...`);
+
+      setTimeout(() => {
+        void this.start()
+          .then(() => {
+            console.log("[OpenViking] Auto-restart succeeded");
+            this.onCrashCallback?.({ exitCode: code, signal: signal?.toString() ?? null, willRestart: true });
+          })
+          .catch((err) => {
+            console.error("[OpenViking] Auto-restart failed:", err);
+            this.onCrashCallback?.({ exitCode: code, signal: signal?.toString() ?? null, willRestart: false });
+          });
+      }, delay);
+    });
   }
 
   private async waitForHealthy(child: ChildProcessWithoutNullStreams, baseUrl: string): Promise<void> {

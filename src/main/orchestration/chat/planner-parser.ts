@@ -101,6 +101,7 @@ const parsePlannerInput = (inputRaw: unknown): PlannerActionTool["input"] => {
   return {
     path: typeof obj.path === "string" ? obj.path : undefined,
     content: typeof obj.content === "string" ? obj.content : undefined,
+    overwrite: typeof obj.overwrite === "boolean" ? obj.overwrite : undefined,
     command: typeof obj.command === "string" ? obj.command : undefined,
     args: Array.isArray(obj.args) ? obj.args.filter((item): item is string => typeof item === "string") : undefined,
     cwd: typeof obj.cwd === "string" ? obj.cwd : undefined,

@@ -152,6 +152,23 @@ describe("usePreviewStore", () => {
     });
   });
 
+  it("prefers workspacePath override when provided", async () => {
+    mockSandboxReadFile.mockResolvedValue({
+      path: "/mnt/workspace/output/report.md",
+      content: "# Report"
+    });
+
+    usePreviewStore.getState().setWorkspacePath("/home/user/.bandry/workspaces/task_latest");
+    await usePreviewStore
+      .getState()
+      .openPreview("/mnt/workspace/output/report.md", "report.md", "/home/user/.bandry/workspaces/task_old");
+
+    expect(mockSandboxReadFile).toHaveBeenCalledWith({
+      path: "/mnt/workspace/output/report.md",
+      workspacePath: "/home/user/.bandry/workspaces/task_old"
+    });
+  });
+
   it("does not pass workspacePath when not set", async () => {
     mockSandboxReadFile.mockResolvedValue({
       path: "/mnt/workspace/docs/readme.md",

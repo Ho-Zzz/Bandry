@@ -122,7 +122,15 @@ export const ModelPicker = ({
                         reasoning
                       </span>
                     ) : null}
+                    {model.capabilities.isEmbeddingModel ? (
+                      <span className="rounded bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                        embedding
+                      </span>
+                    ) : null}
                   </div>
+                </div>
+                <div className="mt-1 text-[11px] text-slate-500">
+                  input: {model.capabilities.inputModalities.join(", ")} · output: {model.capabilities.outputModalities.join(", ")}
                 </div>
               </button>
             );

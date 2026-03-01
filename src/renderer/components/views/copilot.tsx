@@ -60,6 +60,7 @@ type TraceToolArgs = {
 type TraceToolResult = {
   message?: string;
   timestamp?: number;
+  workspacePath?: string;
 };
 
 type ProcessKind = "Plan" | "Tool" | "Result";
@@ -72,6 +73,7 @@ type TraceItem = {
   timestamp?: number;
   source?: string;
   status?: "success" | "failed";
+  workspacePath?: string;
 };
 
 type ToolResultSummary = {
@@ -79,6 +81,7 @@ type ToolResultSummary = {
   status: "success" | "failed";
   output: string;
   timestamp?: number;
+  workspacePath?: string;
 };
 
 type ProcessSectionType = "planning" | "execution" | "finalizing" | "error";
@@ -230,6 +233,7 @@ const extractTraceState = (
   stage: string;
   message?: string;
   timestamp?: number;
+  workspacePath?: string;
 } => {
   const typedArgs: TraceToolArgs = isRecord(args)
     ? {
@@ -240,14 +244,16 @@ const extractTraceState = (
   const typedResult: TraceToolResult = isRecord(result)
     ? {
         message: typeof result.message === "string" ? result.message : undefined,
-        timestamp: typeof result.timestamp === "number" ? result.timestamp : undefined
+        timestamp: typeof result.timestamp === "number" ? result.timestamp : undefined,
+        workspacePath: typeof result.workspacePath === "string" ? result.workspacePath : undefined
       }
     : {};
 
   return {
     stage: typedArgs.stage || toolName.replace(/^trace_/, "") || "trace",
     message: typedResult.message,
-    timestamp: typedResult.timestamp
+    timestamp: typedResult.timestamp,
+    workspacePath: typedResult.workspacePath
   };
 };
 
@@ -276,6 +282,7 @@ const tryFormatJson = (value: string): string | null => {
 
 const extractTraceItems = (parts: readonly unknown[]): TraceItem[] => {
   const items: TraceItem[] = [];
+  let messageWorkspacePath: string | undefined;
 
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index];
@@ -289,8 +296,11 @@ const extractTraceItems = (parts: readonly unknown[]): TraceItem[] => {
 
     const partRecord = part as Record<string, unknown>;
     const toolName = typeof partRecord.toolName === "string" ? partRecord.toolName : "";
-    const { stage, message, timestamp } = extractTraceState(toolName, partRecord.args, partRecord.result);
+    const { stage, message, timestamp, workspacePath } = extractTraceState(toolName, partRecord.args, partRecord.result);
     const normalizedMessage = message?.trim();
+    if (workspacePath) {
+      messageWorkspacePath = workspacePath;
+    }
 
     if (!normalizedMessage) {
       continue;
@@ -306,11 +316,19 @@ const extractTraceItems = (parts: readonly unknown[]): TraceItem[] => {
       message: normalizedMessage,
       timestamp,
       source,
-      status: parsedResult?.status
+      status: parsedResult?.status,
+      workspacePath
     });
   }
 
-  return items;
+  if (!messageWorkspacePath) {
+    return items;
+  }
+
+  return items.map((item) => ({
+    ...item,
+    workspacePath: item.workspacePath ?? messageWorkspacePath
+  }));
 };
 
 const buildToolSummaries = (traceItems: TraceItem[]): ToolResultSummary[] => {
@@ -326,7 +344,8 @@ const buildToolSummaries = (traceItems: TraceItem[]): ToolResultSummary[] => {
       source: parsedResult.source,
       status: parsedResult.status,
       output: parsedResult.output,
-      timestamp: item.timestamp
+      timestamp: item.timestamp,
+      workspacePath: item.workspacePath
     });
   }
 
@@ -457,7 +476,7 @@ const ToolResultLayer = ({ summaries }: { summaries: ToolResultSummary[] }) => {
                     type="button"
                     className="cursor-pointer text-blue-600 underline underline-offset-2 hover:text-blue-700"
                     onClick={() => {
-                      void openPreview(fileInfo.path, fileInfo.name);
+                      void openPreview(fileInfo.path, fileInfo.name, summary.workspacePath);
                     }}
                   >
                     {fileInfo.name}

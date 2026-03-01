@@ -59,7 +59,9 @@ export const buildPlannerSystemPrompt = (
     enabledTools: buildEnabledToolsList(config, mode).join(", "),
     memoryContext: options?.memoryContext ?? "",
     maxSubTasks: config.subagent?.maxConcurrent ?? 3,
-    currentDate: new Date().toISOString().split("T")[0]
+    currentDate: new Date().toISOString().split("T")[0],
+    persistRequired: Boolean(options?.persistRequired),
+    persistPathHint: options?.persistPathHint ?? ""
   };
 
   switch (mode) {

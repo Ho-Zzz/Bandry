@@ -58,6 +58,7 @@ export type PlannerActionTool = {
     // Base tool inputs
     path?: string;
     content?: string;
+    overwrite?: boolean;
     command?: string;
     args?: string[];
     cwd?: string;

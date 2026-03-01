@@ -81,6 +81,8 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
 
   config.openviking.host = config.openviking.host.trim() || "127.0.0.1";
   config.openviking.port = Math.max(1, Math.min(65535, Math.floor(config.openviking.port)));
+  config.openviking.vlmProfileId = config.openviking.vlmProfileId.trim();
+  config.openviking.embeddingProfileId = config.openviking.embeddingProfileId.trim();
   config.openviking.serverCommand = config.openviking.serverCommand.trim() || "openviking";
   config.openviking.serverArgs = config.openviking.serverArgs.map((arg) => arg.trim()).filter(Boolean);
   if (config.openviking.serverArgs.length === 0) {
@@ -100,6 +102,7 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
 
   for (const provider of Object.values(config.providers)) {
     provider.baseUrl = normalizeProviderBaseUrl(provider.baseUrl);
+    provider.embeddingModel = provider.embeddingModel.trim();
   }
 
   const normalizedProfiles = new Map<string, AppConfig["modelProfiles"][number]>();

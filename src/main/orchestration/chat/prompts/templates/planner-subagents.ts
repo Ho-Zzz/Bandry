@@ -57,6 +57,22 @@ const buildCurrentDateSection = (currentDate: string): string => {
   return buildSection("current_date", currentDate);
 };
 
+const buildPersistRequirementSection = (persistRequired: boolean, persistPathHint: string): string => {
+  if (!persistRequired) {
+    return "";
+  }
+
+  const content = [
+    "This request explicitly requires persisted document output.",
+    "Before final answer, you MUST call write_file at least once and it must succeed.",
+    `Preferred output path: ${persistPathHint || "/mnt/workspace/output/<file>.md"}`,
+    "Allowed write location: /mnt/workspace/output/** only.",
+    "If target file already exists, use ask_clarification to ask user for a new path. Do NOT overwrite."
+  ].join("\n");
+
+  return buildSection("persist_requirement", content);
+};
+
 /**
  * Build subagent-specific thinking guidance
  */
@@ -87,6 +103,7 @@ export const buildSubagentsPlannerPrompt = (vars: PromptVariables): string => {
     buildWorkingDirectorySection(vars.virtualRoot, vars.allowedCommands),
     buildResponseStyleSection(vars.userLanguage),
     buildCitationsSection(),
+    buildPersistRequirementSection(vars.persistRequired, vars.persistPathHint),
     buildSubagentsOutputFormatSection(vars.enabledTools),
     buildCriticalRemindersSection(buildSubagentReminder(n)),
     buildCurrentDateSection(vars.currentDate)

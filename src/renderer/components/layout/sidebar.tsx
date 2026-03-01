@@ -195,8 +195,7 @@ const ConversationItem = ({
 
 export const Sidebar = ({
   state,
-  onStateChange,
-  activeTaskCount = 0
+  onStateChange
 }: SidebarProps) => {
   const navigate = useNavigate();
   const location = useLocation();

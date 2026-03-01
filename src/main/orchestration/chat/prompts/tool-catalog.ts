@@ -104,17 +104,18 @@ export const TOOL_CATALOG: Map<string, ToolGuidance> = new Map([
     "write_file",
     {
       name: "write_file",
-      description: "Write content to a file in the workspace (creates directories if needed)",
+      description: "Write text content to a file under the workspace output directory",
       whenToUse: [
-        "User asks to create a file, note, TODO, or document",
-        "User wants to save content to workspace",
-        "Need to persist generated output to a file"
+        "User explicitly asks to save/export/write output as a file",
+        "Need to persist generated report/brief/document to workspace",
+        "Final artifact must be delivered as .md/.txt/.json/etc."
       ],
       whenNotToUse: [
-        "User only asks to see file contents (use read_file)",
-        "User asks about directory structure (use list_dir)"
+        "User only asks for conversational answer without file output",
+        "Path is outside allowed output directory",
+        "Binary file generation is required"
       ],
-      priority: 2
+      priority: 4
     }
   ],
 

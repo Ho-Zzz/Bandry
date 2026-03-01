@@ -38,4 +38,37 @@ describe("parsePlannerAction", () => {
       reason: undefined
     });
   });
+
+  it("parses write_file payload", () => {
+    const action = parsePlannerAction(
+      JSON.stringify({
+        action: "tool",
+        tool: "write_file",
+        input: {
+          path: "output/report.md",
+          content: "# Report",
+          overwrite: false
+        }
+      })
+    );
+
+    expect(action).toEqual({
+      action: "tool",
+      tool: "write_file",
+      input: {
+        path: "output/report.md",
+        content: "# Report",
+        overwrite: false,
+        tasks: undefined,
+        command: undefined,
+        args: undefined,
+        cwd: undefined,
+        timeoutMs: undefined,
+        query: undefined,
+        url: undefined,
+        question: undefined
+      },
+      reason: undefined
+    });
+  });
 });

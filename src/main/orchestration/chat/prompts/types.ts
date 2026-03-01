@@ -25,6 +25,10 @@ export type PromptVariables = {
   maxSubTasks: number;
   /** Current date in ISO format */
   currentDate: string;
+  /** Whether the user request must produce a persisted document */
+  persistRequired: boolean;
+  /** Target write path hint for persistence */
+  persistPathHint: string;
 };
 
 /**
@@ -63,4 +67,8 @@ export type PromptBuildOptions = {
   userMessage?: string;
   /** Memory context to inject */
   memoryContext?: string;
+  /** Whether the current request must persist output to file */
+  persistRequired?: boolean;
+  /** Preferred write path for persisted output */
+  persistPathHint?: string;
 };
