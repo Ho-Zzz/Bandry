@@ -359,7 +359,7 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
       }
       const result = await ov.httpClient.ls(listInput.uri);
       return {
-        entries: result.entries.map((entry) => ({
+        entries: result.map((entry) => ({
           name: entry.name,
           uri: entry.uri,
           type: entry.type

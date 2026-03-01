@@ -2,7 +2,7 @@ import { app, BrowserWindow } from "electron";
 import { OpenVikingMemoryProvider, OpenVikingProcessManager } from "../memory/openviking";
 import { createIpcEventBus } from "../ipc/event-bus";
 import { registerIpcHandlers } from "../ipc/register-handlers";
-import { createCompositionRoot } from "./composition-root";
+import { buildConfiguredChannels, createCompositionRoot } from "./composition-root";
 import { createMainWindow } from "./window";
 
 export const startMainApp = (): void => {
@@ -80,6 +80,13 @@ export const startMainApp = (): void => {
     }
   };
 
+  const syncChannels = async (): Promise<void> => {
+    await composition.channelManager.reconfigure(
+      composition.config.channels,
+      buildConfiguredChannels(composition.config.channels)
+    );
+  };
+
   const { clearRunningTasks } = registerIpcHandlers({
     config: composition.config,
     toolPlanningChatAgent: composition.toolPlanningChatAgent,
@@ -96,13 +103,14 @@ export const startMainApp = (): void => {
         : null
     }),
     onSettingsSaved: () => {
+      void syncChannels();
       void syncOpenViking();
     }
   });
 
   app.whenReady().then(async () => {
     await syncOpenViking();
-    await composition.channelManager.startAll();
+    await syncChannels();
     await createMainWindow({
       devServerUrl: composition.config.runtime.devServerUrl
     });

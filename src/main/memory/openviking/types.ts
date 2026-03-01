@@ -46,10 +46,7 @@ export type OpenVikingLsEntry = {
   [key: string]: unknown;
 };
 
-export type OpenVikingLsResult = {
-  entries: OpenVikingLsEntry[];
-  [key: string]: unknown;
-};
+export type OpenVikingLsResult = OpenVikingLsEntry[];
 
 export type OpenVikingGlobResult = {
   matches: string[];

@@ -635,6 +635,50 @@ export class ToolPlanningChatAgent {
           latencyMs: (finalCtx.metadata.synthLatencyMs as number | undefined) ?? 0,
           usage: finalCtx.metadata.synthUsage as GenerateTextResult["usage"]
         };
+
+        // Fallback persist write must run BEFORE runAfterAgent, because
+        // SandboxBindingMiddleware.afterAgent clears the workspace context.
+        // Writing after that would resolve /mnt/workspace/output/... to the
+        // default workspaceRoot instead of the task-specific directory.
+        if (persistRequired && !persistDone) {
+          emitUpdate("tool", "未满足落盘约束，执行后端兜底 write_file...");
+          const fallbackPath = defaultPersistPath(message, new Date());
+          const fallbackResolved = resolvePersistWritePath({
+            defaultPath: fallbackPath,
+            virtualRoot: this.config.sandbox.virtualRoot
+          });
+          if (!fallbackResolved.ok) {
+            const fallbackError = `PERSIST_FALLBACK_FAILED: ${fallbackResolved.message}`;
+            emitUpdate("error", fallbackError);
+            throw new Error(fallbackError);
+          }
+
+          try {
+            const writeResult = await this.sandboxService.writeFile({
+              path: fallbackResolved.path,
+              content: finalResponse.text,
+              createDirs: true,
+              overwrite: false
+            });
+            persistDone = true;
+            persistedPath = writeResult.path;
+            observations.push({
+              tool: "write_file",
+              input: {
+                path: writeResult.path,
+                overwrite: false
+              },
+              ok: true,
+              output: `Wrote file successfully: path=${writeResult.path}, bytes=${writeResult.bytesWritten}`
+            });
+            emitUpdate("tool", `write_file -> success: path=${writeResult.path}`);
+          } catch (error) {
+            const fallbackError = `PERSIST_FALLBACK_FAILED: ${getErrorMessage(error)}`;
+            emitUpdate("error", fallbackError);
+            throw new Error(fallbackError);
+          }
+        }
+
         middlewareCtx = await pipeline.runAfterAgent({
           ...finalCtx,
           finalResponse: finalResponse.text
@@ -649,45 +693,6 @@ export class ToolPlanningChatAgent {
         const synthError = `[${formatRoleBinding("lead.synthesizer", synthTarget)}] model call failed: ${getErrorMessage(error)}`;
         emitUpdate("error", synthError);
         throw new Error(synthError);
-      }
-    }
-
-    if (persistRequired && !persistDone && !clarificationFinalReply) {
-      emitUpdate("tool", "未满足落盘约束，执行后端兜底 write_file...");
-      const fallbackPath = defaultPersistPath(message, new Date());
-      const fallbackResolved = resolvePersistWritePath({
-        defaultPath: fallbackPath,
-        virtualRoot: this.config.sandbox.virtualRoot
-      });
-      if (!fallbackResolved.ok) {
-        const fallbackError = `PERSIST_FALLBACK_FAILED: ${fallbackResolved.message}`;
-        emitUpdate("error", fallbackError);
-        throw new Error(fallbackError);
-      }
-
-      try {
-        const writeResult = await this.sandboxService.writeFile({
-          path: fallbackResolved.path,
-          content: finalResponse.text,
-          createDirs: true,
-          overwrite: false
-        });
-        persistDone = true;
-        persistedPath = writeResult.path;
-        observations.push({
-          tool: "write_file",
-          input: {
-            path: writeResult.path,
-            overwrite: false
-          },
-          ok: true,
-          output: `Wrote file successfully: path=${writeResult.path}, bytes=${writeResult.bytesWritten}`
-        });
-        emitUpdate("tool", `write_file -> success: path=${writeResult.path}`);
-      } catch (error) {
-        const fallbackError = `PERSIST_FALLBACK_FAILED: ${getErrorMessage(error)}`;
-        emitUpdate("error", fallbackError);
-        throw new Error(fallbackError);
       }
     }
 

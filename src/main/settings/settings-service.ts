@@ -6,7 +6,8 @@ import { normalizeConfig } from "../config/normalize-config";
 import type {
   GlobalSettingsState,
   SaveSettingsInput,
-  SaveSettingsResult
+  SaveSettingsResult,
+  SettingsChannelItem
 } from "../../shared/ipc";
 
 type SettingsServiceOptions = {
@@ -14,6 +15,15 @@ type SettingsServiceOptions = {
 };
 
 const OPENVIKING_ALLOWED_PROVIDERS = new Set(["openai", "volcengine"]);
+
+const normalizeChannelId = (rawId: string, index: number): string => {
+  const normalized = rawId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || `channel_${index + 1}`;
+};
 
 const toSettingsProviders = (
   providers: AppConfig["providers"]
@@ -61,6 +71,16 @@ const toConfigProvidersLayer = (
 };
 
 const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
+  const channels: SettingsChannelItem[] = config.channels.channels.map((channel, index) => ({
+    id: normalizeChannelId(channel.id ?? "", index),
+    ...(channel.name?.trim() ? { name: channel.name.trim() } : {}),
+    type: "feishu",
+    appId: channel.appId,
+    appSecret: channel.appSecret,
+    allowedChatIds: [...(channel.allowedChatIds ?? [])],
+    enabled: channel.enabled !== false
+  }));
+
   return {
     providers: toSettingsProviders(config.providers),
     modelProfiles: config.modelProfiles.map((profile) => ({
@@ -113,6 +133,10 @@ const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
         timeoutMs: config.tools.githubSearch.timeoutMs,
         maxResults: config.tools.githubSearch.maxResults
       }
+    },
+    channels: {
+      enabled: config.channels.enabled,
+      channels
     }
   };
 };
@@ -184,6 +208,37 @@ const validateState = (state: GlobalSettingsState): string[] => {
     }
   }
 
+  const channelIds = new Set<string>();
+  for (let index = 0; index < state.channels.channels.length; index += 1) {
+    const channel = state.channels.channels[index];
+    const normalizedId = normalizeChannelId(channel.id, index);
+    if (channelIds.has(normalizedId)) {
+      errors.push(`Channel id 重复: ${normalizedId}`);
+    }
+    channelIds.add(normalizedId);
+
+    if (channel.type !== "feishu") {
+      errors.push(`暂不支持的 channel 类型: ${channel.type}`);
+      continue;
+    }
+
+    if (channel.enabled) {
+      if (!channel.appId.trim()) {
+        errors.push(`Channel ${normalizedId} 的 appId 不能为空`);
+      }
+      if (!channel.appSecret.trim()) {
+        errors.push(`Channel ${normalizedId} 的 appSecret 不能为空`);
+      }
+    }
+  }
+
+  if (state.channels.enabled) {
+    const hasEnabledChannel = state.channels.channels.some((channel) => channel.enabled);
+    if (!hasEnabledChannel) {
+      errors.push("启用 Channels 时，至少需要一个启用中的 Channel 配置");
+    }
+  }
+
   return errors;
 };
 
@@ -243,6 +298,20 @@ export class SettingsService {
           timeoutMs: input.state.tools.githubSearch.timeoutMs,
           maxResults: input.state.tools.githubSearch.maxResults
         }
+      },
+      channels: {
+        enabled: input.state.channels.enabled,
+        channels: input.state.channels.channels.map((channel, index) => ({
+          id: normalizeChannelId(channel.id, index),
+          ...(channel.name?.trim() ? { name: channel.name.trim() } : {}),
+          type: "feishu" as const,
+          appId: channel.appId.trim(),
+          appSecret: channel.appSecret.trim(),
+          allowedChatIds: Array.from(
+            new Set(channel.allowedChatIds.map((item) => item.trim()).filter(Boolean))
+          ),
+          enabled: channel.enabled
+        }))
       },
       catalog: {
         source: {
@@ -309,13 +378,27 @@ export class SettingsService {
       timeoutMs: input.state.tools.githubSearch.timeoutMs,
       maxResults: input.state.tools.githubSearch.maxResults
     };
+    currentConfig.channels = {
+      enabled: input.state.channels.enabled,
+      channels: input.state.channels.channels.map((channel, index) => ({
+        id: normalizeChannelId(channel.id, index),
+        ...(channel.name?.trim() ? { name: channel.name.trim() } : {}),
+        type: "feishu",
+        appId: channel.appId.trim(),
+        appSecret: channel.appSecret.trim(),
+        allowedChatIds: Array.from(
+          new Set(channel.allowedChatIds.map((item) => item.trim()).filter(Boolean))
+        ),
+        enabled: channel.enabled
+      }))
+    };
 
     normalizeConfig(currentConfig);
 
     return {
       ok: true,
       requiresRestart: false,
-      message: "配置已保存，Memory 和工具配置已即时生效。"
+      message: "配置已保存，Memory/工具/Channels 配置已即时生效。"
     };
   }
 }

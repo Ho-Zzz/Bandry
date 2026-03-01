@@ -96,8 +96,12 @@ install_openviking() {
 
 verify_installation() {
   local ov_bin="$VENV_DIR/bin/openviking"
+  local ov_server_bin="$VENV_DIR/bin/openviking-server"
   if [ ! -x "$ov_bin" ]; then
     ov_bin="$VENV_DIR/Scripts/openviking.exe"
+  fi
+  if [ ! -x "$ov_server_bin" ]; then
+    ov_server_bin="$VENV_DIR/Scripts/openviking-server.exe"
   fi
 
   if [ -x "$ov_bin" ]; then
@@ -107,6 +111,12 @@ verify_installation() {
     local python_bin="$VENV_DIR/bin/python"
     [ ! -x "$python_bin" ] && python_bin="$VENV_DIR/Scripts/python.exe"
     "$python_bin" -m openviking --version 2>/dev/null || echo "[setup] openviking module entry also unavailable"
+  fi
+
+  if [ -x "$ov_server_bin" ]; then
+    echo "[setup] Verification: $("$ov_server_bin" --version 2>/dev/null || echo 'openviking-server binary found')"
+  else
+    echo "[setup] WARNING: openviking-server binary not found in venv"
   fi
 }
 

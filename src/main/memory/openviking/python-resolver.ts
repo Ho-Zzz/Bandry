@@ -46,10 +46,10 @@ const isSystemCommandAvailable = (command: string): boolean => {
 
 /**
  * Resolve the OpenViking server command, checking in order:
- * 1. Explicit config `serverCommand` (if not the default "openviking")
- * 2. Bundled venv `openviking` CLI (project root, then resourcesDir)
- * 3. Bundled venv Python module (`python -m openviking`)
- * 4. System-level `openviking` command
+ * 1. Explicit config `serverCommand` (if not the default "openviking-server")
+ * 2. Bundled venv `openviking-server` binary (project root, then resourcesDir)
+ * 3. Bundled venv Python module (`python -m openviking.server.bootstrap`)
+ * 4. System-level `openviking-server` command
  */
 export const resolveOpenVikingCommand = (
   projectRoot: string,
@@ -57,7 +57,7 @@ export const resolveOpenVikingCommand = (
   configServerCommand: string,
   configServerArgs: string[]
 ): ResolvedPythonCommand => {
-  if (configServerCommand !== "openviking") {
+  if (configServerCommand !== "openviking-server") {
     return {
       command: configServerCommand,
       args: configServerArgs
@@ -66,7 +66,7 @@ export const resolveOpenVikingCommand = (
 
   const searchDirs = [projectRoot, resourcesDir];
 
-  const venvCli = findVenvBinary(searchDirs, "openviking");
+  const venvCli = findVenvBinary(searchDirs, "openviking-server");
   if (venvCli) {
     return {
       command: venvCli,
@@ -78,13 +78,13 @@ export const resolveOpenVikingCommand = (
   if (venvPython) {
     return {
       command: venvPython,
-      args: ["-m", "openviking", ...configServerArgs]
+      args: ["-m", "openviking.server.bootstrap", ...configServerArgs]
     };
   }
 
-  if (isSystemCommandAvailable("openviking")) {
+  if (isSystemCommandAvailable("openviking-server")) {
     return {
-      command: "openviking",
+      command: "openviking-server",
       args: configServerArgs
     };
   }

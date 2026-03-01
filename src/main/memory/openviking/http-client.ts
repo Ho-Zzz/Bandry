@@ -91,34 +91,38 @@ export class OpenVikingHttpClient {
   }
 
   async ls(uri: string): Promise<OpenVikingLsResult> {
-    return await this.request<OpenVikingLsResult>("POST", "/api/v1/fs/ls", {
-      uri
-    });
+    return await this.request<OpenVikingLsResult>(
+      "GET",
+      `/api/v1/fs/ls?${new URLSearchParams({ uri, output: "original" }).toString()}`
+    );
   }
 
   async glob(pattern: string, uri: string): Promise<OpenVikingGlobResult> {
-    return await this.request<OpenVikingGlobResult>("POST", "/api/v1/fs/glob", {
+    return await this.request<OpenVikingGlobResult>("POST", "/api/v1/search/glob", {
       pattern,
       uri
     });
   }
 
   async read(uri: string): Promise<OpenVikingReadResult> {
-    return await this.request<OpenVikingReadResult>("POST", "/api/v1/fs/read", {
-      uri
-    });
+    return await this.request<OpenVikingReadResult>(
+      "GET",
+      `/api/v1/content/read?${new URLSearchParams({ uri }).toString()}`
+    );
   }
 
   async abstract(uri: string): Promise<OpenVikingAbstractResult> {
-    return await this.request<OpenVikingAbstractResult>("POST", "/api/v1/fs/abstract", {
-      uri
-    });
+    return await this.request<OpenVikingAbstractResult>(
+      "GET",
+      `/api/v1/content/abstract?${new URLSearchParams({ uri }).toString()}`
+    );
   }
 
   async overview(uri: string): Promise<OpenVikingOverviewResult> {
-    return await this.request<OpenVikingOverviewResult>("POST", "/api/v1/fs/overview", {
-      uri
-    });
+    return await this.request<OpenVikingOverviewResult>(
+      "GET",
+      `/api/v1/content/overview?${new URLSearchParams({ uri }).toString()}`
+    );
   }
 
   async find(query: string, targetUri: string, limit: number = 10): Promise<OpenVikingFindResult> {
@@ -130,21 +134,9 @@ export class OpenVikingHttpClient {
   }
 
   async waitProcessed(timeoutMs: number = 120_000): Promise<void> {
-    const start = Date.now();
-    const pollInterval = 2_000;
-
-    while (Date.now() - start < timeoutMs) {
-      const result = await this.requestRaw<{ status?: string; processed?: boolean }>(
-        "GET",
-        "/api/v1/resources/status"
-      );
-      if (result.processed === true || result.status === "ready") {
-        return;
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, pollInterval));
-    }
-
-    throw new OpenVikingHttpError(`waitProcessed timeout after ${timeoutMs}ms`);
+    await this.request("POST", "/api/v1/system/wait", {
+      timeout: timeoutMs / 1_000
+    });
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {

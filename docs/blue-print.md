@@ -221,7 +221,7 @@ flowchart TD
 - `已实现`：飞书（Lark）通道，基于 WebSocket 长连接接收消息、REST API 回复。
 - `已实现`：消息命令解析（`/think`、`/agents`、`/model:<id>`）。
 - `已实现`：Headless Gateway 入口（`src/main/gateway.ts`，`pnpm gateway` 启动）。
-- `已实现`：配置层支持（环境变量 `CHANNELS_ENABLED`、`FEISHU_*`）。
+- `已实现`：配置层支持（通过前端 Settings -> Channels 管理 Feishu 配置）。
 - `规划中`：更多平台适配（Slack、Discord 等）。
 - `规划中`：渲染进程通道状态展示（preload 桥接 `channel:status` 事件）。
 

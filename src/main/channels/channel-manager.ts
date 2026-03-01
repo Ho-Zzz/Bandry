@@ -28,7 +28,7 @@ export class ChannelManager {
     private readonly chatAgent: ToolPlanningChatAgent,
     private readonly conversationStore: ConversationStore,
     private readonly eventBus: IpcEventBus,
-    private readonly channelsConfig: { enabled: boolean },
+    private channelsConfig: { enabled: boolean },
   ) {}
 
   register(channel: Channel): void {
@@ -63,6 +63,23 @@ export class ChannelManager {
         console.error(`[ChannelManager] Failed to stop channel ${channel.id}:`, error);
       }
     }
+  }
+
+  async reconfigure(nextConfig: { enabled: boolean }, nextChannels: Channel[]): Promise<void> {
+    for (const controller of this.activeRequests.values()) {
+      controller.abort();
+    }
+    this.activeRequests.clear();
+
+    await this.stopAll();
+    this.channels.clear();
+    this.conversationMap.clear();
+    this.channelsConfig = { enabled: nextConfig.enabled };
+
+    for (const channel of nextChannels) {
+      this.register(channel);
+    }
+    await this.startAll();
   }
 
   private resolveConversation(channelId: string, platformChatId: string): string {
