@@ -48,6 +48,7 @@ Electron multi-process app:
 - `src/main/persistence/sqlite/`: SQLite stores and schema
 - `src/main/config/`: Layered configuration (project → user → env)
 - `src/main/sandbox/`: Sandboxed file/command execution with path guarding
+- `src/main/channels/`: External messaging channels (Feishu/Lark), ChannelManager, command parsing
 - `src/main/settings/`: Global settings and model onboarding services
 
 ## Code Style
@@ -117,4 +118,10 @@ Create `.env`:
 ```
 DEEPSEEK_API_KEY=your_key_here
 DEEPSEEK_MODEL=deepseek-chat  # optional
+
+# Channel integration (optional)
+CHANNELS_ENABLED=false
+FEISHU_APP_ID=your_app_id
+FEISHU_APP_SECRET=your_app_secret
+FEISHU_ALLOWED_CHAT_IDS=chat_id_1,chat_id_2  # optional whitelist
 ```

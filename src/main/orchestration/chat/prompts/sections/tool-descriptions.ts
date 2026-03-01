@@ -32,6 +32,8 @@ export const buildToolSelectionSection = (): string => {
 - write_file: Write text files inside allowed workspace output path
 - exec: Run shell commands (only allowed commands)
 
+**IMPORTANT: When user asks to create a file, note, TODO, or save content, you MUST use write_file tool. Do NOT pretend to write a file in your answer text.**
+
 **When to Answer Directly (NO tools needed):**
 - Greetings, chit-chat, or conceptual Q&A
 - Questions answerable from your knowledge

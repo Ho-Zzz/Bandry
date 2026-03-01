@@ -6,8 +6,8 @@ import { createCompositionRoot } from "./composition-root";
 import { createMainWindow } from "./window";
 
 export const startMainApp = (): void => {
-  const composition = createCompositionRoot();
   const eventBus = createIpcEventBus();
+  const composition = createCompositionRoot(eventBus);
 
   const shutdownOpenViking = async (): Promise<void> => {
     await composition.openViking.memoryProvider?.flush();
@@ -102,6 +102,7 @@ export const startMainApp = (): void => {
 
   app.whenReady().then(async () => {
     await syncOpenViking();
+    await composition.channelManager.startAll();
     await createMainWindow({
       devServerUrl: composition.config.runtime.devServerUrl
     });
@@ -117,6 +118,7 @@ export const startMainApp = (): void => {
 
   app.on("window-all-closed", () => {
     clearRunningTasks();
+    void composition.channelManager.stopAll();
     void shutdownOpenViking();
 
     if (process.platform !== "darwin") {
@@ -125,6 +127,7 @@ export const startMainApp = (): void => {
   });
 
   app.on("before-quit", () => {
+    void composition.channelManager.stopAll();
     void shutdownOpenViking();
   });
 };

@@ -154,6 +154,10 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.tools.webFetch.baseUrl = config.tools.webFetch.baseUrl.trim() || "https://r.jina.ai/http://";
   config.tools.webFetch.timeoutMs = Math.max(500, Math.floor(config.tools.webFetch.timeoutMs));
 
+  config.channels.channels = config.channels.channels.filter(
+    (ch) => ch.type && ch.appId && ch.appSecret
+  );
+
   config.runtime.devServerUrl = config.runtime.devServerUrl?.trim() || undefined;
   config.runtime.inheritedEnv = Object.fromEntries(
     Object.entries(config.runtime.inheritedEnv)

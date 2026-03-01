@@ -181,6 +181,16 @@ export type PathsLayerConfig = Partial<
   >
 >;
 
+export type ChannelsLayerConfig = Partial<{
+  enabled: boolean;
+  channels: Array<{
+    type: string;
+    appId?: string;
+    appSecret?: string;
+    allowedChatIds?: string[];
+  }>;
+}>;
+
 export type ConfigLayer = {
   llm?: LlmLayerConfig;
   sandbox?: SandboxLayerConfig;
@@ -194,6 +204,7 @@ export type ConfigLayer = {
   modelProfiles?: ModelProfileLayer[];
   routing?: RoutingLayerConfig;
   tools?: InternalToolsLayerConfig;
+  channels?: ChannelsLayerConfig;
 };
 
 export type ProviderConfig = {
@@ -260,6 +271,15 @@ export type AppConfig = {
   modelProfiles: ModelProfile[];
   routing: RoutingConfig;
   tools: InternalToolsConfig;
+  channels: {
+    enabled: boolean;
+    channels: Array<{
+      type: string;
+      appId: string;
+      appSecret: string;
+      allowedChatIds?: string[];
+    }>;
+  };
   paths: AppPaths;
   runtime: RuntimeConfig;
 };

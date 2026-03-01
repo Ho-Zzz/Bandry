@@ -157,6 +157,10 @@ const createMockConfig = (overrides?: Partial<AppConfig>): AppConfig => ({
     databasePath: "/test/.bandry/data.db",
     dotenvPath: "/test/.env"
   },
+  channels: {
+    enabled: false,
+    channels: []
+  },
   runtime: {
     inheritedEnv: {}
   },

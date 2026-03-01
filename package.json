@@ -22,6 +22,8 @@
     "test:experimental": "vitest run --config vitest.experimental.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
+    "gateway": "tsup && node dist-electron/gateway.cjs",
+    "dev:gateway": "concurrently -k \"tsup --watch\" \"wait-on file:dist-electron/gateway.cjs && node dist-electron/gateway.cjs\"",
     "clean": "rimraf dist dist-electron release"
   },
   "build": {
@@ -79,6 +81,7 @@
     "@assistant-ui/react-markdown": "^0.12.3",
     "@heroui/react": "^2.8.9",
     "@heroui/theme": "^2.4.26",
+    "@larksuiteoapi/node-sdk": "^1.59.0",
     "@tailwindcss/vite": "^4.2.0",
     "ai": "^6.0.97",
     "autoprefixer": "^10.4.24",

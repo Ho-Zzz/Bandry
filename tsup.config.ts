@@ -6,6 +6,7 @@ export default defineConfig((options) => ({
   entry: {
     main: "src/main/index.ts",
     preload: "src/preload/index.ts",
+    gateway: "src/main/gateway.ts",
     "sub-agent-worker": "src/main/orchestration/workflow/dag/workers/sub-agent-worker.ts"
   },
   outDir: "dist-electron",

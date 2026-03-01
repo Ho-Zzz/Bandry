@@ -127,6 +127,17 @@ export const envToLayer = (env: NodeJS.ProcessEnv): ConfigLayer => {
         timeoutMs: toNumberValue(env.WEB_FETCH_TIMEOUT_MS)
       }
     },
+    channels: {
+      enabled: toBooleanValue(env.CHANNELS_ENABLED),
+      channels: env.FEISHU_APP_ID && env.FEISHU_APP_SECRET
+        ? [{
+            type: "feishu" as const,
+            appId: env.FEISHU_APP_ID,
+            appSecret: env.FEISHU_APP_SECRET,
+            allowedChatIds: toStringListValue(env.FEISHU_ALLOWED_CHAT_IDS),
+          }]
+        : undefined,
+    },
     providers: {
       openai: {
         apiKey: toStringValue(env.OPENAI_API_KEY),

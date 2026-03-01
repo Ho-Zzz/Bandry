@@ -18,6 +18,10 @@ pnpm approve-builds
 # Development (runs renderer, main process, and electron concurrently)
 pnpm dev
 
+# Run headless gateway (channels only, no Electron)
+pnpm gateway
+pnpm dev:gateway   # watch mode
+
 # Build for production
 pnpm build
 
@@ -74,6 +78,14 @@ Code is organized by domain (see `docs/code-organization.md`):
   - `local-orchestrator.ts`: Plans and executes tool calls based on user prompts
   - Can run with or without LLM synthesis
 
+- `src/main/channels/`: External messaging channel abstraction
+  - `channel-manager.ts`: Lifecycle management, message routing, conversation mapping
+  - `parse-command.ts`: Slash-command parser (`/think`, `/agents`, `/model:<id>`)
+  - `types.ts`: `Channel` interface, `NormalizedInboundMessage`, `OutboundReply`
+  - `feishu/`: Feishu/Lark implementation via `@larksuiteoapi/node-sdk` WebSocket
+
+- `src/main/gateway.ts`: Headless (non-Electron) entry point for channel-only mode
+
 - `src/shared/ipc.ts`: IPC type contracts between main and renderer
 - `src/renderer/`: React UI components and hooks
 
@@ -103,6 +115,12 @@ Create `.env` file with:
 ```
 DEEPSEEK_API_KEY=your_key_here
 DEEPSEEK_MODEL=deepseek-chat  # optional, defaults to deepseek-chat
+
+# Channel integration (optional)
+CHANNELS_ENABLED=false
+FEISHU_APP_ID=your_app_id
+FEISHU_APP_SECRET=your_app_secret
+FEISHU_ALLOWED_CHAT_IDS=chat_id_1,chat_id_2  # optional whitelist
 ```
 
 ## Testing
