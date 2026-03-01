@@ -10,6 +10,8 @@ import type {
   ConversationResult,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
+  MemoryDeleteResourceInput,
+  MemoryDeleteResourceResult,
   MemoryListResourcesInput,
   MemoryListResourcesResult,
   MemoryReadResourceInput,
@@ -17,6 +19,8 @@ import type {
   MemorySearchInput,
   MemorySearchResult,
   MemoryStatusResult,
+  ReadFileBase64Input,
+  ReadFileBase64Result,
   MessageInput,
   MessageResult,
   MessageUpdateInput,
@@ -123,6 +127,9 @@ const api = {
   // Dialog API
   dialogOpenFiles: (filters?: { name: string; extensions: string[] }[]): Promise<string[]> =>
     ipcRenderer.invoke("dialog:open-files", filters),
+  // File API
+  readFileBase64: (input: ReadFileBase64Input): Promise<ReadFileBase64Result> =>
+    ipcRenderer.invoke("fs:read-file-base64", input),
   // Memory API
   memoryStatus: (): Promise<MemoryStatusResult> =>
     ipcRenderer.invoke("memory:status"),
@@ -130,6 +137,8 @@ const api = {
     ipcRenderer.invoke("memory:search", input),
   memoryAddResource: (input: MemoryAddResourceInput): Promise<MemoryAddResourceResult> =>
     ipcRenderer.invoke("memory:add-resource", input),
+  memoryDeleteResource: (input: MemoryDeleteResourceInput): Promise<MemoryDeleteResourceResult> =>
+    ipcRenderer.invoke("memory:delete-resource", input),
   memoryListResources: (input: MemoryListResourcesInput): Promise<MemoryListResourcesResult> =>
     ipcRenderer.invoke("memory:list-resources", input),
   memoryReadResource: (input: MemoryReadResourceInput): Promise<MemoryReadResourceResult> =>

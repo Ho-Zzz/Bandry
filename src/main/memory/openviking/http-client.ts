@@ -125,6 +125,14 @@ export class OpenVikingHttpClient {
     );
   }
 
+  async rm(uri: string, recursive: boolean = false): Promise<void> {
+    const params = new URLSearchParams({ uri });
+    if (recursive) {
+      params.set("recursive", "true");
+    }
+    await this.request("DELETE", `/api/v1/fs?${params.toString()}`);
+  }
+
   async find(query: string, targetUri: string, limit: number = 10): Promise<OpenVikingFindResult> {
     return await this.request<OpenVikingFindResult>("POST", "/api/v1/search/find", {
       query,

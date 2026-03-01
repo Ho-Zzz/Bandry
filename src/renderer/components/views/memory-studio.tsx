@@ -6,6 +6,7 @@ import {
   ChevronRight,
   FolderTree,
   RefreshCw,
+  Trash2,
   Upload,
   X,
   XCircle
@@ -18,7 +19,7 @@ import type {
   MemoryStatusResult
 } from "../../../shared/ipc";
 
-const DEFAULT_ROOT_URIS = ["viking://user", "viking://agent"];
+const DEFAULT_ROOT_URIS = ["viking://resources", "viking://user", "viking://agent"];
 
 const dedupeUris = (uris: string[]): string[] => {
   const normalized = uris.map((item) => item.trim().replace(/\/+$/, "")).filter(Boolean);
@@ -64,6 +65,12 @@ export const MemoryStudio = () => {
   const [docLoading, setDocLoading] = useState(false);
   const [docError, setDocError] = useState("");
   const [doc, setDoc] = useState<MemoryReadResourceResult | null>(null);
+
+  const [deleteConfirmUri, setDeleteConfirmUri] = useState<{ uri: string; isDir: boolean } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const [localPathMap, setLocalPathMap] = useState<Record<string, string>>({});
+  const [imageDataUrl, setImageDataUrl] = useState("");
 
   const rootUris = useMemo(() => {
     const fromSettings = settings?.memory.openviking.targetUris ?? [];
@@ -156,11 +163,38 @@ export const MemoryStudio = () => {
     }
   }, [dirEntriesMap, dirLoadingMap, loadDirectory]);
 
+  const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
+  const BINARY_EXTENSIONS = new Set(["mp4", "mov", "avi", "mp3", "wav", "m4a"]);
+
   const loadDocument = useCallback(async (uri: string) => {
     try {
       setDocLoading(true);
       setDocError("");
       setSelectedFileUri(uri);
+      setImageDataUrl("");
+
+      const ext = uri.split(".").pop()?.toLowerCase() ?? "";
+
+      if (IMAGE_EXTENSIONS.has(ext)) {
+        const uriName = uri.split("/").pop()?.toLowerCase() ?? "";
+        const localPath = localPathMap[uri]
+          ?? localPathMap[uri.replace(/\/+$/, "")]
+          ?? localPathMap[`__name__${uriName}`];
+        if (localPath) {
+          const result = await window.api.readFileBase64({ path: localPath });
+          setImageDataUrl(`data:${result.mimeType};base64,${result.base64}`);
+          setDoc(null);
+        } else {
+          setDoc({ uri, content: `[图片文件] .${ext} 格式，原始文件路径不可用（仅当前导入会话内可预览）。\n\n资源已导入 OpenViking，可通过语义检索命中。` });
+        }
+        return;
+      }
+
+      if (BINARY_EXTENSIONS.has(ext)) {
+        setDoc({ uri, content: `[二进制文件] 此文件为 .${ext} 格式，无法以文本形式预览。\n\n资源已导入 OpenViking，可通过语义检索命中。` });
+        return;
+      }
+
       const next = await window.api.memoryReadResource({ uri });
       setDoc(next);
     } catch (error) {
@@ -171,12 +205,17 @@ export const MemoryStudio = () => {
         openDirectory(uri);
         return;
       }
+      if (message.includes("utf-8") || message.includes("codec can't decode")) {
+        setDoc({ uri, content: "[二进制文件] 此文件包含非文本内容，无法预览。\n\n资源已导入 OpenViking，可通过语义检索命中。" });
+        setDocError("");
+        return;
+      }
       setDocError(message);
       setDoc(null);
     } finally {
       setDocLoading(false);
     }
-  }, [openDirectory]);
+  }, [openDirectory, localPathMap]);
 
   const handleSearch = async () => {
     const query = searchQuery.trim();
@@ -206,9 +245,7 @@ export const MemoryStudio = () => {
   };
 
   const IMPORT_FILE_FILTERS = [
-    { name: "文档", extensions: ["md", "txt", "json", "csv", "yaml", "yml", "xml", "html", "htm", "rst", "log"] },
-    { name: "代码", extensions: ["ts", "tsx", "js", "jsx", "py", "go", "rs", "java", "c", "cpp", "h", "sh"] },
-    { name: "所有文件", extensions: ["*"] }
+    { name: "支持的文件", extensions: ["pdf", "md", "txt", "json", "png", "jpg", "jpeg"] }
   ];
 
   const handleSelectFiles = async () => {
@@ -247,8 +284,22 @@ export const MemoryStudio = () => {
       const firstRoot = success[0]?.rootUri;
       setImportMessage(firstRoot ? `${summary}（rootUri: ${firstRoot}）` : summary);
 
+      const newPathMap: Record<string, string> = {};
+      for (const item of success) {
+        newPathMap[item.rootUri] = item.path;
+        const bare = item.rootUri.replace(/\/+$/, "");
+        newPathMap[bare] = item.path;
+        const basename = item.path.split("/").pop() ?? item.path.split("\\").pop() ?? "";
+        if (basename) {
+          newPathMap[`__name__${basename.toLowerCase()}`] = item.path;
+        }
+      }
+      setLocalPathMap((previous) => ({ ...previous, ...newPathMap }));
+
       setImportPaths([]);
-      for (const uri of rootUris) {
+      const refreshUris = new Set(rootUris);
+      refreshUris.add("viking://resources");
+      for (const uri of refreshUris) {
         await loadDirectory(uri);
       }
     } catch (error) {
@@ -257,6 +308,72 @@ export const MemoryStudio = () => {
       setImporting(false);
     }
   };
+
+  const handleDeleteResource = async () => {
+    if (!deleteConfirmUri) return;
+    try {
+      setDeleting(true);
+      await window.api.memoryDeleteResource({
+        uri: deleteConfirmUri.uri,
+        recursive: deleteConfirmUri.isDir
+      });
+      if (selectedFileUri === deleteConfirmUri.uri) {
+        setSelectedFileUri("");
+        setDoc(null);
+        setDocError("");
+      }
+
+      // Find parent directories that list the deleted entry, then refresh them
+      const parentDirUris: string[] = [];
+      for (const [dirUri, entries] of Object.entries(dirEntriesMap)) {
+        if (entries.some((e) => e.uri === deleteConfirmUri.uri)) {
+          parentDirUris.push(dirUri);
+        }
+      }
+
+      // Clean up dirEntriesMap for deleted directories
+      if (deleteConfirmUri.isDir) {
+        setDirEntriesMap((previous) => {
+          const next = { ...previous };
+          for (const key of Object.keys(next)) {
+            if (key === deleteConfirmUri.uri || key.startsWith(deleteConfirmUri.uri + "/") || key.startsWith(deleteConfirmUri.uri.replace(/\/$/, "") + "/")) {
+              delete next[key];
+            }
+          }
+          const bare = deleteConfirmUri.uri.replace(/\/$/, "");
+          delete next[bare];
+          delete next[bare + "/"];
+          return next;
+        });
+        setExpandedDirUris((previous) => {
+          const next = { ...previous };
+          delete next[deleteConfirmUri.uri];
+          delete next[deleteConfirmUri.uri.replace(/\/$/, "")];
+          return next;
+        });
+      }
+
+      for (const uri of parentDirUris) {
+        await loadDirectory(uri);
+      }
+
+      // Fallback: if no parent was found in the map, refresh matching root URIs
+      if (parentDirUris.length === 0) {
+        for (const uri of rootUris) {
+          if (deleteConfirmUri.uri.startsWith(uri)) {
+            await loadDirectory(uri);
+          }
+        }
+      }
+    } catch (error) {
+      setDocError(error instanceof Error ? error.message : "删除失败");
+    } finally {
+      setDeleting(false);
+      setDeleteConfirmUri(null);
+    }
+  };
+
+  const isResourceUri = (uri: string): boolean => uri.startsWith("viking://resources");
 
   const renderTreeDir = (uri: string, label: string, level: number) => {
     const entries = dirEntriesMap[uri] ?? [];
@@ -273,7 +390,7 @@ export const MemoryStudio = () => {
           onClick={() => {
             openDirectory(uri);
           }}
-          className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-sm ${
+          className={`group flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-sm ${
             selectedDirUri === uri ? "bg-indigo-50 text-indigo-700" : "text-slate-700 hover:bg-slate-100"
           }`}
           style={{ paddingLeft: `${8 + level * 16}px` }}
@@ -288,6 +405,17 @@ export const MemoryStudio = () => {
             {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           </span>
           <span className="truncate">📁 {label}</span>
+          {isResourceUri(uri) && level > 0 ? (
+            <span
+              className="ml-auto shrink-0 rounded p-0.5 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-rose-100 hover:text-rose-600"
+              onClick={(event) => {
+                event.stopPropagation();
+                setDeleteConfirmUri({ uri, isDir: true });
+              }}
+            >
+              <Trash2 size={12} />
+            </span>
+          ) : null}
         </button>
 
         {expanded ? (
@@ -313,7 +441,7 @@ export const MemoryStudio = () => {
                   setSelectedDirUri(uri);
                   void loadDocument(entry.uri);
                 }}
-                className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-sm ${
+                className={`group flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-sm ${
                   selectedFileUri === entry.uri
                     ? "bg-indigo-50 text-indigo-700"
                     : "text-slate-600 hover:bg-slate-100"
@@ -321,6 +449,17 @@ export const MemoryStudio = () => {
                 style={{ paddingLeft: `${28 + level * 16}px` }}
               >
                 <span className="truncate">📄 {entry.name}</span>
+                {isResourceUri(entry.uri) ? (
+                  <span
+                    className="ml-auto shrink-0 rounded p-0.5 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-rose-100 hover:text-rose-600"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setDeleteConfirmUri({ uri: entry.uri, isDir: false });
+                    }}
+                  >
+                    <Trash2 size={12} />
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
@@ -477,6 +616,14 @@ export const MemoryStudio = () => {
                     <div className="py-12 text-center text-sm text-slate-500">文档加载中...</div>
                   ) : docError ? (
                     <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{docError}</div>
+                  ) : imageDataUrl ? (
+                    <div className="flex items-center justify-center">
+                      <img
+                        src={imageDataUrl}
+                        alt={selectedFileUri.split("/").pop() ?? "image"}
+                        className="max-h-[600px] max-w-full rounded-lg object-contain"
+                      />
+                    </div>
                   ) : doc ? (
                     <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-800">{doc.content}</pre>
                   ) : (
@@ -505,10 +652,9 @@ export const MemoryStudio = () => {
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 <p>将本地文件导入到 OpenViking 记忆系统。导入后文件会被自动向量化、生成摘要，并可通过语义检索命中。</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {["md", "txt", "json", "csv", "yaml", "html", "ts", "py", "go", "rs", "java"].map((ext) => (
+                  {["pdf", "md", "txt", "json", "png", "jpg", "jpeg"].map((ext) => (
                     <span key={ext} className="rounded bg-slate-200 px-1.5 py-0.5 text-xs font-mono text-slate-600">.{ext}</span>
                   ))}
-                  <span className="text-xs text-slate-400">等文本格式</span>
                 </div>
               </div>
 
@@ -569,6 +715,39 @@ export const MemoryStudio = () => {
                   className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
                 >
                   {importing ? "导入中..." : `确认导入${importPaths.length > 0 ? `（${importPaths.length} 个文件）` : ""}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {deleteConfirmUri ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
+            <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+              <h3 className="text-lg font-semibold text-slate-900">确认删除</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                确定要删除{deleteConfirmUri.isDir ? "目录" : "文件"}{" "}
+                <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{deleteConfirmUri.uri}</code>{" "}
+                吗？{deleteConfirmUri.isDir ? "目录下所有内容将被递归删除。" : ""}此操作不可撤销。
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmUri(null)}
+                  disabled={deleting}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleDeleteResource();
+                  }}
+                  disabled={deleting}
+                  className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                >
+                  {deleting ? "删除中..." : "确认删除"}
                 </button>
               </div>
             </div>

@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import { toPublicConfigSummary, type AppConfig } from "../config";
 import { ToolPlanningChatAgent } from "../orchestration/chat";
@@ -17,6 +19,8 @@ import type {
   GlobalSettingsState,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
+  MemoryDeleteResourceInput,
+  MemoryDeleteResourceResult,
   MemoryListResourcesInput,
   MemoryListResourcesResult,
   MemoryReadResourceInput,
@@ -24,6 +28,8 @@ import type {
   MemorySearchInput,
   MemorySearchResult,
   MemoryStatusResult,
+  ReadFileBase64Input,
+  ReadFileBase64Result,
   MessageInput,
   MessageResult,
   MessageUpdateInput,
@@ -325,6 +331,26 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
     }
   );
 
+  const MIME_MAP: Record<string, string> = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp"
+  };
+
+  ipcMain.handle(
+    "fs:read-file-base64",
+    async (_event, fileInput: ReadFileBase64Input): Promise<ReadFileBase64Result> => {
+      const buffer = await readFile(fileInput.path);
+      const ext = extname(fileInput.path).toLowerCase();
+      return {
+        base64: buffer.toString("base64"),
+        mimeType: MIME_MAP[ext] ?? "application/octet-stream"
+      };
+    }
+  );
+
   ipcMain.handle("memory:status", async (): Promise<MemoryStatusResult> => {
     const ov = input.getOpenViking();
     if (!ov.processManager) {
@@ -404,6 +430,18 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
           };
         })
       };
+    }
+  );
+
+  ipcMain.handle(
+    "memory:delete-resource",
+    async (_event, deleteInput: MemoryDeleteResourceInput): Promise<MemoryDeleteResourceResult> => {
+      const ov = input.getOpenViking();
+      if (!ov.httpClient) {
+        throw new Error("OpenViking is not running");
+      }
+      await ov.httpClient.rm(deleteInput.uri, deleteInput.recursive ?? false);
+      return { ok: true };
     }
   );
 
