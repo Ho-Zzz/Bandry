@@ -120,6 +120,9 @@ const api = {
       ipcRenderer.removeListener("task:update", wrappedListener);
     };
   },
+  // Dialog API
+  dialogOpenFiles: (filters?: { name: string; extensions: string[] }[]): Promise<string[]> =>
+    ipcRenderer.invoke("dialog:open-files", filters),
   // Memory API
   memoryStatus: (): Promise<MemoryStatusResult> =>
     ipcRenderer.invoke("memory:status"),

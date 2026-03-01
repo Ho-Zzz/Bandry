@@ -99,6 +99,9 @@ declare global {
       messageUpdate: (id: string, input: MessageUpdateInput) => Promise<MessageResult | null>;
       messageDelete: (id: string) => Promise<boolean>;
 
+      // Dialog API
+      dialogOpenFiles: (filters?: { name: string; extensions: string[] }[]) => Promise<string[]>;
+
       // Memory API
       memoryStatus: () => Promise<MemoryStatusResult>;
       memorySearch: (input: MemorySearchInput) => Promise<MemorySearchResult>;

@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { BrowserWindow, dialog, ipcMain } from "electron";
 import { toPublicConfigSummary, type AppConfig } from "../config";
 import { ToolPlanningChatAgent } from "../orchestration/chat";
 import { LocalOrchestrator } from "../orchestration/workflow";
@@ -309,6 +309,21 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
   ipcMain.handle("sandbox:exec", async (_event, execInput: SandboxExecInput) => {
     return await input.sandboxService.exec(execInput);
   });
+
+  ipcMain.handle(
+    "dialog:open-files",
+    async (_event, filters?: { name: string; extensions: string[] }[]): Promise<string[]> => {
+      const win = BrowserWindow.getFocusedWindow();
+      if (!win) {
+        return [];
+      }
+      const result = await dialog.showOpenDialog(win, {
+        properties: ["openFile", "multiSelections"],
+        filters: filters ?? [{ name: "All Files", extensions: ["*"] }]
+      });
+      return result.canceled ? [] : result.filePaths;
+    }
+  );
 
   ipcMain.handle("memory:status", async (): Promise<MemoryStatusResult> => {
     const ov = input.getOpenViking();

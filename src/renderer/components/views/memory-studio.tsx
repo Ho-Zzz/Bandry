@@ -1,4 +1,4 @@
-import { type ChangeEvent, type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Brain,
   CheckCircle2,
@@ -35,14 +35,6 @@ const scoreText = (value?: number): string => {
   return value.toFixed(3);
 };
 
-const getFilePathFromFileLike = (file: File): string | null => {
-  const value = file as File & { path?: string };
-  if (typeof value.path === "string" && value.path.trim()) {
-    return value.path.trim();
-  }
-  return null;
-};
-
 export const MemoryStudio = () => {
   const [status, setStatus] = useState<MemoryStatusResult | null>(null);
   const [settings, setSettings] = useState<GlobalSettingsState | null>(null);
@@ -59,10 +51,8 @@ export const MemoryStudio = () => {
 
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importPaths, setImportPaths] = useState<string[]>([]);
-  const [manualImportPath, setManualImportPath] = useState("");
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState("");
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [dirEntriesMap, setDirEntriesMap] = useState<Record<string, MemoryListResourceEntry[]>>({});
   const [dirLoadingMap, setDirLoadingMap] = useState<Record<string, boolean>>({});
@@ -215,43 +205,23 @@ export const MemoryStudio = () => {
     }
   };
 
-  const appendImportPaths = (paths: string[]) => {
-    setImportPaths((previous) => dedupeUris([...previous, ...paths]));
-  };
+  const IMPORT_FILE_FILTERS = [
+    { name: "文档", extensions: ["md", "txt", "json", "csv", "yaml", "yml", "xml", "html", "htm", "rst", "log"] },
+    { name: "代码", extensions: ["ts", "tsx", "js", "jsx", "py", "go", "rs", "java", "c", "cpp", "h", "sh"] },
+    { name: "所有文件", extensions: ["*"] }
+  ];
 
-  const handleDropFiles = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const dropped = Array.from(event.dataTransfer.files);
-    const paths = dropped
-      .map((file) => getFilePathFromFileLike(file))
-      .filter((item): item is string => Boolean(item));
+  const handleSelectFiles = async () => {
+    const paths = await window.api.dialogOpenFiles(IMPORT_FILE_FILTERS);
     if (paths.length > 0) {
-      appendImportPaths(paths);
+      setImportPaths((previous) => dedupeUris([...previous, ...paths]));
       setImportMessage("");
-      return;
     }
-    setImportMessage("未获取到可用本地路径，请使用手动输入或选择文件。");
-  };
-
-  const handlePickFiles = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    const paths = files
-      .map((file) => getFilePathFromFileLike(file))
-      .filter((item): item is string => Boolean(item));
-    if (paths.length > 0) {
-      appendImportPaths(paths);
-      setImportMessage("");
-    } else {
-      setImportMessage("当前环境未提供文件绝对路径，请改用手动输入路径。");
-    }
-    event.target.value = "";
   };
 
   const handleImport = async () => {
-    const manual = manualImportPath.trim();
-    const finalPaths = dedupeUris([...importPaths, ...(manual ? [manual] : [])]);
-    if (finalPaths.length === 0) {
-      setImportMessage("请先拖拽/选择文件，或手动输入路径。");
+    if (importPaths.length === 0) {
+      setImportMessage("请先选择需要导入的文件。");
       return;
     }
 
@@ -260,7 +230,7 @@ export const MemoryStudio = () => {
       setImportMessage("");
 
       const results = await Promise.allSettled(
-        finalPaths.map(async (path) => {
+        importPaths.map(async (path) => {
           const item = await window.api.memoryAddResource({ path });
           return { path, rootUri: item.rootUri };
         })
@@ -275,10 +245,9 @@ export const MemoryStudio = () => {
 
       const summary = `导入完成：成功 ${success.length}，失败 ${failed.length}`;
       const firstRoot = success[0]?.rootUri;
-      setImportMessage(firstRoot ? `${summary}（示例 rootUri: ${firstRoot}）` : summary);
+      setImportMessage(firstRoot ? `${summary}（rootUri: ${firstRoot}）` : summary);
 
       setImportPaths([]);
-      setManualImportPath("");
       for (const uri of rootUris) {
         await loadDirectory(uri);
       }
@@ -521,8 +490,8 @@ export const MemoryStudio = () => {
 
         {importModalOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
-            <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
-              <div className="mb-3 flex items-center justify-between">
+            <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+              <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-slate-900">导入资源</h3>
                 <button
                   type="button"
@@ -532,50 +501,42 @@ export const MemoryStudio = () => {
                   <X size={16} />
                 </button>
               </div>
-              <div
-                className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center"
-                onDrop={handleDropFiles}
-                onDragOver={(event) => event.preventDefault()}
-              >
-                <Upload size={24} className="mx-auto text-slate-500" />
-                <p className="mt-2 text-sm text-slate-700">拖拽本地文件到此处</p>
-                <p className="text-xs text-slate-500">也可点击下方按钮选择文件（支持多选）</p>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <p>将本地文件导入到 OpenViking 记忆系统。导入后文件会被自动向量化、生成摘要，并可通过语义检索命中。</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {["md", "txt", "json", "csv", "yaml", "html", "ts", "py", "go", "rs", "java"].map((ext) => (
+                    <span key={ext} className="rounded bg-slate-200 px-1.5 py-0.5 text-xs font-mono text-slate-600">.{ext}</span>
+                  ))}
+                  <span className="text-xs text-slate-400">等文本格式</span>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-center">
                 <button
                   type="button"
-                  className="mt-3 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    void handleSelectFiles();
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >
-                  选择本地文件
+                  <Upload size={14} />
+                  选择本地文件（支持多选）
                 </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={handlePickFiles}
-                />
               </div>
-              <div className="mt-3">
-                <div className="mb-1 text-xs text-slate-500">手动输入路径 / URL（可选）</div>
-                <input
-                  value={manualImportPath}
-                  onChange={(event) => setManualImportPath(event.target.value)}
-                  placeholder="/Users/me/doc.md 或 https://example.com"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="mt-3 max-h-[140px] overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+
+              <div className="mt-4 max-h-[180px] overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
                 {importPaths.length === 0 ? (
-                  <div className="text-xs text-slate-500">尚未添加拖拽/选择的文件</div>
+                  <div className="py-4 text-center text-xs text-slate-400">尚未选择文件</div>
                 ) : (
                   <div className="space-y-1">
-                    {importPaths.map((path) => (
-                      <div key={path} className="flex items-center justify-between rounded border border-slate-200 bg-white px-2 py-1 text-xs">
-                        <span className="truncate">{path}</span>
+                    {importPaths.map((filePath) => (
+                      <div key={filePath} className="flex items-center justify-between rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs">
+                        <span className="min-w-0 truncate text-slate-700">{filePath}</span>
                         <button
                           type="button"
-                          onClick={() => setImportPaths((previous) => previous.filter((item) => item !== path))}
-                          className="ml-2 rounded p-0.5 text-slate-500 hover:bg-slate-100"
+                          onClick={() => setImportPaths((previous) => previous.filter((item) => item !== filePath))}
+                          className="ml-2 shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                         >
                           <X size={12} />
                         </button>
@@ -584,11 +545,13 @@ export const MemoryStudio = () => {
                   </div>
                 )}
               </div>
+
               {importMessage ? (
                 <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
                   {importMessage}
                 </div>
               ) : null}
+
               <div className="mt-4 flex justify-end gap-2">
                 <button
                   type="button"
@@ -602,10 +565,10 @@ export const MemoryStudio = () => {
                   onClick={() => {
                     void handleImport();
                   }}
-                  disabled={importing}
+                  disabled={importing || importPaths.length === 0}
                   className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
                 >
-                  {importing ? "导入中..." : "确认导入"}
+                  {importing ? "导入中..." : `确认导入${importPaths.length > 0 ? `（${importPaths.length} 个文件）` : ""}`}
                 </button>
               </div>
             </div>
