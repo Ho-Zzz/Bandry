@@ -98,6 +98,8 @@ export type AppPaths = {
   resourcesDir: string;
   pluginsDir: string;
   traceDir: string;
+  skillsDir: string;
+  soulDir: string;
   projectConfigPath: string;
   userConfigPath: string;
   auditLogPath: string;
@@ -145,6 +147,8 @@ export type LlmLayerConfig = Partial<{
 export type FeaturesLayerConfig = Partial<{
   enableMemory: boolean;
   enableMCP: boolean;
+  enableSkills: boolean;
+  enableSoul: boolean;
 }>;
 
 export type OpenVikingLayerConfig = Partial<{
@@ -175,6 +179,8 @@ export type PathsLayerConfig = Partial<
     | "resourcesDir"
     | "pluginsDir"
     | "traceDir"
+    | "skillsDir"
+    | "soulDir"
     | "auditLogPath"
     | "sandboxAuditLogPath"
     | "databasePath"
@@ -248,6 +254,8 @@ export type AppConfig = {
   features: {
     enableMemory: boolean;
     enableMCP: boolean;
+    enableSkills: boolean;
+    enableSoul: boolean;
   };
   openviking: {
     enabled: boolean;

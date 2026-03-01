@@ -19,7 +19,8 @@ import {
   ChevronRight as ChevronRightIcon,
   MessageSquare,
   Plus,
-  Settings
+  Settings,
+  Blocks
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useConversationStore } from "../../store/use-conversation-store";
@@ -226,6 +227,9 @@ export const Sidebar = ({
         case "models":
           navigate("/model-studio");
           break;
+        case "skills":
+          navigate("/skills");
+          break;
         case "settings":
           navigate("/settings");
           break;
@@ -256,6 +260,7 @@ export const Sidebar = ({
         assets: "/assets",
         directory: "/employees",
         models: "/model-studio",
+        skills: "/skills",
         settings: "/settings"
       };
       return location.pathname === pathMap[navItem.id];
@@ -330,6 +335,13 @@ export const Sidebar = ({
             label="Model Studio"
             isActive={isNavActive({ type: "view", id: "models" })}
             onClick={() => handleNavClick({ type: "view", id: "models" })}
+            isCollapsed={isCollapsed}
+          />
+          <NavItem
+            icon={Blocks}
+            label="Skills"
+            isActive={isNavActive({ type: "view", id: "skills" })}
+            onClick={() => handleNavClick({ type: "view", id: "skills" })}
             isCollapsed={isCollapsed}
           />
           <NavItem

@@ -26,6 +26,8 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.paths.resourcesDir = normalizePath(config.paths.resourcesDir);
   config.paths.pluginsDir = normalizePath(config.paths.pluginsDir);
   config.paths.traceDir = normalizePath(config.paths.traceDir);
+  config.paths.skillsDir = normalizePath(config.paths.skillsDir);
+  config.paths.soulDir = normalizePath(config.paths.soulDir);
   config.paths.projectConfigPath = normalizePath(config.paths.projectConfigPath);
   config.paths.userConfigPath = normalizePath(config.paths.userConfigPath);
   config.paths.auditLogPath = normalizePath(config.paths.auditLogPath);

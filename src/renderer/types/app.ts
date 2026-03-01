@@ -154,7 +154,7 @@ export interface DirectMessage {
  * Union type for all possible navigation destinations
  */
 export type NavigationItem =
-  | { type: 'view'; id: 'home' | 'workflows' | 'assets' | 'directory' | 'models' | 'settings' }
+  | { type: 'view'; id: 'home' | 'workflows' | 'assets' | 'directory' | 'models' | 'skills' | 'settings' }
   | { type: 'channel'; id: string }
   | { type: 'dm'; id: string }
   | { type: 'task'; id: string }

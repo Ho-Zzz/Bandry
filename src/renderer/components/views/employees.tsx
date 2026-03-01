@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Crown, Search, Save, TerminalSquare, PenSquare } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, Crown, Search, Save, TerminalSquare, PenSquare } from "lucide-react";
+import { SoulEditor } from "../persona/soul-editor";
 import type {
   ConnectedModelResult,
   GlobalSettingsState,
@@ -91,6 +92,7 @@ export const Employees = () => {
   const [loading, setLoading] = useState(true);
   const [savingRole, setSavingRole] = useState<PresetRole | null>(null);
   const [message, setMessage] = useState("");
+  const [soulOpen, setSoulOpen] = useState(false);
 
   const loadAll = async () => {
     try {
@@ -310,6 +312,26 @@ export const Employees = () => {
                         {savingRole === card.role ? "Saving..." : "Save binding"}
                       </button>
                     </div>
+
+                    {isLeadCard && (
+                      <>
+                        <div className="mt-4 border-t border-slate-200 pt-4">
+                          <button
+                            type="button"
+                            onClick={() => setSoulOpen(!soulOpen)}
+                            className="flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors"
+                          >
+                            {soulOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            Soul & Identity
+                          </button>
+                        </div>
+                        {soulOpen && (
+                          <div className="mt-3">
+                            <SoulEditor />
+                          </div>
+                        )}
+                      </>
+                    )}
                   </article>
                 );
               })}
