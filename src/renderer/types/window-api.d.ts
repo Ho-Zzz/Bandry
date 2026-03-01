@@ -52,7 +52,8 @@ import type {
   SkillItem,
   SkillCreateInput,
   SkillUpdateInput,
-  SkillOperationResult
+  SkillOperationResult,
+  SkillToggleInput
 } from "../../shared/ipc";
 
 declare global {
@@ -119,6 +120,7 @@ declare global {
       skillsCreate: (input: SkillCreateInput) => Promise<SkillOperationResult>;
       skillsUpdate: (name: string, input: SkillUpdateInput) => Promise<SkillOperationResult>;
       skillsDelete: (name: string) => Promise<SkillOperationResult>;
+      skillsToggle: (input: SkillToggleInput) => Promise<SkillOperationResult>;
     };
   }
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button, Card, CardBody, CardHeader, Chip } from "@heroui/react";
+import { Button, Card, CardBody, CardHeader, Chip, Switch } from "@heroui/react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import type { SkillItem } from "../../../shared/ipc";
 import { SkillEditModal } from "./skill-edit-modal";
@@ -9,6 +9,7 @@ export const SkillsManager = () => {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<SkillItem | null>(null);
+  const [duplicateDefaults, setDuplicateDefaults] = useState<Partial<SkillItem> | undefined>(undefined);
   const [message, setMessage] = useState("");
 
   const load = useCallback(async () => {
@@ -29,11 +30,13 @@ export const SkillsManager = () => {
 
   const handleCreate = () => {
     setEditingSkill(null);
+    setDuplicateDefaults(undefined);
     setModalOpen(true);
   };
 
   const handleEdit = (skill: SkillItem) => {
     setEditingSkill(skill);
+    setDuplicateDefaults(undefined);
     setModalOpen(true);
   };
 
@@ -51,12 +54,27 @@ export const SkillsManager = () => {
   };
 
   const handleDuplicate = (skill: SkillItem) => {
-    setEditingSkill({
-      ...skill,
+    setEditingSkill(null);
+    setDuplicateDefaults({
       name: `${skill.name}-custom`,
-      isBundled: false
+      description: skill.description,
+      tags: skill.tags,
+      content: skill.content
     });
     setModalOpen(true);
+  };
+
+  const handleToggle = async (skill: SkillItem) => {
+    try {
+      const result = await window.api.skillsToggle({ name: skill.name, enabled: !skill.enabled });
+      if (result.ok) {
+        await load();
+      } else {
+        setMessage(result.message);
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Toggle failed");
+    }
   };
 
   if (loading) {
@@ -106,6 +124,12 @@ export const SkillsManager = () => {
                   ) : null}
                 </div>
                 <div className="flex items-center gap-1 ml-2">
+                  <Switch
+                    size="sm"
+                    isSelected={skill.enabled}
+                    onValueChange={() => { void handleToggle(skill); }}
+                    title={skill.enabled ? "Disable" : "Enable"}
+                  />
                   {skill.isBundled ? (
                     <Button
                       size="sm"
@@ -152,6 +176,7 @@ export const SkillsManager = () => {
           onClose={() => setModalOpen(false)}
           onSaved={() => { void load(); }}
           editingSkill={editingSkill?.isBundled ? null : editingSkill}
+          defaultValues={duplicateDefaults}
         />
       ) : null}
     </div>

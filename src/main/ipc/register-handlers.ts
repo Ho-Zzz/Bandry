@@ -48,7 +48,8 @@ import type {
   SkillCreateInput,
   SkillUpdateInput,
   SoulInterviewInput,
-  SoulInterviewSummarizeInput
+  SoulInterviewSummarizeInput,
+  SkillToggleInput
 } from "../../shared/ipc";
 import type { OpenVikingHttpClient } from "../memory/openviking/http-client";
 import type { OpenVikingProcessManager } from "../memory/openviking/process-manager";
@@ -466,6 +467,10 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
 
   ipcMain.handle("skills:delete", async (_event, name: string) => {
     return input.skillService.delete(name);
+  });
+
+  ipcMain.handle("skills:toggle", async (_event, toggleInput: SkillToggleInput) => {
+    return input.skillService.toggle(toggleInput);
   });
 
   return {

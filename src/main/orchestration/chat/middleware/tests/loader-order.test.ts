@@ -46,7 +46,8 @@ describe("middleware loader order", () => {
 
     expect(middlewares.map((item) => item.name)).toEqual([
       "workspace",
-      "soul_skill",
+      "soul",
+      "skill",
       "local_resource",
       "resource_injection",
       "sandbox_binding",
@@ -74,7 +75,8 @@ describe("middleware loader order", () => {
 
     expect(middlewares.map((item) => item.name)).toEqual([
       "workspace",
-      "soul_skill",
+      "soul",
+      "skill",
       "local_resource",
       "resource_injection",
       "sandbox_binding",

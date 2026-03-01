@@ -503,6 +503,7 @@ export type SkillItem = {
   tags: string[];
   content: string;
   isBundled: boolean;
+  enabled: boolean;
 };
 
 export type SkillCreateInput = {
@@ -521,4 +522,9 @@ export type SkillUpdateInput = {
 export type SkillOperationResult = {
   ok: boolean;
   message: string;
+};
+
+export type SkillToggleInput = {
+  name: string;
+  enabled: boolean;
 };

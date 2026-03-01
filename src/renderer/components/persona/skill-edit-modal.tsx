@@ -16,14 +16,16 @@ type SkillEditModalProps = {
   onClose: () => void;
   onSaved: () => void;
   editingSkill: SkillItem | null; // null = create mode
+  defaultValues?: Partial<SkillItem>; // pre-fill for create mode (e.g. duplicate)
 };
 
-export const SkillEditModal = ({ isOpen, onClose, onSaved, editingSkill }: SkillEditModalProps) => {
+export const SkillEditModal = ({ isOpen, onClose, onSaved, editingSkill, defaultValues }: SkillEditModalProps) => {
   const isEditing = editingSkill !== null;
-  const [name, setName] = useState(editingSkill?.name ?? "");
-  const [description, setDescription] = useState(editingSkill?.description ?? "");
-  const [tagsStr, setTagsStr] = useState(editingSkill?.tags.join(", ") ?? "");
-  const [content, setContent] = useState(editingSkill?.content ?? "");
+  const source = editingSkill ?? defaultValues;
+  const [name, setName] = useState(source?.name ?? "");
+  const [description, setDescription] = useState(source?.description ?? "");
+  const [tagsStr, setTagsStr] = useState(source?.tags?.join(", ") ?? "");
+  const [content, setContent] = useState(source?.content ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 

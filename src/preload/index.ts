@@ -53,7 +53,8 @@ import type {
   SkillItem,
   SkillCreateInput,
   SkillUpdateInput,
-  SkillOperationResult
+  SkillOperationResult,
+  SkillToggleInput
 } from "../shared/ipc";
 
 const api = {
@@ -165,7 +166,9 @@ const api = {
   skillsUpdate: (name: string, input: SkillUpdateInput): Promise<SkillOperationResult> =>
     ipcRenderer.invoke("skills:update", name, input),
   skillsDelete: (name: string): Promise<SkillOperationResult> =>
-    ipcRenderer.invoke("skills:delete", name)
+    ipcRenderer.invoke("skills:delete", name),
+  skillsToggle: (input: SkillToggleInput): Promise<SkillOperationResult> =>
+    ipcRenderer.invoke("skills:toggle", input)
 };
 
 contextBridge.exposeInMainWorld("api", api);
