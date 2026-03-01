@@ -11,6 +11,8 @@ import type {
   MemoryAddResourceResult,
   MemoryListResourcesInput,
   MemoryListResourcesResult,
+  MemoryReadResourceInput,
+  MemoryReadResourceResult,
   MemorySearchInput,
   MemorySearchResult,
   MemoryStatusResult,
@@ -102,6 +104,7 @@ declare global {
       memorySearch: (input: MemorySearchInput) => Promise<MemorySearchResult>;
       memoryAddResource: (input: MemoryAddResourceInput) => Promise<MemoryAddResourceResult>;
       memoryListResources: (input: MemoryListResourcesInput) => Promise<MemoryListResourcesResult>;
+      memoryReadResource: (input: MemoryReadResourceInput) => Promise<MemoryReadResourceResult>;
 
       // Event Listeners
       onChatUpdate: (listener: (update: ChatUpdateEvent) => void) => () => void;

@@ -19,6 +19,8 @@ import type {
   MemoryAddResourceResult,
   MemoryListResourcesInput,
   MemoryListResourcesResult,
+  MemoryReadResourceInput,
+  MemoryReadResourceResult,
   MemorySearchInput,
   MemorySearchResult,
   MemoryStatusResult,
@@ -337,16 +339,20 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
       limit: searchInput.limit
     });
 
-    const items = [
+    const merged = [
       ...(result.memories ?? []),
       ...(result.resources ?? []),
       ...(result.skills ?? [])
-    ].map((item) => ({
+    ]
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+      .slice(0, searchInput.limit ?? 10);
+
+    const items = merged.map((item) => ({
       uri: item.uri,
       abstract: item.abstract,
       score: item.score,
-      category: item.category,
-      matchReason: item.match_reason
+      category: item.context_type || item.category || undefined,
+      matchReason: item.match_reason || undefined
     }));
 
     return { items, total: items.length };
@@ -373,11 +379,30 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
       }
       const result = await ov.httpClient.ls(listInput.uri);
       return {
-        entries: result.map((entry) => ({
-          name: entry.name,
-          uri: entry.uri,
-          type: entry.type
-        }))
+        entries: result.map((entry) => {
+          const uriStr = entry.uri ?? "";
+          const fallbackName = uriStr.split("/").filter(Boolean).pop() ?? uriStr;
+          return {
+            name: entry.name ?? fallbackName,
+            uri: uriStr,
+            type: entry.isDir ? ("directory" as const) : ("file" as const)
+          };
+        })
+      };
+    }
+  );
+
+  ipcMain.handle(
+    "memory:read-resource",
+    async (_event, readInput: MemoryReadResourceInput): Promise<MemoryReadResourceResult> => {
+      const ov = input.getOpenViking();
+      if (!ov.httpClient) {
+        throw new Error("OpenViking is not running");
+      }
+      const result = await ov.httpClient.read(readInput.uri);
+      return {
+        uri: readInput.uri,
+        content: typeof result === "string" ? result : (result as Record<string, unknown>).content as string ?? ""
       };
     }
   );

@@ -12,6 +12,8 @@ import type {
   MemoryAddResourceResult,
   MemoryListResourcesInput,
   MemoryListResourcesResult,
+  MemoryReadResourceInput,
+  MemoryReadResourceResult,
   MemorySearchInput,
   MemorySearchResult,
   MemoryStatusResult,
@@ -127,6 +129,8 @@ const api = {
     ipcRenderer.invoke("memory:add-resource", input),
   memoryListResources: (input: MemoryListResourcesInput): Promise<MemoryListResourcesResult> =>
     ipcRenderer.invoke("memory:list-resources", input),
+  memoryReadResource: (input: MemoryReadResourceInput): Promise<MemoryReadResourceResult> =>
+    ipcRenderer.invoke("memory:read-resource", input),
   // Conversation API
   conversationCreate: (input: ConversationInput): Promise<ConversationResult> =>
     ipcRenderer.invoke("conversation:create", input),

@@ -475,6 +475,15 @@ export type MemoryListResourcesResult = {
   entries: MemoryListResourceEntry[];
 };
 
+export type MemoryReadResourceInput = {
+  uri: string;
+};
+
+export type MemoryReadResourceResult = {
+  uri: string;
+  content: string;
+};
+
 export type MemoryStatusResult = {
   enabled: boolean;
   running: boolean;
