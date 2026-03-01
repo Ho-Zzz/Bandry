@@ -40,9 +40,12 @@ export type OpenVikingAddResourceResult = {
 };
 
 export type OpenVikingLsEntry = {
-  name: string;
+  name?: string;
   uri: string;
-  type: "file" | "directory";
+  isDir: boolean;
+  size?: number;
+  modTime?: string;
+  abstract?: string;
   [key: string]: unknown;
 };
 
@@ -53,11 +56,7 @@ export type OpenVikingGlobResult = {
   [key: string]: unknown;
 };
 
-export type OpenVikingReadResult = {
-  content: string;
-  uri: string;
-  [key: string]: unknown;
-};
+export type OpenVikingReadResult = string;
 
 export type OpenVikingAbstractResult = {
   abstract: string;

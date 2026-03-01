@@ -9,11 +9,17 @@ import type {
   ConversationResult,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
+  MemoryDeleteResourceInput,
+  MemoryDeleteResourceResult,
   MemoryListResourcesInput,
   MemoryListResourcesResult,
+  MemoryReadResourceInput,
+  MemoryReadResourceResult,
   MemorySearchInput,
   MemorySearchResult,
   MemoryStatusResult,
+  ReadFileBase64Input,
+  ReadFileBase64Result,
   ModelsCatalogListInput,
   ModelsCatalogListResult,
   ModelsConnectInput,
@@ -97,11 +103,18 @@ declare global {
       messageUpdate: (id: string, input: MessageUpdateInput) => Promise<MessageResult | null>;
       messageDelete: (id: string) => Promise<boolean>;
 
+      // Dialog API
+      dialogOpenFiles: (filters?: { name: string; extensions: string[] }[]) => Promise<string[]>;
+      // File API
+      readFileBase64: (input: ReadFileBase64Input) => Promise<ReadFileBase64Result>;
+
       // Memory API
       memoryStatus: () => Promise<MemoryStatusResult>;
       memorySearch: (input: MemorySearchInput) => Promise<MemorySearchResult>;
       memoryAddResource: (input: MemoryAddResourceInput) => Promise<MemoryAddResourceResult>;
+      memoryDeleteResource: (input: MemoryDeleteResourceInput) => Promise<MemoryDeleteResourceResult>;
       memoryListResources: (input: MemoryListResourcesInput) => Promise<MemoryListResourcesResult>;
+      memoryReadResource: (input: MemoryReadResourceInput) => Promise<MemoryReadResourceResult>;
 
       // Event Listeners
       onChatUpdate: (listener: (update: ChatUpdateEvent) => void) => () => void;
