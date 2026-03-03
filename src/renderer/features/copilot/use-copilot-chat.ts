@@ -172,10 +172,17 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
       });
 
       const traces: Record<string, ChatUpdateEvent[]> = {};
+      const activeRequests: Record<string, string> = {};
+
       for (const message of loadedMessages) {
         if (message.requestId && message.trace) {
           traces[message.requestId] = message.trace;
           requestToConversationRef.current[message.requestId] = convId;
+        }
+
+        // Track active requests for this conversation
+        if (message.role === "assistant" && message.status === "pending" && message.requestId) {
+          activeRequests[convId] = message.requestId;
         }
       }
 
@@ -185,6 +192,14 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
 
       traceByRequestIdRef.current = traces;
       setMessages(loadedMessages);
+
+      // Restore active request state
+      if (Object.keys(activeRequests).length > 0) {
+        setActiveRequestByConversation((prev) => ({
+          ...prev,
+          ...activeRequests
+        }));
+      }
     } catch (error) {
       if (loadVersionRef.current !== version) {
         return;
@@ -219,7 +234,48 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         }).catch(() => setWorkspacePath(null));
       }
 
-      void loadMessages(options.conversationId, currentVersion);
+      void loadMessages(options.conversationId, currentVersion).then(() => {
+        // Clean up orphaned pending messages after load
+        // These are messages that were pending when the component unmounted
+        // and never received their completion update
+        setMessages((prev) => {
+          let hasOrphanedPending = false;
+          const cleaned = prev.map((msg) => {
+            if (msg.role === "assistant" && msg.status === "pending" && msg.requestId) {
+              // Check if this request is actually active
+              const isActive = activeRequestByConversation[options.conversationId!] === msg.requestId;
+              if (!isActive) {
+                hasOrphanedPending = true;
+                // Mark as completed with whatever content we have
+                return {
+                  ...msg,
+                  status: "completed" as MessageStatus,
+                  content: msg.content || "响应已完成"
+                };
+              }
+            }
+            return msg;
+          });
+
+          // Update database for orphaned messages
+          if (hasOrphanedPending) {
+            for (const msg of cleaned) {
+              if (msg.role === "assistant" && msg.status === "completed") {
+                const original = prev.find((m) => m.id === msg.id);
+                if (original?.status === "pending") {
+                  window.api.messageUpdate(msg.id, {
+                    content: msg.content,
+                    status: "completed",
+                    trace: msg.trace ? JSON.stringify(msg.trace) : undefined
+                  }).catch((err) => console.error("Failed to update orphaned message:", err));
+                }
+              }
+            }
+          }
+
+          return cleaned;
+        });
+      });
     } else {
       setConversationId(undefined);
       setMessages([]);
@@ -227,7 +283,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
       traceByRequestIdRef.current = {};
       setWorkspacePath(null);
     }
-  }, [loadMessages, options.conversationId]);
+  }, [loadMessages, options.conversationId, activeRequestByConversation]);
 
   // Subscribe to chat updates
   useEffect(() => {
