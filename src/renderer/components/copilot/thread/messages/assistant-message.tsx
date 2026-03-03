@@ -45,28 +45,17 @@ export const AssistantMessage = () => {
         </div>
 
         <div className="min-w-0 flex-1 space-y-2 break-words px-1 leading-relaxed text-zinc-900">
-          {isRunning && !hasTextPart && !hasProcess ? (
-            <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-500">
-              <div className="flex items-center gap-2">
-                <Loader2Icon size={14} className="animate-spin" />
-                <span>Thinking...</span>
-              </div>
-            </div>
-          ) : (
-            <>
-              <ProcessLayer items={traceItems} isRunning={isRunning} />
-              <ToolResultLayer summaries={toolSummaries} />
-              <MessagePrimitive.Parts
-                components={{
-                  Text: AssistantTextPart,
-                  tools: {
-                    Fallback: HiddenTracePart
-                  },
-                  ToolGroup: HiddenTraceGroup
-                }}
-              />
-            </>
-          )}
+          <ProcessLayer items={traceItems} isRunning={isRunning} />
+          <ToolResultLayer summaries={toolSummaries} />
+          <MessagePrimitive.Parts
+            components={{
+              Text: AssistantTextPart,
+              tools: {
+                Fallback: HiddenTracePart
+              },
+              ToolGroup: HiddenTraceGroup
+            }}
+          />
 
           <MessageError />
 

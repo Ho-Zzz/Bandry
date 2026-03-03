@@ -82,4 +82,52 @@ describe("TitleMiddleware", () => {
     expect(onUpdate).toHaveBeenCalledWith("final", "title updated: Bandry Delegation Plan");
     expect(result.metadata.titleGenerated).toBe(true);
   });
+
+  it("uses fallback when model returns empty content", async () => {
+    const middleware = new TitleMiddleware();
+    const config = createConfig();
+
+    const modelsFactory = {
+      generateText: vi.fn(async () => ({
+        provider: "openai" as const,
+        model: "gpt-4.1-mini",
+        text: "",
+        latencyMs: 10
+      }))
+    };
+
+    const conversationStore = {
+      getConversation: vi.fn(() => ({ id: "conv-2", title: undefined })),
+      updateConversation: vi.fn()
+    };
+    const onUpdate = vi.fn();
+
+    const ctx: MiddlewareContext = {
+      sessionId: "s2",
+      taskId: "t2",
+      conversationId: "conv-2",
+      workspacePath: "/tmp/workspace",
+      messages: [{ role: "user", content: "帮我分析数据" }],
+      tools: [],
+      metadata: {},
+      state: "after_agent",
+      finalResponse: "这里是分析结果",
+      runtime: {
+        config,
+        modelsFactory: modelsFactory as never,
+        sandboxService: {} as never,
+        conversationStore: conversationStore as never,
+        onUpdate
+      }
+    };
+
+    const result = await middleware.afterAgent!(ctx);
+
+    expect(modelsFactory.generateText).toHaveBeenCalledTimes(1);
+    expect(conversationStore.updateConversation).toHaveBeenCalledWith("conv-2", {
+      title: "分析数据"
+    });
+    expect(onUpdate).toHaveBeenCalledWith("final", "title generation returned empty, using fallback");
+    expect(result.metadata.titleGenerated).toBe(true);
+  });
 });

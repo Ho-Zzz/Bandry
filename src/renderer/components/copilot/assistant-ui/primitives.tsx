@@ -1,10 +1,11 @@
 import type { ButtonHTMLAttributes, PropsWithChildren } from "react";
-import { AttachmentPrimitive } from "@assistant-ui/react";
+import { AttachmentPrimitive, useAuiState } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { XIcon } from "lucide-react";
 import { clsx } from "clsx";
 
 import "@assistant-ui/react-markdown/styles/dot.css";
+import { usePreviewStore } from "../../../store/use-preview-store";
 
 type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   tooltip: string;
@@ -27,7 +28,71 @@ export const IconButton = ({ tooltip, className, type = "button", children, ...r
   );
 };
 
+const FILE_PATH_REGEX = /(\/[\w./-]+\.\w+)/g;
+
+const parseTextWithFilePaths = (text: string): Array<{ type: "text" | "file"; content: string }> => {
+  const parts: Array<{ type: "text" | "file"; content: string }> = [];
+  let lastIndex = 0;
+  let match;
+
+  const regex = new RegExp(FILE_PATH_REGEX);
+  while ((match = regex.exec(text)) !== null) {
+    // Add text before the file path
+    if (match.index > lastIndex) {
+      parts.push({ type: "text", content: text.slice(lastIndex, match.index) });
+    }
+    // Add the file path
+    parts.push({ type: "file", content: match[0] });
+    lastIndex = regex.lastIndex;
+  }
+
+  // Add remaining text
+  if (lastIndex < text.length) {
+    parts.push({ type: "text", content: text.slice(lastIndex) });
+  }
+
+  return parts.length > 0 ? parts : [{ type: "text", content: text }];
+};
+
 export const MarkdownText = () => {
+  const text = useAuiState((s) => {
+    const parts = s.message.parts;
+    const textPart = parts.find((p) => typeof p === "object" && p !== null && "type" in p && p.type === "text");
+    return textPart && typeof textPart === "object" && "text" in textPart ? String(textPart.text) : "";
+  });
+
+  const openPreview = usePreviewStore((s) => s.openPreview);
+  const workspacePath = usePreviewStore((s) => s.workspacePath);
+
+  // Check if text contains file paths (e.g., "已保存到文件：/mnt/workspace/output/report.md")
+  const hasFilePaths = FILE_PATH_REGEX.test(text);
+
+  if (hasFilePaths) {
+    const parts = parseTextWithFilePaths(text);
+    return (
+      <div className="text-sm leading-7 text-zinc-900">
+        {parts.map((part, index) => {
+          if (part.type === "file") {
+            const fileName = part.content.split("/").pop() || part.content;
+            return (
+              <button
+                key={index}
+                type="button"
+                onClick={() => {
+                  void openPreview(part.content, fileName, workspacePath);
+                }}
+                className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700 hover:bg-emerald-100 hover:underline"
+              >
+                {part.content}
+              </button>
+            );
+          }
+          return <span key={index}>{part.content}</span>;
+        })}
+      </div>
+    );
+  }
+
   return (
     <MarkdownTextPrimitive
       smooth={false}

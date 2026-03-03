@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircleIcon, BrainIcon, ChevronDownIcon, Loader2Icon } from "lucide-react";
 
 import { formatDuration, type TraceItem } from "./trace-utils";
@@ -9,7 +9,8 @@ type ProcessLayerProps = {
 };
 
 export const ProcessLayer = ({ items, isRunning }: ProcessLayerProps) => {
-  const [expanded, setExpanded] = useState(false);
+  // Auto-expand when running, collapse when completed
+  const [expanded, setExpanded] = useState(isRunning);
 
   const elapsed = useMemo(() => {
     const timestamps = items.map((item) => item.timestamp).filter((value): value is number => value !== undefined);
@@ -23,7 +24,17 @@ export const ProcessLayer = ({ items, isRunning }: ProcessLayerProps) => {
   const latest = items[items.length - 1];
   const hasError = items.some((item) => item.status === "failed" || item.stage === "error");
 
-  if (items.length === 0) {
+  // Auto-expand when running starts
+  const prevIsRunning = useRef(isRunning);
+  useEffect(() => {
+    if (isRunning && !prevIsRunning.current) {
+      setExpanded(true);
+    }
+    prevIsRunning.current = isRunning;
+  }, [isRunning]);
+
+  // Show layer even when no items yet (during initial thinking)
+  if (items.length === 0 && !isRunning) {
     return null;
   }
 
@@ -53,17 +64,26 @@ export const ProcessLayer = ({ items, isRunning }: ProcessLayerProps) => {
       </button>
 
       {!expanded ? (
-        <p className="pl-6 text-xs text-zinc-500">{latest?.message}</p>
+        <p className="pl-6 text-xs text-zinc-500">
+          {items.length > 0 ? latest?.message : "正在准备执行..."}
+        </p>
       ) : (
         <div className="mt-1 max-h-44 overflow-y-auto pl-6">
-          <div className="space-y-1">
-            {items.slice(-8).map((item) => (
-              <div key={item.id} className="flex items-start gap-1 text-xs text-zinc-500">
-                <span className="mt-[2px] text-zinc-300">•</span>
-                <span>{item.message}</span>
-              </div>
-            ))}
-          </div>
+          {items.length === 0 ? (
+            <div className="flex items-center gap-2 text-xs text-zinc-400 py-1">
+              <Loader2Icon size={12} className="animate-spin" />
+              <span>正在初始化任务...</span>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {items.slice(-8).map((item) => (
+                <div key={item.id} className="flex items-start gap-1 text-xs text-zinc-500">
+                  <span className="mt-[2px] text-zinc-300">•</span>
+                  <span>{item.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
