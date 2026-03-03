@@ -34,6 +34,7 @@ export type MiddlewareLoaderOptions = {
   conversationStore?: ConversationStore;
   memoryProvider?: MemoryProvider;
   mode?: ChatMode;
+  conversationId?: string;
 };
 
 /**
@@ -47,13 +48,15 @@ export type MiddlewareLoaderOptions = {
  * 5. SandboxBindingMiddleware - Bind sandbox context
  * 6. DanglingToolCallMiddleware - Fix dangling tool calls
  * 7. SummarizationMiddleware - Context compression (optional)
- * 8. TitleMiddleware - Title generation
+ * 8. TitleMiddleware - Title generation (only if conversation has no title)
  * 9. MemoryMiddleware - Memory queue
  * 10. TodoListMiddleware - Task list management (subagents mode only)
  * 11. SubagentLimitMiddleware - Concurrency limits (subagents mode only)
  * 12. ClarificationMiddleware - User clarification (must be last)
  */
-export const buildMiddlewares = (options: MiddlewareLoaderOptions): Middleware[] => {
+export const buildMiddlewares = (
+  options: MiddlewareLoaderOptions,
+): Middleware[] => {
   const mode = options.mode ?? "default";
 
   const memoryMiddleware = options.memoryProvider
@@ -68,9 +71,24 @@ export const buildMiddlewares = (options: MiddlewareLoaderOptions): Middleware[]
     new SandboxBindingMiddleware(options.sandboxService),
     new DanglingToolCallMiddleware(),
     new SummarizationMiddleware(),
-    new TitleMiddleware(),
-    memoryMiddleware
   ];
+
+  // Only add TitleMiddleware if conversation doesn't have a title yet
+  const shouldGenerateTitle = (() => {
+    if (!options.conversationStore || !options.conversationId) {
+      return false;
+    }
+    const conversation = options.conversationStore.getConversation(
+      options.conversationId,
+    );
+    return !conversation?.title || conversation.title.trim().length === 0;
+  })();
+
+  if (shouldGenerateTitle) {
+    middlewares.push(new TitleMiddleware());
+  }
+
+  middlewares.push(memoryMiddleware);
 
   // Add mode-specific middlewares
   if (mode === "subagents") {
@@ -89,7 +107,9 @@ export const buildMiddlewares = (options: MiddlewareLoaderOptions): Middleware[]
   return middlewares;
 };
 
-export const createMiddlewarePipeline = (options: MiddlewareLoaderOptions): MiddlewarePipeline => {
+export const createMiddlewarePipeline = (
+  options: MiddlewareLoaderOptions,
+): MiddlewarePipeline => {
   const pipeline = new MiddlewarePipeline();
   for (const middleware of buildMiddlewares(options)) {
     pipeline.use(middleware);

@@ -202,6 +202,9 @@ export class ToolPlanningChatAgent {
     onDelta?: (delta: string) => void,
     abortSignal?: AbortSignal
   ): Promise<ChatSendResult> {
+    const requestStartTime = Date.now();
+    console.log(`[Chat] Request started: "${input.message.slice(0, 50)}${input.message.length > 50 ? '...' : ''}"`);
+
     const message = input.message.trim();
     if (!message) {
       throw new Error("message is required");
@@ -260,7 +263,8 @@ export class ToolPlanningChatAgent {
       sandboxService: this.sandboxService,
       conversationStore: this.conversationStore,
       memoryProvider: this.memoryProvider,
-      mode
+      mode,
+      conversationId: input.conversationId
     });
     let middlewareCtx = await pipeline.runBeforeAgent({
       sessionId: input.requestId?.trim() || randomUUID(),
@@ -705,6 +709,9 @@ export class ToolPlanningChatAgent {
 
     accumulatedLatency += finalResponse.latencyMs;
     emitUpdate("final", "最终回答已生成");
+
+    const totalDuration = Date.now() - requestStartTime;
+    console.log(`[Chat] Request completed: ${totalDuration}ms (accumulated LLM: ${accumulatedLatency}ms, overhead: ${totalDuration - accumulatedLatency}ms)`);
 
     return buildStreamResult(finalResponse, accumulatedLatency, middlewareCtx.workspacePath || undefined);
   }

@@ -17,7 +17,24 @@ export class MemoryMiddleware implements Middleware {
     try {
       // Read memory layers (L0/L1 by default)
       const query = this.getLatestUserQuery(ctx);
-      const chunks = await this.memory.injectContext(ctx.sessionId, query);
+
+      // Add timeout protection to prevent blocking
+      const timeoutMs = 3000; // 3 second timeout
+      const chunks = await Promise.race([
+        this.memory.injectContext(ctx.sessionId, query),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Memory injection timeout")),
+            timeoutMs,
+          ),
+        ),
+      ]).catch((error) => {
+        console.warn(
+          "[MemoryMiddleware] Context injection failed or timed out:",
+          error.message,
+        );
+        return [] as Awaited<ReturnType<typeof this.memory.injectContext>>;
+      });
 
       if (chunks.length === 0) {
         return ctx;
@@ -30,9 +47,9 @@ export class MemoryMiddleware implements Middleware {
       const updatedMessages = [
         {
           role: "system" as const,
-          content: memoryContent
+          content: memoryContent,
         },
-        ...ctx.messages
+        ...ctx.messages,
       ];
 
       return {
@@ -40,8 +57,8 @@ export class MemoryMiddleware implements Middleware {
         messages: updatedMessages,
         metadata: {
           ...ctx.metadata,
-          memoryChunksInjected: chunks.length
-        }
+          memoryChunksInjected: chunks.length,
+        },
       };
     } catch (error) {
       console.error("[MemoryMiddleware] Failed to inject context:", error);
@@ -60,12 +77,12 @@ export class MemoryMiddleware implements Middleware {
         messages: ctx.messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         })),
         metadata: {
           taskId: ctx.taskId,
-          workspacePath: ctx.workspacePath
-        }
+          workspacePath: ctx.workspacePath,
+        },
       };
 
       // Queue for debounced storage (non-blocking)
@@ -75,8 +92,8 @@ export class MemoryMiddleware implements Middleware {
         ...ctx,
         metadata: {
           ...ctx.metadata,
-          memoryStorageQueued: true
-        }
+          memoryStorageQueued: true,
+        },
       };
     } catch (error) {
       console.error("[MemoryMiddleware] Failed to queue storage:", error);
@@ -87,12 +104,14 @@ export class MemoryMiddleware implements Middleware {
   /**
    * Format memory chunks as system message
    */
-  private formatMemoryContext(chunks: Array<{ source: string; content: string; layer: string }>): string {
+  private formatMemoryContext(
+    chunks: Array<{ source: string; content: string; layer: string }>,
+  ): string {
     const lines = [
       "# Memory Context",
       "",
       "The following information has been retrieved from your memory:",
-      ""
+      "",
     ];
 
     for (const chunk of chunks) {

@@ -75,12 +75,16 @@ describe("TitleMiddleware", () => {
 
     const result = await middleware.afterAgent!(ctx);
 
+    // Title generation is now async, so we need to wait a bit
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     expect(modelsFactory.generateText).toHaveBeenCalledTimes(1);
     expect(conversationStore.updateConversation).toHaveBeenCalledWith("conv-1", {
       title: "Bandry Delegation Plan"
     });
     expect(onUpdate).toHaveBeenCalledWith("final", "title updated: Bandry Delegation Plan");
-    expect(result.metadata.titleGenerated).toBe(true);
+    // Metadata is no longer set since title generation is async
+    expect(result.metadata.titleGenerated).toBeUndefined();
   });
 
   it("uses fallback when model returns empty content", async () => {
@@ -123,11 +127,14 @@ describe("TitleMiddleware", () => {
 
     const result = await middleware.afterAgent!(ctx);
 
+    // Wait for async title generation
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     expect(modelsFactory.generateText).toHaveBeenCalledTimes(1);
     expect(conversationStore.updateConversation).toHaveBeenCalledWith("conv-2", {
       title: "分析数据"
     });
     expect(onUpdate).toHaveBeenCalledWith("final", "title generation returned empty, using fallback");
-    expect(result.metadata.titleGenerated).toBe(true);
+    expect(result.metadata.titleGenerated).toBeUndefined();
   });
 });

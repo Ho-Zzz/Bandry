@@ -74,11 +74,16 @@ export class MiddlewarePipeline {
     for (const middleware of this.middlewares) {
       const hook = middleware[hookName];
       if (typeof hook === "function") {
+        const startTime = Date.now();
         try {
           currentCtx = await hook.call(middleware, currentCtx);
+          const duration = Date.now() - startTime;
+          if (duration > 10) { // Only log if > 10ms
+            console.log(`[Middleware] ${middleware.name}.${hookName} took ${duration}ms`);
+          }
         } catch (error) {
-          // Log middleware error and re-throw
-          console.error(`[MiddlewarePipeline] Error in ${middleware.name}.${hookName}:`, error);
+          const duration = Date.now() - startTime;
+          console.error(`[MiddlewarePipeline] Error in ${middleware.name}.${hookName} after ${duration}ms:`, error);
           throw new Error(
             `Middleware ${middleware.name} failed at ${hookName}: ${
               error instanceof Error ? error.message : String(error)
@@ -92,38 +97,50 @@ export class MiddlewarePipeline {
   }
 
   async runBeforeAgent(ctx: MiddlewareContext): Promise<MiddlewareContext> {
+    const startTime = Date.now();
     let next: MiddlewareContext = { ...ctx, state: "before_agent" };
     next = await this.runHooks(next, "beforeAgent");
     // Legacy compatibility.
     next.state = "request";
     next = await this.runHooks(next, "onRequest");
+    const duration = Date.now() - startTime;
+    console.log(`[Pipeline] runBeforeAgent total: ${duration}ms`);
     return next;
   }
 
   async runBeforeModel(ctx: MiddlewareContext): Promise<MiddlewareContext> {
+    const startTime = Date.now();
     let next: MiddlewareContext = { ...ctx, state: "before_model" };
     next = await this.runHooks(next, "beforeModel");
     // Legacy compatibility.
     next.state = "before_llm";
     next = await this.runHooks(next, "beforeLLM");
+    const duration = Date.now() - startTime;
+    console.log(`[Pipeline] runBeforeModel total: ${duration}ms`);
     return next;
   }
 
   async runAfterModel(ctx: MiddlewareContext): Promise<MiddlewareContext> {
+    const startTime = Date.now();
     let next: MiddlewareContext = { ...ctx, state: "after_model" };
     next = await this.runHooks(next, "afterModel");
     // Legacy compatibility.
     next.state = "after_llm";
     next = await this.runHooks(next, "afterLLM");
+    const duration = Date.now() - startTime;
+    console.log(`[Pipeline] runAfterModel total: ${duration}ms`);
     return next;
   }
 
   async runAfterAgent(ctx: MiddlewareContext): Promise<MiddlewareContext> {
+    const startTime = Date.now();
     let next: MiddlewareContext = { ...ctx, state: "after_agent" };
     next = await this.runHooks(next, "afterAgent");
     // Legacy compatibility.
     next.state = "response";
     next = await this.runHooks(next, "onResponse");
+    const duration = Date.now() - startTime;
+    console.log(`[Pipeline] runAfterAgent total: ${duration}ms`);
     return next;
   }
 
@@ -131,9 +148,18 @@ export class MiddlewarePipeline {
     initialContext: MiddlewareContext,
     llmExecutor: LlmExecutor
   ): Promise<MiddlewareContext> {
+    const startTime = Date.now();
     let ctx = await this.runBeforeModel(initialContext);
+    const beforeDuration = Date.now() - startTime;
+
+    const llmStartTime = Date.now();
     ctx = await llmExecutor(ctx);
+    const llmDuration = Date.now() - llmStartTime;
+    console.log(`[Pipeline] LLM execution: ${llmDuration}ms`);
+
     ctx = await this.runAfterModel(ctx);
+    const totalDuration = Date.now() - startTime;
+    console.log(`[Pipeline] executeModel total: ${totalDuration}ms (before: ${beforeDuration}ms, llm: ${llmDuration}ms, after: ${totalDuration - beforeDuration - llmDuration}ms)`);
     return ctx;
   }
 

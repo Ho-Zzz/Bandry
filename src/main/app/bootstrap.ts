@@ -43,7 +43,8 @@ export const startMainApp = (): void => {
 
     const rebindMemoryProvider = (): void => {
       try {
-        composition.openViking.memoryProvider = new OpenVikingMemoryProvider(manager.createHttpClient(), {
+        // Use shorter timeout (3s) for memory operations to avoid blocking chat responses
+        composition.openViking.memoryProvider = new OpenVikingMemoryProvider(manager.createHttpClient(3000), {
           targetUris: composition.config.openviking.targetUris,
           topK: composition.config.openviking.memoryTopK,
           scoreThreshold: composition.config.openviking.memoryScoreThreshold,

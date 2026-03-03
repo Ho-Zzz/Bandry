@@ -58,53 +58,94 @@ export class TitleMiddleware implements Middleware {
       return ctx;
     }
 
+    // Generate title asynchronously to avoid blocking the main response
+    const conversationId = ctx.conversationId;
+    void this.generateTitleAsync(runtime, conversationId, firstUser, assistantReply);
+
+    return ctx;
+  }
+
+  private async generateTitleAsync(
+    runtime: MiddlewareContext["runtime"],
+    conversationId: string,
+    firstUser: string,
+    assistantReply: string
+  ): Promise<void> {
+    if (!runtime) {
+      return;
+    }
+
+    // For very short conversations (greetings, simple Q&A), skip LLM and use fallback directly
+    const isSimpleConversation = firstUser.length < 30 || assistantReply.length < 150;
+    if (isSimpleConversation) {
+      const title = generateFallbackTitle(firstUser);
+      if (title && title.trim().length > 0) {
+        runtime.conversationStore.updateConversation(conversationId, { title });
+        // Don't emit update for simple conversations to reduce noise
+      }
+      return;
+    }
+
     let title = "";
     try {
       const target = resolveRuntimeTarget(runtime.config, "lead.synthesizer");
-      const result = await runtime.modelsFactory.generateText({
-        runtimeConfig: target.runtimeConfig,
-        model: target.model,
-        temperature: 0.3,
-        maxTokens: 60,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a conversation title generator. Based on the user's request and assistant's reply, generate a concise and meaningful title that captures the core theme or task of the conversation.\n\nRequirements:\n- Output the title text directly without quotes\n- Maximum 48 characters\n- Focus on the core intent or theme, not just repeating the user message\n- Use verb-object structure or noun phrases\n- Avoid redundant words (like 'help me', 'please', etc.)\n\nExamples:\nUser: Help me analyze today's stock market\nAssistant: Today's stock market...\nTitle: Stock Market Analysis\n\nUser: Write a Python script to read CSV files\nAssistant: Here's a script to read CSV...\nTitle: CSV File Reader Script"
-          },
-          {
-            role: "user",
-            content: `User request: ${firstUser.slice(0, 200)}\nAssistant reply: ${assistantReply.slice(0, 300)}`
-          }
-        ],
-        abortSignal: runtime.abortSignal
-      });
-      title = truncateTitle(result.text);
 
-      // If model returns empty content, use fallback
-      if (!title || title.trim().length === 0) {
+      // Skip title generation if using slow reasoning models
+      const isReasoningModel = target.model.toLowerCase().includes('reasoner') ||
+                               target.model.toLowerCase().includes('o1') ||
+                               target.model.toLowerCase().includes('o3');
+      if (isReasoningModel) {
         title = generateFallbackTitle(firstUser);
-        runtime.onUpdate?.("final", `title generation returned empty, using fallback`);
+        runtime.conversationStore.updateConversation(conversationId, { title });
+        return;
+      }
+
+      // Create a new AbortController for title generation
+      // This ensures title generation won't be affected by the main request's abort signal
+      const titleAbortController = new AbortController();
+      const timeoutId = setTimeout(() => titleAbortController.abort(), 3000); // Reduced to 3s timeout
+
+      try {
+        const result = await runtime.modelsFactory.generateText({
+          runtimeConfig: target.runtimeConfig,
+          model: target.model,
+          temperature: 0.3,
+          maxTokens: 60,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a conversation title generator. Based on the user's request and assistant's reply, generate a concise and meaningful title that captures the core theme or task of the conversation.\n\nRequirements:\n- Output the title text directly without quotes\n- Maximum 48 characters\n- Focus on the core intent or theme, not just repeating the user message\n- Use verb-object structure or noun phrases\n- Avoid redundant words (like 'help me', 'please', etc.)\n\nExamples:\nUser: Help me analyze today's stock market\nAssistant: Today's stock market...\nTitle: Stock Market Analysis\n\nUser: Write a Python script to read CSV files\nAssistant: Here's a script to read CSV...\nTitle: CSV File Reader Script"
+            },
+            {
+              role: "user",
+              content: `User request: ${firstUser.slice(0, 200)}\nAssistant reply: ${assistantReply.slice(0, 300)}`
+            }
+          ],
+          abortSignal: titleAbortController.signal
+        });
+        clearTimeout(timeoutId);
+        title = truncateTitle(result.text);
+
+        // If model returns empty content, use fallback
+        if (!title || title.trim().length === 0) {
+          title = generateFallbackTitle(firstUser);
+        }
+      } catch (error) {
+        clearTimeout(timeoutId);
+        throw error;
       }
     } catch (error) {
       // If LLM fails, generate a smarter fallback title
       title = generateFallbackTitle(firstUser);
-      runtime.onUpdate?.("final", `title generation failed, using fallback: ${error instanceof Error ? error.message : "unknown error"}`);
+      // Don't log errors to reduce noise
     }
 
     if (!title || title.trim().length === 0) {
-      return ctx;
+      return;
     }
 
-    runtime.conversationStore.updateConversation(ctx.conversationId, { title });
-    runtime.onUpdate?.("final", `title updated: ${title}`);
-    return {
-      ...ctx,
-      metadata: {
-        ...ctx.metadata,
-        titleGenerated: true,
-        generatedTitle: title
-      }
-    };
+    runtime.conversationStore.updateConversation(conversationId, { title });
+    // Don't emit update to reduce trace noise
   }
 }
