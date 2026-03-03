@@ -60,7 +60,21 @@ import type {
   SkillCreateInput,
   SkillUpdateInput,
   SkillOperationResult,
-  SkillToggleInput
+  SkillToggleInput,
+  UserFilesCreateDirInput,
+  UserFilesCreateDirResult,
+  UserFilesSaveInput,
+  UserFilesSaveResult,
+  UserFilesListInput,
+  UserFilesListResult,
+  UserFilesReadInput,
+  UserFilesReadResult,
+  UserFilesDeleteInput,
+  UserFilesDeleteResult,
+  UserFilesRenameInput,
+  UserFilesRenameResult,
+  UserFilesSaveConversationInput,
+  UserFilesSaveConversationResult
 } from "../shared/ipc";
 
 const api = {
@@ -184,7 +198,22 @@ const api = {
   skillsDelete: (name: string): Promise<SkillOperationResult> =>
     ipcRenderer.invoke("skills:delete", name),
   skillsToggle: (input: SkillToggleInput): Promise<SkillOperationResult> =>
-    ipcRenderer.invoke("skills:toggle", input)
+    ipcRenderer.invoke("skills:toggle", input),
+  // User Files API
+  userFilesCreateDir: (input: UserFilesCreateDirInput): Promise<UserFilesCreateDirResult> =>
+    ipcRenderer.invoke("userFiles:createDir", input),
+  userFilesSave: (input: UserFilesSaveInput): Promise<UserFilesSaveResult> =>
+    ipcRenderer.invoke("userFiles:save", input),
+  userFilesList: (input: UserFilesListInput): Promise<UserFilesListResult> =>
+    ipcRenderer.invoke("userFiles:list", input),
+  userFilesRead: (input: UserFilesReadInput): Promise<UserFilesReadResult> =>
+    ipcRenderer.invoke("userFiles:read", input),
+  userFilesDelete: (input: UserFilesDeleteInput): Promise<UserFilesDeleteResult> =>
+    ipcRenderer.invoke("userFiles:delete", input),
+  userFilesRename: (input: UserFilesRenameInput): Promise<UserFilesRenameResult> =>
+    ipcRenderer.invoke("userFiles:rename", input),
+  userFilesSaveConversation: (input: UserFilesSaveConversationInput): Promise<UserFilesSaveConversationResult> =>
+    ipcRenderer.invoke("userFiles:saveConversation", input)
 };
 
 contextBridge.exposeInMainWorld("api", api);

@@ -10,6 +10,7 @@ import { LocalOrchestrator } from "../orchestration/workflow";
 import { SandboxService } from "../sandbox";
 import { ModelOnboardingService, SettingsService } from "../settings";
 import { ConversationStore } from "../persistence/sqlite";
+import { UserFilesService, ConversationExporter } from "../user-files";
 import type { IpcEventBus } from "../ipc/event-bus";
 
 export type MainCompositionRoot = {
@@ -22,6 +23,7 @@ export type MainCompositionRoot = {
   settingsService: SettingsService;
   modelOnboardingService: ModelOnboardingService;
   channelManager: ChannelManager;
+  userFilesService: UserFilesService;
   openViking: {
     processManager: OpenVikingProcessManager | null;
     memoryProvider: OpenVikingMemoryProvider | null;
@@ -53,6 +55,21 @@ export const createCompositionRoot = (eventBus: IpcEventBus): MainCompositionRoo
   const modelsFactory = new ModelsFactory(config);
   const sandboxService = new SandboxService(config);
   const conversationStore = new ConversationStore(config.paths.databasePath);
+
+  // Create user files services
+  const conversationExporter = new ConversationExporter(conversationStore);
+  const userFilesService = new UserFilesService(
+    conversationStore.getDatabase(),
+    config.paths.resourcesDir,
+    conversationExporter,
+    undefined // OpenViking client will be set later when available
+  );
+
+  // Initialize user files directory
+  userFilesService.initialize().catch((error) => {
+    console.error("Failed to initialize user files service:", error);
+  });
+
   const toolPlanningChatAgent = new ToolPlanningChatAgent(
     config,
     modelsFactory,
@@ -86,6 +103,7 @@ export const createCompositionRoot = (eventBus: IpcEventBus): MainCompositionRoo
     settingsService,
     modelOnboardingService,
     channelManager,
+    userFilesService,
     openViking: {
       processManager: null,
       memoryProvider: null

@@ -9,7 +9,7 @@ import { BrowserRouter, HashRouter, Routes, Route, Navigate } from 'react-router
 import { AppLayout } from '../components/layout/layout';
 import { Home } from '../components/views/home';
 import { Workflows } from '../components/views/workflows';
-import { Assets } from '../components/views/assets';
+import { UserFiles } from '../components/views/user-files';
 import { Employees } from '../components/views/employees';
 import { Chat } from '../components/views/chat';
 import { Copilot } from '../components/views/copilot';
@@ -86,7 +86,7 @@ export const AppRouter = () => {
           
           {/* Main Views */}
           <Route path="workflows" element={<Workflows />} />
-          <Route path="assets" element={<Assets />} />
+          <Route path="assets" element={<UserFiles />} />
           <Route path="employees" element={<Employees />} />
           <Route path="model-studio" element={<ModelStudio />} />
           <Route path="memory-studio" element={<MemoryStudio />} />

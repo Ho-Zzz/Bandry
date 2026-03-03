@@ -7,6 +7,7 @@ import { LocalOrchestrator } from "../orchestration/workflow";
 import { SandboxService } from "../sandbox";
 import { ModelOnboardingService, SettingsService } from "../settings";
 import { ConversationStore } from "../persistence/sqlite";
+import { UserFilesService } from "../user-files";
 import type {
   ChatCancelInput,
   ChatCancelResult,
@@ -57,7 +58,21 @@ import type {
   SkillUpdateInput,
   SoulInterviewInput,
   SoulInterviewSummarizeInput,
-  SkillToggleInput
+  SkillToggleInput,
+  UserFilesCreateDirInput,
+  UserFilesCreateDirResult,
+  UserFilesSaveInput,
+  UserFilesSaveResult,
+  UserFilesListInput,
+  UserFilesListResult,
+  UserFilesReadInput,
+  UserFilesReadResult,
+  UserFilesDeleteInput,
+  UserFilesDeleteResult,
+  UserFilesRenameInput,
+  UserFilesRenameResult,
+  UserFilesSaveConversationInput,
+  UserFilesSaveConversationResult
 } from "../../shared/ipc";
 import type { OpenVikingHttpClient } from "../memory/openviking/http-client";
 import type { OpenVikingProcessManager } from "../memory/openviking/process-manager";
@@ -76,6 +91,7 @@ type RegisterIpcHandlersInput = {
   settingsService: SettingsService;
   modelOnboardingService: ModelOnboardingService;
   conversationStore: ConversationStore;
+  userFilesService: UserFilesService;
   eventBus: IpcEventBus;
   getOpenViking: () => {
     processManager: OpenVikingProcessManager | null;
@@ -549,6 +565,45 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
 
   ipcMain.handle("skills:toggle", async (_event, toggleInput: SkillToggleInput) => {
     return input.skillService.toggle(toggleInput);
+  });
+
+  // User Files handlers
+  ipcMain.handle("userFiles:createDir", async (_event, createDirInput: UserFilesCreateDirInput): Promise<UserFilesCreateDirResult> => {
+    await input.userFilesService.createDirectory(createDirInput.dirPath);
+    return { ok: true };
+  });
+
+  ipcMain.handle("userFiles:save", async (_event, saveInput: UserFilesSaveInput): Promise<UserFilesSaveResult> => {
+    const record = await input.userFilesService.saveFile(saveInput.filePath, saveInput.content);
+    return { record };
+  });
+
+  ipcMain.handle("userFiles:list", async (_event, listInput: UserFilesListInput): Promise<UserFilesListResult> => {
+    const entries = await input.userFilesService.listDirectory(listInput.dirPath);
+    return { entries };
+  });
+
+  ipcMain.handle("userFiles:read", async (_event, readInput: UserFilesReadInput): Promise<UserFilesReadResult> => {
+    const result = await input.userFilesService.readFile(readInput.filePath);
+    return result;
+  });
+
+  ipcMain.handle("userFiles:delete", async (_event, deleteInput: UserFilesDeleteInput): Promise<UserFilesDeleteResult> => {
+    await input.userFilesService.delete(deleteInput.filePath, deleteInput.recursive ?? false);
+    return { ok: true };
+  });
+
+  ipcMain.handle("userFiles:rename", async (_event, renameInput: UserFilesRenameInput): Promise<UserFilesRenameResult> => {
+    await input.userFilesService.rename(renameInput.oldPath, renameInput.newPath);
+    return { ok: true };
+  });
+
+  ipcMain.handle("userFiles:saveConversation", async (_event, saveConvInput: UserFilesSaveConversationInput): Promise<UserFilesSaveConversationResult> => {
+    const record = await input.userFilesService.saveConversationAsMarkdown(
+      saveConvInput.conversationId,
+      saveConvInput.targetPath
+    );
+    return { record };
   });
 
   return {

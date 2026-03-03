@@ -583,3 +583,86 @@ export type ChannelStatusEvent = {
   message?: string;
   timestamp: number;
 };
+
+// User Files types
+export type UserFileRecord = {
+  id: string;
+  file_path: string;
+  size_bytes: number;
+  mime_type: string | null;
+  viking_uri: string | null;
+  viking_synced_at: number | null;
+  created_at: number;
+  updated_at: number;
+};
+
+export type FileEntry = {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  size?: number;
+  mimeType?: string;
+  createdAt?: number;
+  updatedAt?: number;
+};
+
+export type UserFilesCreateDirInput = {
+  dirPath: string;
+};
+
+export type UserFilesCreateDirResult = {
+  ok: boolean;
+};
+
+export type UserFilesSaveInput = {
+  filePath: string;
+  content: string;
+};
+
+export type UserFilesSaveResult = {
+  record: UserFileRecord;
+};
+
+export type UserFilesListInput = {
+  dirPath?: string;
+};
+
+export type UserFilesListResult = {
+  entries: FileEntry[];
+};
+
+export type UserFilesReadInput = {
+  filePath: string;
+};
+
+export type UserFilesReadResult = {
+  content: string;
+  mimeType: string;
+};
+
+export type UserFilesDeleteInput = {
+  filePath: string;
+  recursive?: boolean;
+};
+
+export type UserFilesDeleteResult = {
+  ok: boolean;
+};
+
+export type UserFilesRenameInput = {
+  oldPath: string;
+  newPath: string;
+};
+
+export type UserFilesRenameResult = {
+  ok: boolean;
+};
+
+export type UserFilesSaveConversationInput = {
+  conversationId: string;
+  targetPath: string;
+};
+
+export type UserFilesSaveConversationResult = {
+  record: UserFileRecord;
+};

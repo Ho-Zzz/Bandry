@@ -23,6 +23,10 @@ export class ConversationStore {
     this.db = openSqliteDatabase(dbPath, schemaPath);
   }
 
+  getDatabase(): Database.Database {
+    return this.db;
+  }
+
   // ==================== Conversation Methods ====================
 
   createConversation(input: CreateConversationInput): ConversationRecord {

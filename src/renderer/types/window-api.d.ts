@@ -59,7 +59,21 @@ import type {
   SkillCreateInput,
   SkillUpdateInput,
   SkillOperationResult,
-  SkillToggleInput
+  SkillToggleInput,
+  UserFilesCreateDirInput,
+  UserFilesCreateDirResult,
+  UserFilesSaveInput,
+  UserFilesSaveResult,
+  UserFilesListInput,
+  UserFilesListResult,
+  UserFilesReadInput,
+  UserFilesReadResult,
+  UserFilesDeleteInput,
+  UserFilesDeleteResult,
+  UserFilesRenameInput,
+  UserFilesRenameResult,
+  UserFilesSaveConversationInput,
+  UserFilesSaveConversationResult
 } from "../../shared/ipc";
 
 declare global {
@@ -134,6 +148,15 @@ declare global {
       skillsUpdate: (name: string, input: SkillUpdateInput) => Promise<SkillOperationResult>;
       skillsDelete: (name: string) => Promise<SkillOperationResult>;
       skillsToggle: (input: SkillToggleInput) => Promise<SkillOperationResult>;
+
+      // User Files API
+      userFilesCreateDir: (input: UserFilesCreateDirInput) => Promise<UserFilesCreateDirResult>;
+      userFilesSave: (input: UserFilesSaveInput) => Promise<UserFilesSaveResult>;
+      userFilesList: (input: UserFilesListInput) => Promise<UserFilesListResult>;
+      userFilesRead: (input: UserFilesReadInput) => Promise<UserFilesReadResult>;
+      userFilesDelete: (input: UserFilesDeleteInput) => Promise<UserFilesDeleteResult>;
+      userFilesRename: (input: UserFilesRenameInput) => Promise<UserFilesRenameResult>;
+      userFilesSaveConversation: (input: UserFilesSaveConversationInput) => Promise<UserFilesSaveConversationResult>;
     };
   }
 }

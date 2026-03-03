@@ -98,6 +98,7 @@ export const startMainApp = (): void => {
     settingsService: composition.settingsService,
     modelOnboardingService: composition.modelOnboardingService,
     conversationStore: composition.conversationStore,
+    userFilesService: composition.userFilesService,
     eventBus,
     getOpenViking: () => ({
       processManager: composition.openViking.processManager,
