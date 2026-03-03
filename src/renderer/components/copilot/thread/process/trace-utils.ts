@@ -1,0 +1,468 @@
+import { parseToolResult } from "../../../../features/copilot/trace-paths";
+
+type TraceToolArgs = {
+  stage?: string;
+};
+
+type TraceToolResult = {
+  message?: string;
+  timestamp?: number;
+  workspacePath?: string;
+};
+
+export type ProcessKind = "Plan" | "Tool" | "Result";
+
+export type TraceItem = {
+  id: string;
+  kind: ProcessKind;
+  stage: string;
+  message: string;
+  timestamp?: number;
+  source?: string;
+  status?: "success" | "failed";
+  workspacePath?: string;
+};
+
+export type ToolResultSummary = {
+  source: string;
+  status: "success" | "failed" | "loading";
+  output: string;
+  timestamp?: number;
+  workspacePath?: string;
+  sources: SourceItem[];
+};
+
+export type SourceItem = {
+  id: string;
+  url: string;
+  title: string;
+};
+
+export type ProcessSectionType = "planning" | "execution" | "finalizing" | "error";
+
+export type ProcessSection = {
+  id: string;
+  type: ProcessSectionType;
+  title: string;
+  items: TraceItem[];
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null;
+};
+
+const extractTraceState = (
+  toolName: string,
+  args: unknown,
+  result: unknown
+): {
+  stage: string;
+  message?: string;
+  timestamp?: number;
+  workspacePath?: string;
+} => {
+  const typedArgs: TraceToolArgs = isRecord(args)
+    ? {
+        stage: typeof args.stage === "string" ? args.stage : undefined
+      }
+    : {};
+
+  const typedResult: TraceToolResult = isRecord(result)
+    ? {
+        message: typeof result.message === "string" ? result.message : undefined,
+        timestamp: typeof result.timestamp === "number" ? result.timestamp : undefined,
+        workspacePath: typeof result.workspacePath === "string" ? result.workspacePath : undefined
+      }
+    : {};
+
+  return {
+    stage: typedArgs.stage || toolName.replace(/^trace_/, "") || "trace",
+    message: typedResult.message,
+    timestamp: typedResult.timestamp,
+    workspacePath: typedResult.workspacePath
+  };
+};
+
+const parseToolSource = (message: string): string | undefined => {
+  const match = message.match(/^执行工具：([^\s（(]+)/);
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  return match[1];
+};
+
+export const formatDuration = (ms?: number): string | null => {
+  if (!ms || ms < 0) {
+    return null;
+  }
+
+  if (ms < 1000) {
+    return `${ms} ms`;
+  }
+
+  return `${(ms / 1000).toFixed(1)} s`;
+};
+
+export const formatTime = (timestamp?: number): string | null => {
+  if (!timestamp) {
+    return null;
+  }
+
+  return new Date(timestamp).toLocaleTimeString();
+};
+
+export const truncateText = (value: string, maxLength: number): string => {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength)}...`;
+};
+
+export const tryFormatJson = (value: string): string | null => {
+  const normalized = value.trim();
+  if (!(normalized.startsWith("{") || normalized.startsWith("["))) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(normalized);
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return null;
+  }
+};
+
+export const resolveProcessKind = (stage: string, message: string): ProcessKind => {
+  if (stage === "planning" || stage === "model") {
+    return "Plan";
+  }
+
+  if (stage === "tool" || stage === "subagent") {
+    if (/[->]\s*(success|failed|completed)\s*:/i.test(message)) {
+      return "Result";
+    }
+
+    return "Tool";
+  }
+
+  return "Result";
+};
+
+export const processKindBadgeClass = (kind: ProcessKind): string => {
+  if (kind === "Plan") {
+    return "bg-sky-100 text-sky-700";
+  }
+
+  if (kind === "Tool") {
+    return "bg-amber-100 text-amber-700";
+  }
+
+  return "bg-emerald-100 text-emerald-700";
+};
+
+export const extractTraceItems = (parts: readonly unknown[]): TraceItem[] => {
+  const items: TraceItem[] = [];
+  let messageWorkspacePath: string | undefined;
+
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (!isRecord(part)) {
+      continue;
+    }
+
+    if (part.type !== "tool-call") {
+      continue;
+    }
+
+    const partRecord = part as Record<string, unknown>;
+    const toolName = typeof partRecord.toolName === "string" ? partRecord.toolName : "";
+    const { stage, message, timestamp, workspacePath } = extractTraceState(toolName, partRecord.args, partRecord.result);
+    const normalizedMessage = message?.trim();
+    if (workspacePath) {
+      messageWorkspacePath = workspacePath;
+    }
+
+    if (!normalizedMessage) {
+      continue;
+    }
+
+    const parsedResult = parseToolResult(normalizedMessage);
+    const source = parsedResult?.source ?? parseToolSource(normalizedMessage);
+
+    items.push({
+      id: `trace-${index}-${timestamp ?? index}`,
+      kind: resolveProcessKind(stage, normalizedMessage),
+      stage,
+      message: normalizedMessage,
+      timestamp,
+      source,
+      status: parsedResult?.status,
+      workspacePath
+    });
+  }
+
+  if (!messageWorkspacePath) {
+    return items;
+  }
+
+  return items.map((item) => ({
+    ...item,
+    workspacePath: item.workspacePath ?? messageWorkspacePath
+  }));
+};
+
+export const buildToolSummaries = (traceItems: TraceItem[], isRunning: boolean): ToolResultSummary[] => {
+  const summaries: ToolResultSummary[] = [];
+  const pendingBySource = new Map<string, TraceItem>();
+
+  for (const item of traceItems) {
+    const parsedResult = parseToolResult(item.message);
+    if (parsedResult) {
+      const urls = extractUrlsFromText(parsedResult.output);
+      const sources = isSearchLikeName(parsedResult.source)
+        ? urls.map((url, index) => ({
+            id: `${parsedResult.source}-${index}-${url}-${item.timestamp ?? index}`,
+            url,
+            title: toSourceTitle(url)
+          }))
+        : [];
+
+      summaries.push({
+        source: parsedResult.source,
+        status: parsedResult.status,
+        output: parsedResult.output,
+        timestamp: item.timestamp,
+        workspacePath: item.workspacePath,
+        sources
+      });
+      pendingBySource.delete(parsedResult.source);
+      continue;
+    }
+
+    const source = item.source ?? parseToolSource(item.message);
+    if (!source) {
+      continue;
+    }
+
+    if (item.kind === "Tool") {
+      pendingBySource.set(source, item);
+    }
+  }
+
+  if (isRunning) {
+    pendingBySource.forEach((item, source) => {
+      summaries.push({
+        source,
+        status: "loading",
+        output: item.message,
+        timestamp: item.timestamp,
+        workspacePath: item.workspacePath,
+        sources: []
+      });
+    });
+  }
+
+  return summaries.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+};
+
+export const resolveSectionType = (item: TraceItem): ProcessSectionType => {
+  if (item.stage === "error") {
+    return "error";
+  }
+
+  if (item.stage === "final") {
+    return "finalizing";
+  }
+
+  if (item.kind === "Tool" || item.kind === "Result") {
+    return "execution";
+  }
+
+  return "planning";
+};
+
+export const buildSectionTitle = (type: ProcessSectionType, index: number): string => {
+  if (type === "planning") {
+    return index > 1 ? `规划分析 ${index}` : "规划分析";
+  }
+
+  if (type === "execution") {
+    return index > 1 ? `执行过程 ${index}` : "执行过程";
+  }
+
+  if (type === "finalizing") {
+    return index > 1 ? `结果整理 ${index}` : "结果整理";
+  }
+
+  return index > 1 ? `异常处理 ${index}` : "异常处理";
+};
+
+const normalizeUrl = (value: string): string => {
+  return value.replace(/[),.;!?]+$/g, "");
+};
+
+const extractUrlsFromText = (value: string): string[] => {
+  const urls = new Set<string>();
+  const urlRegex = /https?:\/\/[^\s<>"'`]+/g;
+  const markdownLinkRegex = /\[[^\]]+\]\((https?:\/\/[^)\s]+)\)/g;
+
+  let urlMatch: RegExpExecArray | null;
+  while ((urlMatch = urlRegex.exec(value)) !== null) {
+    const candidate = urlMatch[0];
+    if (!candidate) {
+      continue;
+    }
+    urls.add(normalizeUrl(candidate));
+  }
+
+  let markdownMatch: RegExpExecArray | null;
+  while ((markdownMatch = markdownLinkRegex.exec(value)) !== null) {
+    const candidate = markdownMatch[1];
+    if (!candidate) {
+      continue;
+    }
+    urls.add(normalizeUrl(candidate));
+  }
+
+  return Array.from(urls);
+};
+
+const toSourceTitle = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname === "/" ? "" : parsed.pathname;
+    return `${parsed.hostname}${path}`.slice(0, 80);
+  } catch {
+    return url.slice(0, 80);
+  }
+};
+
+const SEARCH_TOOL_PATTERNS = [
+  "search",
+  "web",
+  "browse",
+  "crawl",
+  "scrape",
+  "source",
+  "duckduckgo",
+  "google"
+];
+
+const isSearchLikeName = (value: string): boolean => {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return SEARCH_TOOL_PATTERNS.some((pattern) => normalized.includes(pattern));
+};
+
+export const hasSearchLikeToolActivity = (parts: readonly unknown[]): boolean => {
+  for (const part of parts) {
+    if (!isRecord(part)) {
+      continue;
+    }
+
+    if (part.type === "source") {
+      return true;
+    }
+
+    if (part.type !== "tool-call") {
+      continue;
+    }
+
+    const toolName = typeof part.toolName === "string" ? part.toolName : "";
+    if (isSearchLikeName(toolName)) {
+      return true;
+    }
+
+    if (!isRecord(part.result)) {
+      continue;
+    }
+
+    const message = typeof part.result.message === "string" ? part.result.message : "";
+    const parsedResult = message ? parseToolResult(message) : null;
+    const source = parsedResult?.source ?? (message ? parseToolSource(message) : undefined);
+    if (source && isSearchLikeName(source)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+export const buildSourcesFromParts = (parts: readonly unknown[]): SourceItem[] => {
+  const seen = new Set<string>();
+  const sources: SourceItem[] = [];
+
+  const collect = (text: string) => {
+    extractUrlsFromText(text).forEach((url) => {
+      if (seen.has(url)) {
+        return;
+      }
+      seen.add(url);
+      sources.push({
+        id: `source-${sources.length}-${url}`,
+        url,
+        title: toSourceTitle(url)
+      });
+    });
+  };
+
+  parts.forEach((part) => {
+    if (!isRecord(part)) {
+      return;
+    }
+
+    if (part.type === "text" && typeof part.text === "string") {
+      collect(part.text);
+      return;
+    }
+
+    if (part.type !== "tool-call") {
+      return;
+    }
+
+    if (!isRecord(part.result)) {
+      return;
+    }
+
+    const message = part.result.message;
+    if (typeof message === "string") {
+      collect(message);
+    }
+  });
+
+  return sources.slice(0, 8);
+};
+
+export const buildProcessSections = (items: TraceItem[]): ProcessSection[] => {
+  const sections: ProcessSection[] = [];
+  let current: ProcessSection | null = null;
+  const sectionCounter: Record<ProcessSectionType, number> = {
+    planning: 0,
+    execution: 0,
+    finalizing: 0,
+    error: 0
+  };
+
+  for (const item of items) {
+    const type = resolveSectionType(item);
+    if (!current || current.type !== type) {
+      sectionCounter[type] += 1;
+      current = {
+        id: `${type}-${sections.length}`,
+        type,
+        title: buildSectionTitle(type, sectionCounter[type]),
+        items: []
+      };
+      sections.push(current);
+    }
+
+    current.items.push(item);
+  }
+
+  return sections;
+};
