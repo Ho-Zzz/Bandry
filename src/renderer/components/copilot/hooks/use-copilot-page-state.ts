@@ -1,4 +1,4 @@
-import { useReducer } from "react";
+import { useCallback, useReducer } from "react";
 
 import type { ChatMode } from "../../../../shared/ipc";
 
@@ -27,6 +27,9 @@ const initialState: CopilotPageState = {
 
 const reducer = (state: CopilotPageState, action: CopilotPageAction): CopilotPageState => {
   if (action.type === "set-chat-mode") {
+    if (state.chatMode === action.mode) {
+      return state;
+    }
     return {
       ...state,
       chatMode: action.mode
@@ -34,10 +37,17 @@ const reducer = (state: CopilotPageState, action: CopilotPageAction): CopilotPag
   }
 
   if (action.type === "set-clarification-input") {
+    if (state.clarificationInput === action.value) {
+      return state;
+    }
     return {
       ...state,
       clarificationInput: action.value
     };
+  }
+
+  if (!state.clarificationInput) {
+    return state;
   }
 
   return {
@@ -48,17 +58,20 @@ const reducer = (state: CopilotPageState, action: CopilotPageAction): CopilotPag
 
 export const useCopilotPageState = () => {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const setChatMode = useCallback((mode: ChatMode) => {
+    dispatch({ type: "set-chat-mode", mode });
+  }, []);
+  const setClarificationInput = useCallback((value: string) => {
+    dispatch({ type: "set-clarification-input", value });
+  }, []);
+  const clearClarificationInput = useCallback(() => {
+    dispatch({ type: "clear-clarification-input" });
+  }, []);
 
   return {
     state,
-    setChatMode: (mode: ChatMode) => {
-      dispatch({ type: "set-chat-mode", mode });
-    },
-    setClarificationInput: (value: string) => {
-      dispatch({ type: "set-clarification-input", value });
-    },
-    clearClarificationInput: () => {
-      dispatch({ type: "clear-clarification-input" });
-    }
+    setChatMode,
+    setClarificationInput,
+    clearClarificationInput
   };
 };

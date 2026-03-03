@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 
@@ -15,15 +15,15 @@ import { CopilotThread } from "./thread/copilot-thread";
 export const CopilotPage = () => {
   const { conversationId: routeConversationId } = useParams<{ conversationId?: string }>();
   const navigate = useNavigate();
+  const latestRouteConversationIdRef = useRef<string | undefined>(routeConversationId);
 
   const { state, setChatMode, setClarificationInput, clearClarificationInput } = useCopilotPageState();
   const { profilesLoading, leadRouteReady, memoryStatus } = useCopilotBootstrap();
 
-  const { deleteConversation, fetchConversations } = useConversationStore();
+  const { conversations, deleteConversation, fetchConversations } = useConversationStore();
 
   const {
     runtime,
-    clearMessages,
     isLoading,
     conversationId,
     pendingClarification,
@@ -40,6 +40,10 @@ export const CopilotPage = () => {
   const isPreviewOpen = usePreviewStore((s) => s.isOpen);
 
   useEffect(() => {
+    latestRouteConversationIdRef.current = routeConversationId;
+  }, [routeConversationId]);
+
+  useEffect(() => {
     setPreviewWorkspacePath(workspacePath);
   }, [setPreviewWorkspacePath, workspacePath]);
 
@@ -50,21 +54,30 @@ export const CopilotPage = () => {
   }, [clearClarificationInput, pendingClarification]);
 
   useEffect(() => {
-    if (conversationId && !routeConversationId) {
+    const hasConversationInList = conversationId
+      ? conversations.some((conversation) => conversation.id === conversationId)
+      : false;
+
+    if (conversationId && !routeConversationId && hasConversationInList) {
       navigate(`/copilot/${conversationId}`, { replace: true });
       void fetchConversations();
     }
-  }, [conversationId, fetchConversations, navigate, routeConversationId]);
+  }, [conversationId, conversations, fetchConversations, navigate, routeConversationId]);
 
   const handleClearConversation = useCallback(async () => {
-    if (conversationId) {
-      await deleteConversation(conversationId);
-      await fetchConversations();
+    const deletingConversationId = routeConversationId ?? conversationId;
+    if (!deletingConversationId) {
+      return;
     }
 
-    clearMessages();
-    navigate("/copilot");
-  }, [clearMessages, conversationId, deleteConversation, fetchConversations, navigate]);
+    await deleteConversation(deletingConversationId);
+    await fetchConversations();
+
+    // Avoid clobbering navigation if user switched to another chat while delete was in-flight.
+    if (latestRouteConversationIdRef.current === deletingConversationId) {
+      navigate("/copilot", { replace: true });
+    }
+  }, [conversationId, deleteConversation, fetchConversations, navigate, routeConversationId]);
 
   const handleClarificationOption = useCallback(
     async (value: string) => {
@@ -94,7 +107,7 @@ export const CopilotPage = () => {
         <div className="flex min-w-0 flex-1 flex-col">
           <CopilotHeader
             memoryActive={Boolean(memoryStatus?.running)}
-            canDeleteConversation={Boolean(conversationId)}
+            canDeleteConversation={Boolean(routeConversationId ?? conversationId)}
             onDeleteConversation={() => {
               void handleClearConversation();
             }}

@@ -104,6 +104,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const traceByRequestIdRef = useRef<Record<string, ChatUpdateEvent[]>>({});
   const requestToConversationRef = useRef<Record<string, string>>({});
+  const loadVersionRef = useRef(0);
   const messagesRef = useRef<Message[]>([]);
   const conversationIdRef = useRef<string | undefined>(options.conversationId);
   const { upsertConversation } = useConversationStore();
@@ -153,7 +154,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
     });
   }, []);
 
-  const loadMessages = useCallback(async (convId: string) => {
+  const loadMessages = useCallback(async (convId: string, version: number) => {
     try {
       const dbMessages = await window.api.messageList(convId);
       const loadedMessages: Message[] = dbMessages.map((m: MessageResult) => {
@@ -178,15 +179,25 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         }
       }
 
+      if (loadVersionRef.current !== version) {
+        return;
+      }
+
       traceByRequestIdRef.current = traces;
       setMessages(loadedMessages);
     } catch (error) {
+      if (loadVersionRef.current !== version) {
+        return;
+      }
       console.error("Failed to load messages:", error);
     }
   }, []);
 
   // Load existing messages when conversationId changes
   useEffect(() => {
+    loadVersionRef.current += 1;
+    const currentVersion = loadVersionRef.current;
+
     if (options.conversationId) {
       setConversationId(options.conversationId);
       setMessages([]);
@@ -208,7 +219,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         }).catch(() => setWorkspacePath(null));
       }
 
-      void loadMessages(options.conversationId);
+      void loadMessages(options.conversationId, currentVersion);
     } else {
       setConversationId(undefined);
       setMessages([]);
