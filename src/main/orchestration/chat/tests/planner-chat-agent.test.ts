@@ -25,7 +25,6 @@ const createConfig = () => {
       auditLogPath: path.join(workspaceDir, "model-audit.log"),
       sandboxAuditLogPath: path.join(workspaceDir, "sandbox-audit.log"),
       databasePath: path.join(workspaceDir, "bandry.db"),
-      dotenvPath: path.join(workspaceDir, ".env")
     },
     runtime: {
       inheritedEnv: {}
@@ -34,6 +33,33 @@ const createConfig = () => {
   config.providers.openai.apiKey = "sk-openai-valid-key-1234567890";
   config.providers.deepseek.apiKey = "sk-deepseek-valid-key-1234567890";
   config.providers.volcengine.apiKey = "test-volcengine-key";
+  config.modelProfiles = [
+    {
+      id: "profile_openai_default",
+      name: "OpenAI Default",
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      enabled: true
+    },
+    {
+      id: "profile_deepseek_default",
+      name: "DeepSeek Default",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      enabled: true
+    },
+    {
+      id: "profile_volcengine_default",
+      name: "Volcengine Default",
+      provider: "volcengine",
+      model: "doubao-seed-1-6-250615",
+      enabled: true
+    }
+  ];
+  config.routing.assignments["chat.default"] = "profile_deepseek_default";
+  config.routing.assignments["lead.planner"] = "profile_deepseek_default";
+  config.routing.assignments["lead.synthesizer"] = "profile_deepseek_default";
+  config.routing.assignments["memory.fact_extractor"] = "profile_deepseek_default";
   return config;
 };
 
@@ -256,6 +282,8 @@ describe("ToolPlanningChatAgent", () => {
   it("does not fallback when lead route profile is unusable", async () => {
     const config = createConfig();
     config.providers.openai.apiKey = "123123123";
+    config.routing.assignments["lead.planner"] = "profile_openai_default";
+    config.routing.assignments["lead.synthesizer"] = "profile_openai_default";
 
     const modelsFactory = {
       isProviderConfigured: vi.fn(() => true),

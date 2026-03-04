@@ -1,4 +1,5 @@
 import { loadAppConfig } from "../config";
+import { ensureUserConfigFile } from "../config/ensure-user-config";
 import { ChannelManager } from "../channels/channel-manager";
 import { FeishuChannel } from "../channels/feishu";
 import type { Channel } from "../channels";
@@ -52,6 +53,8 @@ export const buildConfiguredChannels = (
 
 export const createCompositionRoot = (eventBus: IpcEventBus): MainCompositionRoot => {
   const config = loadAppConfig();
+  ensureUserConfigFile(config);
+  console.info("Config source: defaults + project(optional) + userConfig; env disabled");
   const modelsFactory = new ModelsFactory(config);
   const sandboxService = new SandboxService(config);
   const conversationStore = new ConversationStore(config.paths.databasePath);

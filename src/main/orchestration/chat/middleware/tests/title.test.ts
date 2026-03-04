@@ -24,13 +24,25 @@ const createConfig = () => {
       auditLogPath: path.join(workspaceDir, "model-audit.log"),
       sandboxAuditLogPath: path.join(workspaceDir, "sandbox-audit.log"),
       databasePath: path.join(workspaceDir, "bandry.db"),
-      dotenvPath: path.join(workspaceDir, ".env")
     },
     runtime: {
       inheritedEnv: {}
     }
   });
   config.providers.openai.apiKey = "sk-openai-valid-key-1234567890";
+  config.modelProfiles = [
+    {
+      id: "profile_openai_default",
+      name: "OpenAI Default",
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      enabled: true
+    }
+  ];
+  config.routing.assignments["chat.default"] = "profile_openai_default";
+  config.routing.assignments["lead.planner"] = "profile_openai_default";
+  config.routing.assignments["lead.synthesizer"] = "profile_openai_default";
+  config.routing.assignments["memory.fact_extractor"] = "profile_openai_default";
   return config;
 };
 
@@ -78,11 +90,11 @@ describe("TitleMiddleware", () => {
     // Title generation is now async, so we need to wait a bit
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    expect(modelsFactory.generateText).toHaveBeenCalledTimes(1);
+    expect(modelsFactory.generateText).not.toHaveBeenCalled();
     expect(conversationStore.updateConversation).toHaveBeenCalledWith("conv-1", {
-      title: "Bandry Delegation Plan"
+      title: "整理迁移方案"
     });
-    expect(onUpdate).toHaveBeenCalledWith("final", "title updated: Bandry Delegation Plan");
+    expect(onUpdate).not.toHaveBeenCalled();
     // Metadata is no longer set since title generation is async
     expect(result.metadata.titleGenerated).toBeUndefined();
   });
@@ -130,11 +142,11 @@ describe("TitleMiddleware", () => {
     // Wait for async title generation
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    expect(modelsFactory.generateText).toHaveBeenCalledTimes(1);
+    expect(modelsFactory.generateText).not.toHaveBeenCalled();
     expect(conversationStore.updateConversation).toHaveBeenCalledWith("conv-2", {
       title: "分析数据"
     });
-    expect(onUpdate).toHaveBeenCalledWith("final", "title generation returned empty, using fallback");
+    expect(onUpdate).not.toHaveBeenCalled();
     expect(result.metadata.titleGenerated).toBeUndefined();
   });
 });

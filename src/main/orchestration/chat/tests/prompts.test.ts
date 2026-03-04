@@ -159,7 +159,6 @@ const createMockConfig = (overrides?: Partial<AppConfig>): AppConfig => ({
     auditLogPath: "/test/.bandry/logs/audit.log",
     sandboxAuditLogPath: "/test/.bandry/logs/sandbox-audit.log",
     databasePath: "/test/.bandry/data.db",
-    dotenvPath: "/test/.env"
   },
   channels: {
     enabled: false,

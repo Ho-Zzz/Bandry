@@ -38,6 +38,8 @@ import type {
   MessageUpdateInput,
   PingResult,
   RuntimeConfigSummary,
+  ConfigStorageInfoResult,
+  OpenConfigDirResult,
   SaveSettingsInput,
   SaveSettingsResult,
   SandboxExecInput,
@@ -85,6 +87,8 @@ declare global {
       // Core
       ping: () => Promise<PingResult>;
       getConfigSummary: () => Promise<RuntimeConfigSummary>;
+      getConfigStorageInfo: () => Promise<ConfigStorageInfoResult>;
+      openConfigDir: () => Promise<OpenConfigDirResult>;
       getSettingsState: () => Promise<GlobalSettingsState>;
       saveSettingsState: (input: SaveSettingsInput) => Promise<SaveSettingsResult>;
       modelsCatalogList: (input?: ModelsCatalogListInput) => Promise<ModelsCatalogListResult>;

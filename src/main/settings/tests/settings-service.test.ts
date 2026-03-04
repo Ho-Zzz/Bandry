@@ -28,7 +28,6 @@ const createService = async (seed: string): Promise<SettingsService> => {
       ...process.env,
       BANDRY_HOME: bandryHome
     },
-    skipDotenv: true
   });
   return new SettingsService({ config });
 };

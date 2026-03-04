@@ -105,7 +105,6 @@ export type AppPaths = {
   auditLogPath: string;
   sandboxAuditLogPath: string;
   databasePath: string;
-  dotenvPath: string;
 };
 
 export type RuntimeConfig = {

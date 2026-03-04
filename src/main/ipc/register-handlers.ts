@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
-import { BrowserWindow, dialog, ipcMain } from "electron";
+import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { toPublicConfigSummary, type AppConfig } from "../config";
 import { ToolPlanningChatAgent } from "../orchestration/chat";
 import { LocalOrchestrator } from "../orchestration/workflow";
@@ -20,6 +20,8 @@ import type {
   ConversationTokenStatsInput,
   ConversationTokenStatsResult,
   GlobalTokenStatsResult,
+  ConfigStorageInfoResult,
+  OpenConfigDirResult,
   GlobalSettingsState,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
@@ -221,6 +223,25 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
 
   ipcMain.handle("config:get-summary", async () => {
     return toPublicConfigSummary(input.config);
+  });
+
+  ipcMain.handle("config:get-storage-info", async (): Promise<ConfigStorageInfoResult> => {
+    return {
+      userConfigPath: input.config.paths.userConfigPath,
+      configDir: input.config.paths.configDir,
+      notes: "Config source: defaults + project(optional) + userConfig. .env and config env overrides are disabled."
+    };
+  });
+
+  ipcMain.handle("config:open-config-dir", async (): Promise<OpenConfigDirResult> => {
+    const result = await shell.openPath(input.config.paths.configDir);
+    if (result && result.trim().length > 0) {
+      return {
+        ok: false,
+        message: result
+      };
+    }
+    return { ok: true };
   });
 
   ipcMain.handle("config:get-settings-state", async (): Promise<GlobalSettingsState> => {

@@ -1,6 +1,5 @@
 import os from "node:os";
 import { createDefaultConfig } from "./default-config";
-import { envToLayer } from "./env-layer";
 import { applyLayer } from "./layer-merger";
 import { normalizeConfig } from "./normalize-config";
 import { resolvePathPlan } from "./path-resolver";
@@ -12,7 +11,6 @@ type LoadAppConfigOptions = {
   cwd?: string;
   userHome?: string;
   env?: NodeJS.ProcessEnv;
-  skipDotenv?: boolean;
 };
 
 const toInheritedEnv = (env: NodeJS.ProcessEnv): Record<string, string> => {
@@ -61,13 +59,11 @@ export const loadAppConfig = (options: LoadAppConfigOptions = {}): AppConfig => 
 
   const env = options.env ?? process.env;
   const inheritedEnv = toInheritedEnv({
-    ...process.env,
-    ...env
+    PATH: env.PATH ?? process.env.PATH
   });
   const plan = resolvePathPlan({
     cwd,
-    userHome,
-    env
+    userHome
   });
 
   const config = createDefaultConfig({
@@ -78,11 +74,9 @@ export const loadAppConfig = (options: LoadAppConfigOptions = {}): AppConfig => 
     }
   });
 
-  // Base precedence: default -> project -> user -> env.
+  // Base precedence: default -> project -> user.
   applyLayerFiles(config, plan.projectLayerPaths);
   applyLayerFiles(config, plan.userLayerPaths);
-  applyLayer(config, envToLayer(env));
-  // For model/provider/routing/tools, user settings are authoritative over env.
   applyUserOwnedModelLayers(config, plan.userLayerPaths);
 
   if (!config.llm.defaultModel) {

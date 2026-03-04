@@ -39,6 +39,8 @@ import type {
   ModelsSetDefaultInput,
   ModelsUpdateCredentialInput,
   RuntimeConfigSummary,
+  ConfigStorageInfoResult,
+  OpenConfigDirResult,
   SaveSettingsInput,
   SaveSettingsResult,
   SandboxExecInput,
@@ -86,6 +88,8 @@ const api = {
   chatCancel: (input: ChatCancelInput): Promise<ChatCancelResult> => ipcRenderer.invoke("chat:cancel", input),
   startTask: (input: TaskStartInput): Promise<TaskStartResult> => ipcRenderer.invoke("task:start", input),
   getConfigSummary: (): Promise<RuntimeConfigSummary> => ipcRenderer.invoke("config:get-summary"),
+  getConfigStorageInfo: (): Promise<ConfigStorageInfoResult> => ipcRenderer.invoke("config:get-storage-info"),
+  openConfigDir: (): Promise<OpenConfigDirResult> => ipcRenderer.invoke("config:open-config-dir"),
   getSettingsState: (): Promise<GlobalSettingsState> => ipcRenderer.invoke("config:get-settings-state"),
   saveSettingsState: (input: SaveSettingsInput): Promise<SaveSettingsResult> =>
     ipcRenderer.invoke("config:save-settings-state", input),

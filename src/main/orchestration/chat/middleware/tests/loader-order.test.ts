@@ -24,7 +24,6 @@ const createConfig = () => {
       auditLogPath: path.join(workspaceDir, "model-audit.log"),
       sandboxAuditLogPath: path.join(workspaceDir, "sandbox-audit.log"),
       databasePath: path.join(workspaceDir, "bandry.db"),
-      dotenvPath: path.join(workspaceDir, ".env")
     },
     runtime: {
       inheritedEnv: {}
@@ -49,13 +48,10 @@ describe("middleware loader order", () => {
       "soul",
       "skill",
       "local_resource",
-      "resource_injection",
       "sandbox_binding",
       "dangling_tool_call",
       "summarization",
-      "title",
       "memory",
-      "resource_curation",
       "clarification"
     ]);
     expect(middlewares[middlewares.length - 1]?.name).toBe("clarification");
@@ -78,13 +74,10 @@ describe("middleware loader order", () => {
       "soul",
       "skill",
       "local_resource",
-      "resource_injection",
       "sandbox_binding",
       "dangling_tool_call",
       "summarization",
-      "title",
       "memory",
-      "resource_curation",
       "todolist",
       "subagent_limit",
       "clarification"

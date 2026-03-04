@@ -340,6 +340,17 @@ export type SaveSettingsResult = {
   message: string;
 };
 
+export type ConfigStorageInfoResult = {
+  userConfigPath: string;
+  configDir: string;
+  notes: string;
+};
+
+export type OpenConfigDirResult = {
+  ok: boolean;
+  message?: string;
+};
+
 export type SandboxEntry = {
   name: string;
   virtualPath: string;

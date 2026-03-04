@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, ArrowRight, Brain, CheckCircle2, XCircle, Plus, Trash2 } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Brain, CheckCircle2, XCircle, Plus, Trash2, FolderOpen } from "lucide-react";
 import { Button, Card, CardBody, CardHeader, Input, Switch } from "@heroui/react";
-import type { ConnectedModelResult, GlobalSettingsState, MemoryStatusResult } from "../../../shared/ipc";
+import type {
+  ConfigStorageInfoResult,
+  ConnectedModelResult,
+  GlobalSettingsState,
+  MemoryStatusResult
+} from "../../../shared/ipc";
 
 export const GlobalConfigManager = () => {
   const navigate = useNavigate();
@@ -12,6 +17,7 @@ export const GlobalConfigManager = () => {
   const [message, setMessage] = useState<string>("");
   const [visibleApiKeys, setVisibleApiKeys] = useState<Record<string, boolean>>({});
   const [connectedModels, setConnectedModels] = useState<ConnectedModelResult[]>([]);
+  const [storageInfo, setStorageInfo] = useState<ConfigStorageInfoResult | null>(null);
 
   const isApiKeyVisible = (fieldId: string) => Boolean(visibleApiKeys[fieldId]);
   const toggleApiKeyVisibility = (fieldId: string) => {
@@ -119,6 +125,8 @@ export const GlobalConfigManager = () => {
         ]);
         setState(result);
         setConnectedModels(connected.models);
+        const storage = await window.api.getConfigStorageInfo();
+        setStorageInfo(storage);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "加载配置失败");
       } finally {
@@ -191,6 +199,39 @@ export const GlobalConfigManager = () => {
         <CardBody>
           <p className="text-sm text-gray-600">
             模型连接、模型选择与默认路由已迁移到 Model Studio。Settings 页面不再编辑 provider/profile。
+          </p>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Configuration Storage</h3>
+          <Button
+            variant="flat"
+            startContent={<FolderOpen size={14} />}
+            onPress={async () => {
+              try {
+                const result = await window.api.openConfigDir();
+                if (!result.ok) {
+                  setMessage(result.message ?? "打开配置目录失败");
+                }
+              } catch (error) {
+                setMessage(error instanceof Error ? error.message : "打开配置目录失败");
+              }
+            }}
+          >
+            打开配置目录
+          </Button>
+        </CardHeader>
+        <CardBody className="space-y-2 text-sm text-gray-700">
+          <p>
+            用户配置文件：<span className="font-mono">{storageInfo?.userConfigPath ?? "loading..."}</span>
+          </p>
+          <p>
+            配置目录：<span className="font-mono">{storageInfo?.configDir ?? "loading..."}</span>
+          </p>
+          <p className="text-xs text-gray-500">
+            {storageInfo?.notes ?? "Config source: defaults + project(optional) + userConfig. .env is disabled."}
           </p>
         </CardBody>
       </Card>

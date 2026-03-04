@@ -40,7 +40,6 @@ const createServices = async (seed: string) => {
       ...process.env,
       BANDRY_HOME: bandryHome
     },
-    skipDotenv: true
   });
   config.catalog.source = {
     type: "file",
