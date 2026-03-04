@@ -1,5 +1,4 @@
 import os from "node:os";
-import dotenv from "dotenv";
 import { createDefaultConfig } from "./default-config";
 import { envToLayer } from "./env-layer";
 import { applyLayer } from "./layer-merger";
@@ -59,17 +58,6 @@ const applyUserOwnedModelLayers = (config: AppConfig, paths: string[]): void => 
 export const loadAppConfig = (options: LoadAppConfigOptions = {}): AppConfig => {
   const cwd = options.cwd ?? process.cwd();
   const userHome = options.userHome ?? os.homedir();
-  const bootEnv = options.env ?? process.env;
-
-  const bootPlan = resolvePathPlan({
-    cwd,
-    userHome,
-    env: bootEnv
-  });
-
-  if (!options.skipDotenv) {
-    dotenv.config({ path: bootPlan.paths.dotenvPath, override: false, quiet: true });
-  }
 
   const env = options.env ?? process.env;
   const inheritedEnv = toInheritedEnv({
