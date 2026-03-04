@@ -32,6 +32,11 @@ export type ChatSendResult = {
   model: string;
   latencyMs: number;
   workspacePath?: string;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
 };
 
 export type ChatCancelInput = {
@@ -414,6 +419,9 @@ export type MessageInput = {
   content: string;
   status?: "pending" | "completed" | "error";
   trace?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 export type MessageResult = {
@@ -424,12 +432,18 @@ export type MessageResult = {
   status: "pending" | "completed" | "error";
   trace?: string;
   created_at: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 export type MessageUpdateInput = {
   content?: string;
   status?: "pending" | "completed" | "error";
   trace?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 // Memory types
@@ -665,4 +679,30 @@ export type UserFilesSaveConversationInput = {
 
 export type UserFilesSaveConversationResult = {
   record: UserFileRecord;
+};
+
+// Token statistics types
+export type ConversationTokenStatsInput = {
+  conversationId: string;
+};
+
+export type ConversationTokenStatsResult = {
+  conversationId: string;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  messageCount: number;
+};
+
+export type GlobalTokenStatsResult = {
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  conversationCount: number;
+  messageCount: number;
+  topConversations: Array<{
+    conversationId: string;
+    title?: string;
+    totalTokens: number;
+  }>;
 };

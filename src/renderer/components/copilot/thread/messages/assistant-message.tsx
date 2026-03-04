@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
-import { BotIcon, Loader2Icon } from "lucide-react";
+import { BotIcon } from "lucide-react";
 
 import { ProcessLayer } from "../process/process-layer";
 import { ToolResultLayer } from "../process/tool-result-layer";
@@ -10,32 +10,27 @@ import {
 } from "../process/trace-utils";
 import { AssistantActionBar, BranchPicker, MessageError } from "./message-action-bars";
 import { AssistantTextPart, HiddenTraceGroup, HiddenTracePart } from "./message-parts";
-
-const hasRenderableText = (parts: readonly unknown[]): boolean => {
-  return parts.some((part) => {
-    if (typeof part !== "object" || part === null) {
-      return false;
-    }
-
-    const partRecord = part as Record<string, unknown>;
-    if (partRecord.type !== "text") {
-      return false;
-    }
-
-    return typeof partRecord.text === "string" && partRecord.text.trim().length > 0;
-  });
-};
+import { TokenBadge } from "../../token-badge";
 
 export const AssistantMessage = () => {
   const status = useAuiState((s) => s.message.status);
   const parts = useAuiState((s) => s.message.parts);
+  const metadata = useAuiState((s) => s.message.metadata);
   const statusType = status?.type;
   const isRunning = statusType === "running";
 
-  const hasTextPart = useMemo(() => hasRenderableText(parts), [parts]);
   const traceItems = useMemo(() => extractTraceItems(parts), [parts]);
   const toolSummaries = useMemo(() => buildToolSummaries(traceItems, isRunning), [isRunning, traceItems]);
-  const hasProcess = traceItems.length > 0;
+
+  // Extract token data from metadata
+  const tokenData = useMemo(() => {
+    const custom = metadata?.custom as Record<string, unknown> | undefined;
+    return {
+      prompt_tokens: custom?.prompt_tokens as number | undefined,
+      completion_tokens: custom?.completion_tokens as number | undefined,
+      total_tokens: custom?.total_tokens as number | undefined
+    };
+  }, [metadata]);
 
   return (
     <MessagePrimitive.Root className="relative mx-auto w-full max-w-[var(--thread-max-width)] py-3" data-role="assistant">
@@ -58,6 +53,12 @@ export const AssistantMessage = () => {
           />
 
           <MessageError />
+
+          <TokenBadge
+            promptTokens={tokenData.prompt_tokens}
+            completionTokens={tokenData.completion_tokens}
+            totalTokens={tokenData.total_tokens}
+          />
 
           <div className="mt-1 ml-1 flex min-h-6 items-center">
             <BranchPicker />

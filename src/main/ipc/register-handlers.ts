@@ -17,6 +17,9 @@ import type {
   ChatUpdateEvent,
   ConversationInput,
   ConversationResult,
+  ConversationTokenStatsInput,
+  ConversationTokenStatsResult,
+  GlobalTokenStatsResult,
   GlobalSettingsState,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
@@ -605,6 +608,21 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
     );
     return { record };
   });
+
+  // Token statistics handlers
+  ipcMain.handle(
+    "conversation:getTokenStats",
+    async (_event, statsInput: ConversationTokenStatsInput): Promise<ConversationTokenStatsResult> => {
+      return input.conversationStore.getConversationTokenStats(statsInput.conversationId);
+    }
+  );
+
+  ipcMain.handle(
+    "conversation:getGlobalTokenStats",
+    async (): Promise<GlobalTokenStatsResult> => {
+      return input.conversationStore.getGlobalTokenStats();
+    }
+  );
 
   return {
     clearRunningTasks: (): void => {

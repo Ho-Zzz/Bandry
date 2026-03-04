@@ -118,7 +118,10 @@ const convertMessage = (message: Message): ThreadMessageLike => {
         custom: {
           trace: message.trace ?? [],
           requestId: message.requestId ?? null,
-          messageStatus: message.status ?? "completed"
+          messageStatus: message.status ?? "completed",
+          prompt_tokens: message.prompt_tokens,
+          completion_tokens: message.completion_tokens,
+          total_tokens: message.total_tokens
         }
       }
     };

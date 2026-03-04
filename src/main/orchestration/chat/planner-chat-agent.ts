@@ -29,13 +29,19 @@ import { buildFinalSystemPrompt, buildPlannerSystemPrompt } from "./prompts";
 import { executePlannerTool } from "./tool-executor";
 import { normalizeSpaces, truncate } from "./text-utils";
 
-const buildStreamResult = (streamed: GenerateTextResult, latencyMs: number, workspacePath?: string): ChatSendResult => {
+const buildStreamResult = (
+  streamed: GenerateTextResult,
+  latencyMs: number,
+  workspacePath?: string,
+  accumulatedUsage?: { promptTokens: number; completionTokens: number; totalTokens: number }
+): ChatSendResult => {
   return {
     reply: streamed.text,
     provider: streamed.provider,
     model: streamed.model,
     latencyMs,
-    ...(workspacePath ? { workspacePath } : {})
+    ...(workspacePath ? { workspacePath } : {}),
+    ...(accumulatedUsage ? { usage: accumulatedUsage } : {})
   };
 };
 
@@ -288,6 +294,9 @@ export class ToolPlanningChatAgent {
     const observations: ToolObservation[] = [];
     const attemptedToolSignatures = new Set<string>();
     let accumulatedLatency = 0;
+    let accumulatedPromptTokens = 0;
+    let accumulatedCompletionTokens = 0;
+    let accumulatedTotalTokens = 0;
     let plannerDraftAnswer: string | undefined;
     let clarificationFinalReply: string | undefined;
     let failedToolCount = 0;
@@ -389,7 +398,9 @@ export class ToolPlanningChatAgent {
               metadata: {
                 ...ctx.metadata,
                 plannerProvider: result.provider,
-                plannerModel: result.model
+                plannerModel: result.model,
+                plannerLatencyMs: result.latencyMs,
+                plannerUsage: result.usage
               }
             };
           }
@@ -398,7 +409,8 @@ export class ToolPlanningChatAgent {
           provider: plannerCtx.metadata.plannerProvider as GenerateTextResult["provider"],
           model: plannerCtx.metadata.plannerModel as string,
           text: plannerCtx.llmResponse?.content ?? "",
-          latencyMs: 0
+          latencyMs: (plannerCtx.metadata.plannerLatencyMs as number | undefined) ?? 0,
+          usage: plannerCtx.metadata.plannerUsage as GenerateTextResult["usage"]
         };
         middlewareCtx = plannerCtx;
       } catch (error) {
@@ -408,6 +420,14 @@ export class ToolPlanningChatAgent {
       }
 
       accumulatedLatency += planner.latencyMs;
+
+      // Accumulate planner tokens
+      if (planner.usage) {
+        accumulatedPromptTokens += planner.usage.promptTokens ?? 0;
+        accumulatedCompletionTokens += planner.usage.completionTokens ?? 0;
+        accumulatedTotalTokens += planner.usage.totalTokens ?? 0;
+      }
+
       const action = parsePlannerAction(planner.text);
       if (!action) {
         if (!looksLikeJsonAction(planner.text)) {
@@ -640,6 +660,13 @@ export class ToolPlanningChatAgent {
           usage: finalCtx.metadata.synthUsage as GenerateTextResult["usage"]
         };
 
+        // Accumulate synthesizer tokens
+        if (finalResponse.usage) {
+          accumulatedPromptTokens += finalResponse.usage.promptTokens ?? 0;
+          accumulatedCompletionTokens += finalResponse.usage.completionTokens ?? 0;
+          accumulatedTotalTokens += finalResponse.usage.totalTokens ?? 0;
+        }
+
         // Fallback persist write must run BEFORE runAfterAgent, because
         // SandboxBindingMiddleware.afterAgent clears the workspace context.
         // Writing after that would resolve /mnt/workspace/output/... to the
@@ -713,6 +740,17 @@ export class ToolPlanningChatAgent {
     const totalDuration = Date.now() - requestStartTime;
     console.log(`[Chat] Request completed: ${totalDuration}ms (accumulated LLM: ${accumulatedLatency}ms, overhead: ${totalDuration - accumulatedLatency}ms)`);
 
-    return buildStreamResult(finalResponse, accumulatedLatency, middlewareCtx.workspacePath || undefined);
+    return buildStreamResult(
+      finalResponse,
+      accumulatedLatency,
+      middlewareCtx.workspacePath || undefined,
+      accumulatedTotalTokens > 0
+        ? {
+            promptTokens: accumulatedPromptTokens,
+            completionTokens: accumulatedCompletionTokens,
+            totalTokens: accumulatedTotalTokens
+          }
+        : undefined
+    );
   }
 }

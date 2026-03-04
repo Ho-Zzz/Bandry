@@ -25,6 +25,9 @@ export type Message = {
   timestamp: number;
   trace?: ChatUpdateEvent[];
   requestId?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 export type PendingClarification = {
@@ -167,7 +170,10 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           status: m.status,
           timestamp: m.created_at,
           trace,
-          requestId: getRequestIdFromTrace(trace)
+          requestId: getRequestIdFromTrace(trace),
+          prompt_tokens: m.prompt_tokens,
+          completion_tokens: m.completion_tokens,
+          total_tokens: m.total_tokens
         };
       });
 
@@ -493,7 +499,10 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
                   ...message,
                   content: result.reply,
                   status: "completed" as MessageStatus,
-                  trace: finalTrace
+                  trace: finalTrace,
+                  prompt_tokens: result.usage?.promptTokens,
+                  completion_tokens: result.usage?.completionTokens,
+                  total_tokens: result.usage?.totalTokens
                 }
               : message
           )
@@ -504,7 +513,10 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           await window.api.messageUpdate(savedAssistantMsgId, {
             content: result.reply,
             status: "completed",
-            trace: finalTrace.length > 0 ? JSON.stringify(finalTrace) : undefined
+            trace: finalTrace.length > 0 ? JSON.stringify(finalTrace) : undefined,
+            prompt_tokens: result.usage?.promptTokens,
+            completion_tokens: result.usage?.completionTokens,
+            total_tokens: result.usage?.totalTokens
           });
         }
 

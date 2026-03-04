@@ -7,6 +7,9 @@ import type {
   ChatUpdateEvent,
   ConversationInput,
   ConversationResult,
+  ConversationTokenStatsInput,
+  ConversationTokenStatsResult,
+  GlobalTokenStatsResult,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
   MemoryDeleteResourceInput,
@@ -110,6 +113,8 @@ declare global {
       conversationGet: (id: string) => Promise<ConversationResult | null>;
       conversationUpdate: (id: string, input: Partial<ConversationInput>) => Promise<ConversationResult | null>;
       conversationDelete: (id: string) => Promise<boolean>;
+      conversationGetTokenStats: (input: ConversationTokenStatsInput) => Promise<ConversationTokenStatsResult>;
+      conversationGetGlobalTokenStats: () => Promise<GlobalTokenStatsResult>;
 
       // Message Management
       messageCreate: (input: MessageInput) => Promise<MessageResult>;

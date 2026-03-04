@@ -8,6 +8,9 @@ import type {
   ChatUpdateEvent,
   ConversationInput,
   ConversationResult,
+  ConversationTokenStatsInput,
+  ConversationTokenStatsResult,
+  GlobalTokenStatsResult,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
   MemoryDeleteResourceInput,
@@ -168,6 +171,10 @@ const api = {
     ipcRenderer.invoke("conversation:update", id, input),
   conversationDelete: (id: string): Promise<boolean> =>
     ipcRenderer.invoke("conversation:delete", id),
+  conversationGetTokenStats: (input: ConversationTokenStatsInput): Promise<ConversationTokenStatsResult> =>
+    ipcRenderer.invoke("conversation:getTokenStats", input),
+  conversationGetGlobalTokenStats: (): Promise<GlobalTokenStatsResult> =>
+    ipcRenderer.invoke("conversation:getGlobalTokenStats"),
   // Message API
   messageCreate: (input: MessageInput): Promise<MessageResult> =>
     ipcRenderer.invoke("message:create", input),
