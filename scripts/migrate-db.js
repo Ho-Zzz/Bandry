@@ -1,71 +1,59 @@
-#!/usr/bin/env node
-/**
- * Database Migration Script
- * Adds token tracking fields to existing databases
- */
+import Database from "better-sqlite3";
+import * as fs from "fs";
+import * as path from "path";
 
-const Database = require('better-sqlite3');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+const hasTable = (db: Database.Database, tableName: string): boolean => {
+  const row = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(tableName) as { "1"?: number } | undefined;
+  return !!row;
+};
 
-// Find database location
-const possiblePaths = [
-  path.join(os.homedir(), '.bandry', 'data.db'),
-  path.join(os.homedir(), 'Library', 'Application Support', 'bandry', 'data.db'),
-  path.join(os.homedir(), '.config', 'bandry', 'data.db'),
-];
-
-let dbPath = null;
-for (const p of possiblePaths) {
-  if (fs.existsSync(p)) {
-    dbPath = p;
-    break;
+const runMigrations = (db: Database.Database): void => {
+  // Conversations table migrations.
+  if (hasTable(db, "conversations")) {
+    const columns = db.pragma("table_info(conversations)") as Array<{ name: string }>;
+    const hasWorkspacePath = columns.some((col) => col.name === "workspace_path");
+    if (!hasWorkspacePath) {
+      db.exec("ALTER TABLE conversations ADD COLUMN workspace_path TEXT");
+    }
   }
-}
 
-if (!dbPath) {
-  console.error('❌ Database file not found. Checked:');
-  possiblePaths.forEach(p => console.error(`   - ${p}`));
-  process.exit(1);
-}
+  // Messages table migrations (token tracking).
+  if (hasTable(db, "messages")) {
+    const columns = db.pragma("table_info(messages)") as Array<{ name: string }>;
+    const hasPromptTokens = columns.some((col) => col.name === "prompt_tokens");
+    const hasCompletionTokens = columns.some((col) => col.name === "completion_tokens");
+    const hasTotalTokens = columns.some((col) => col.name === "total_tokens");
 
-console.log(`📁 Found database: ${dbPath}`);
+    if (!hasPromptTokens) {
+      db.exec("ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER");
+    }
+    if (!hasCompletionTokens) {
+      db.exec("ALTER TABLE messages ADD COLUMN completion_tokens INTEGER");
+    }
+    if (!hasTotalTokens) {
+      db.exec("ALTER TABLE messages ADD COLUMN total_tokens INTEGER");
+    }
 
-// Open database
-const db = new Database(dbPath);
+    // Create index after ensuring total_tokens exists.
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_messages_tokens ON messages(total_tokens) WHERE total_tokens IS NOT NULL"
+    );
+  }
+};
 
-// Check if migration is needed
-const tableInfo = db.pragma('table_info(messages)');
-const hasTokenFields = tableInfo.some(col => col.name === 'total_tokens');
+export const openSqliteDatabase = (dbPath: string, schemaPath: string): Database.Database => {
+  const dir = path.dirname(dbPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 
-if (hasTokenFields) {
-  console.log('✅ Database already has token fields. No migration needed.');
-  db.close();
-  process.exit(0);
-}
+  const db = new Database(dbPath);
+  // Run migrations first to avoid schema/index errors on older DBs.
+  runMigrations(db);
+  const schema = fs.readFileSync(schemaPath, "utf8");
+  db.exec(schema);
 
-console.log('🔄 Applying migration: Adding token fields...');
-
-try {
-  // Add columns
-  db.exec('ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER');
-  db.exec('ALTER TABLE messages ADD COLUMN completion_tokens INTEGER');
-  db.exec('ALTER TABLE messages ADD COLUMN total_tokens INTEGER');
-
-  // Create index
-  db.exec('CREATE INDEX IF NOT EXISTS idx_messages_tokens ON messages(total_tokens) WHERE total_tokens IS NOT NULL');
-
-  console.log('✅ Migration completed successfully!');
-  console.log('');
-  console.log('Token fields added:');
-  console.log('  - prompt_tokens');
-  console.log('  - completion_tokens');
-  console.log('  - total_tokens');
-
-} catch (error) {
-  console.error('❌ Migration failed:', error.message);
-  process.exit(1);
-} finally {
-  db.close();
-}
+  return db;
+};

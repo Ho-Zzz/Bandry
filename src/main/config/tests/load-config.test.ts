@@ -441,6 +441,29 @@ describe("loadAppConfig", () => {
       userConfigPath,
       JSON.stringify(
         {
+          modelProfiles: [
+            {
+              id: "profile_openai_default",
+              name: "OpenAI Default",
+              provider: "openai",
+              model: "gpt-4.1-mini",
+              enabled: true
+            },
+            {
+              id: "profile_deepseek_default",
+              name: "DeepSeek Default",
+              provider: "deepseek",
+              model: "deepseek-chat",
+              enabled: true
+            },
+            {
+              id: "profile_volcengine_default",
+              name: "Volcengine Default",
+              provider: "volcengine",
+              model: "doubao-seed-1-6-250615",
+              enabled: true
+            }
+          ],
           routing: {
             assignments: {
               "lead.planner": "profile_openai_default",

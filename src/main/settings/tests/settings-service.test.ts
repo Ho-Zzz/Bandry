@@ -5,6 +5,19 @@ import { describe, expect, it } from "vitest";
 import { loadAppConfig } from "../../config";
 import { SettingsService } from "../settings-service";
 
+const buildProfile = (
+  id: string,
+  provider: "openai" | "deepseek" | "volcengine",
+  model: string
+) => ({
+  id,
+  name: id,
+  provider,
+  model,
+  enabled: true,
+  temperature: 0.2
+});
+
 const createService = async (seed: string): Promise<SettingsService> => {
   const bandryHome = path.join(os.tmpdir(), `bandry-settings-${seed}-${Date.now()}`);
   await fs.mkdir(bandryHome, { recursive: true });
@@ -37,6 +50,7 @@ describe("SettingsService memory validation", () => {
   it("rejects non-openai/volcengine profile bindings", async () => {
     const service = await createService("provider-blocked");
     const state = service.getState();
+    state.modelProfiles = [buildProfile("profile_deepseek_default", "deepseek", "deepseek-chat")];
     state.memory.enableMemory = true;
     state.memory.openviking.enabled = true;
     state.providers.deepseek.apiKey = "sk-deepseek-valid-key-1234567890";
@@ -51,6 +65,10 @@ describe("SettingsService memory validation", () => {
   it("accepts valid openai/volcengine bindings with usable credentials", async () => {
     const service = await createService("valid");
     const state = service.getState();
+    state.modelProfiles = [
+      buildProfile("profile_openai_default", "openai", "gpt-4.1-mini"),
+      buildProfile("profile_volcengine_default", "volcengine", "doubao-seed-1-6-250615")
+    ];
     state.memory.enableMemory = true;
     state.memory.openviking.enabled = true;
     state.providers.openai.apiKey = "sk-openai-valid-key-1234567890";

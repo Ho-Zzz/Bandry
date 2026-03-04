@@ -33,6 +33,32 @@ const createConfig = () => {
   config.providers.openai.apiKey = "sk-openai-valid-key-1234567890";
   config.providers.deepseek.apiKey = "sk-deepseek-valid-key-1234567890";
   config.providers.volcengine.apiKey = "volc-key";
+  config.modelProfiles = [
+    {
+      id: "profile_openai_default",
+      name: "OpenAI Default",
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      enabled: true,
+      temperature: 0.2
+    },
+    {
+      id: "profile_deepseek_default",
+      name: "DeepSeek Default",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      enabled: true,
+      temperature: 0.2
+    },
+    {
+      id: "profile_volcengine_default",
+      name: "Volcengine Default",
+      provider: "volcengine",
+      model: "doubao-seed-1-6-250615",
+      enabled: true,
+      temperature: 0.2
+    }
+  ];
   return config;
 };
 

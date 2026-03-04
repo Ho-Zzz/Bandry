@@ -144,10 +144,6 @@ const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
 const validateState = (state: GlobalSettingsState): string[] => {
   const errors: string[] = [];
 
-  if (state.modelProfiles.length === 0) {
-    errors.push("至少需要一个模型档案");
-  }
-
   const profileIds = new Set(state.modelProfiles.map((profile) => profile.id));
   for (const role of Object.keys(state.routing)) {
     const profileId = state.routing[role as keyof GlobalSettingsState["routing"]]?.trim();
