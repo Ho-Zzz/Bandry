@@ -17,7 +17,6 @@ export const startMainApp = (): void => {
     await composition.openViking.processManager?.stop();
     composition.openViking.processManager = null;
     composition.openViking.memoryProvider = null;
-    composition.toolPlanningChatAgent.setMemoryProvider(null);
   };
 
   const syncOpenViking = async (): Promise<void> => {
@@ -50,10 +49,8 @@ export const startMainApp = (): void => {
           scoreThreshold: composition.config.openviking.memoryScoreThreshold,
           commitDebounceMs: composition.config.openviking.commitDebounceMs
         });
-        composition.toolPlanningChatAgent.setMemoryProvider(composition.openViking.memoryProvider);
       } catch {
         composition.openViking.memoryProvider = null;
-        composition.toolPlanningChatAgent.setMemoryProvider(null);
       }
     };
 
@@ -65,7 +62,6 @@ export const startMainApp = (): void => {
         console.error("[OpenViking] Process crashed and could not be restarted");
         composition.openViking.processManager = null;
         composition.openViking.memoryProvider = null;
-        composition.toolPlanningChatAgent.setMemoryProvider(null);
       }
     });
 
@@ -80,7 +76,6 @@ export const startMainApp = (): void => {
       await manager.stop();
       composition.openViking.processManager = null;
       composition.openViking.memoryProvider = null;
-      composition.toolPlanningChatAgent.setMemoryProvider(null);
     }
   };
 
@@ -93,7 +88,7 @@ export const startMainApp = (): void => {
 
   const { clearRunningTasks } = registerIpcHandlers({
     config: composition.config,
-    toolPlanningChatAgent: composition.toolPlanningChatAgent,
+    chatAgentFactory: composition.chatAgentFactory,
     orchestrator: composition.orchestrator,
     sandboxService: composition.sandboxService,
     settingsService: composition.settingsService,

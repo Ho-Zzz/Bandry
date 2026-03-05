@@ -71,16 +71,17 @@ export class TitleMiddleware implements Middleware {
     firstUser: string,
     assistantReply: string
   ): Promise<void> {
-    if (!runtime) {
+    if (!runtime?.conversationStore) {
       return;
     }
+    const conversationStore = runtime.conversationStore;
 
     // For very short conversations (greetings, simple Q&A), skip LLM and use fallback directly
     const isSimpleConversation = firstUser.length < 30 || assistantReply.length < 150;
     if (isSimpleConversation) {
       const title = generateFallbackTitle(firstUser);
       if (title && title.trim().length > 0) {
-        runtime.conversationStore.updateConversation(conversationId, { title });
+        conversationStore.updateConversation(conversationId, { title });
         // Don't emit update for simple conversations to reduce noise
       }
       return;
@@ -96,7 +97,7 @@ export class TitleMiddleware implements Middleware {
                                target.model.toLowerCase().includes('o3');
       if (isReasoningModel) {
         title = generateFallbackTitle(firstUser);
-        runtime.conversationStore.updateConversation(conversationId, { title });
+        conversationStore.updateConversation(conversationId, { title });
         return;
       }
 
@@ -135,7 +136,7 @@ export class TitleMiddleware implements Middleware {
         clearTimeout(timeoutId);
         throw error;
       }
-    } catch (error) {
+    } catch {
       // If LLM fails, generate a smarter fallback title
       title = generateFallbackTitle(firstUser);
       // Don't log errors to reduce noise
@@ -145,7 +146,7 @@ export class TitleMiddleware implements Middleware {
       return;
     }
 
-    runtime.conversationStore.updateConversation(conversationId, { title });
+    conversationStore.updateConversation(conversationId, { title });
     // Don't emit update to reduce trace noise
   }
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AppConfig, RuntimeRole } from "../../config";
+import type { AppConfig, ModelCapabilities, RuntimeRole } from "../../config";
 import type { GenerateTextResult, ModelsFactory } from "../../llm/runtime";
 import { resolveRuntimeTarget, type RuntimeModelTarget } from "../../llm/runtime/runtime-target";
 import type { MemoryProvider } from "../../memory/contracts/types";
@@ -28,6 +28,20 @@ import { createMiddlewarePipeline } from "./middleware";
 import { buildFinalSystemPrompt, buildPlannerSystemPrompt } from "./prompts";
 import { executePlannerTool } from "./tool-executor";
 import { normalizeSpaces, truncate } from "./text-utils";
+
+type ReasoningEffort = "minimal" | "low" | "medium" | "high";
+
+export type ChatRequestContext = {
+  modelProfileId?: string;
+  modelCapabilities?: ModelCapabilities;
+  thinkingEnabled?: boolean;
+  apiExtras?: {
+    extraBody?: Record<string, unknown>;
+    reasoningEffort?: ReasoningEffort;
+  };
+  warnings?: string[];
+  memoryProvider?: MemoryProvider;
+};
 
 const buildStreamResult = (
   streamed: GenerateTextResult,
@@ -142,6 +156,7 @@ export class ToolPlanningChatAgent {
     userMessage: string;
     plannerTarget: RuntimeModelTarget;
     abortSignal?: AbortSignal;
+    apiExtras?: ChatRequestContext["apiExtras"];
   }): Promise<ChatClarificationOption[]> {
     const fallback = this.buildFallbackClarificationOptions(params.question);
     try {
@@ -165,7 +180,9 @@ export class ToolPlanningChatAgent {
             content: `User request: ${params.userMessage}\nClarification question: ${params.question}`
           }
         ],
-        abortSignal: params.abortSignal
+        abortSignal: params.abortSignal,
+        extraBody: params.apiExtras?.extraBody,
+        reasoningEffort: params.apiExtras?.reasoningEffort
       });
 
       const jsonArray = extractJsonArray(response.text);
@@ -206,7 +223,8 @@ export class ToolPlanningChatAgent {
     input: ChatSendInput,
     onUpdate?: (stage: ChatUpdateStage, message: string, payload?: ChatUpdatePayload) => void,
     onDelta?: (delta: string) => void,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    requestContext?: ChatRequestContext
   ): Promise<ChatSendResult> {
     const requestStartTime = Date.now();
     console.log(`[Chat] Request started: "${input.message.slice(0, 50)}${input.message.length > 50 ? '...' : ''}"`);
@@ -217,6 +235,12 @@ export class ToolPlanningChatAgent {
     }
 
     const mode: ChatMode = input.mode ?? "default";
+    const activeMemoryProvider = requestContext?.memoryProvider ?? this.memoryProvider;
+    const apiExtras = requestContext?.apiExtras;
+    const overrideModelProfileId =
+      requestContext?.modelProfileId?.trim() ||
+      input.modelProfileId?.trim() ||
+      undefined;
     const persistRequirement = detectPersistRequirement(message);
     const requestedPersistPath = persistRequirement.required ? extractRequestedPath(message) : undefined;
     const defaultPersistTargetPath = defaultPersistPath(message, new Date());
@@ -228,7 +252,7 @@ export class ToolPlanningChatAgent {
         })
       : undefined;
     const userSpecifiedPersistPath = Boolean(requestedPersistPath?.trim());
-    let persistRequired = persistRequirement.required;
+    const persistRequired = persistRequirement.required;
     let persistDone = false;
     let persistPathHint = resolvedPersistPath?.ok ? resolvedPersistPath.path : "";
     let persistedPath: string | undefined;
@@ -239,12 +263,18 @@ export class ToolPlanningChatAgent {
 
     // Log mode for debugging
     emitUpdate("planning", `Mode: ${mode}`);
+    if (requestContext?.thinkingEnabled !== undefined) {
+      emitUpdate("planning", `Thinking enabled: ${requestContext.thinkingEnabled ? "true" : "false"}`);
+    }
+    for (const warning of requestContext?.warnings ?? []) {
+      emitUpdate("planning", `Thinking fallback: ${warning}`);
+    }
 
     let plannerTarget: RuntimeModelTarget;
     let synthTarget: RuntimeModelTarget;
     try {
-      plannerTarget = resolveRuntimeTarget(this.config, "lead.planner");
-      synthTarget = resolveRuntimeTarget(this.config, "lead.synthesizer");
+      plannerTarget = resolveRuntimeTarget(this.config, "lead.planner", overrideModelProfileId);
+      synthTarget = resolveRuntimeTarget(this.config, "lead.synthesizer", overrideModelProfileId);
     } catch (error) {
       const messageWithRole = `LeadAgent 路由配置错误: ${getErrorMessage(error)}`;
       emitUpdate("error", messageWithRole);
@@ -268,9 +298,14 @@ export class ToolPlanningChatAgent {
       modelsFactory: this.modelsFactory,
       sandboxService: this.sandboxService,
       conversationStore: this.conversationStore,
-      memoryProvider: this.memoryProvider,
+      memoryProvider: activeMemoryProvider,
       mode,
-      conversationId: input.conversationId
+      conversationId: input.conversationId,
+      modelCapabilities: requestContext?.modelCapabilities,
+      requestParams: {
+        thinkingEnabled: requestContext?.thinkingEnabled,
+        isPlanMode: mode === "subagents"
+      }
     });
     let middlewareCtx = await pipeline.runBeforeAgent({
       sessionId: input.requestId?.trim() || randomUUID(),
@@ -282,6 +317,11 @@ export class ToolPlanningChatAgent {
       metadata: {},
       state: "before_agent",
       chatMode: mode,
+      modelCapabilities: requestContext?.modelCapabilities,
+      requestParams: {
+        thinkingEnabled: requestContext?.thinkingEnabled,
+        isPlanMode: mode === "subagents"
+      },
       runtime: {
         config: this.config,
         modelsFactory: this.modelsFactory,
@@ -388,7 +428,9 @@ export class ToolPlanningChatAgent {
               temperature: plannerTarget.temperature ?? 0,
               maxTokens: plannerTarget.maxTokens,
               messages: ctx.messages,
-              abortSignal
+              abortSignal,
+              extraBody: apiExtras?.extraBody,
+              reasoningEffort: apiExtras?.reasoningEffort
             });
             return {
               ...ctx,
@@ -470,7 +512,8 @@ export class ToolPlanningChatAgent {
           question,
           userMessage: message,
           plannerTarget,
-          abortSignal
+          abortSignal,
+          apiExtras
         });
         clarificationFinalReply = `需要进一步确认：${question}`;
         emitUpdate("clarification", question, {
@@ -510,7 +553,7 @@ export class ToolPlanningChatAgent {
             workspacePath: ctx.workspacePath,
             onDelegationUpdate: (detail) => emitUpdate("tool", detail),
             abortSignal,
-            memoryProvider: this.memoryProvider,
+            memoryProvider: activeMemoryProvider,
             sessionId: middlewareCtx.sessionId
           })
       );
@@ -535,7 +578,8 @@ export class ToolPlanningChatAgent {
           question,
           userMessage: message,
           plannerTarget,
-          abortSignal
+          abortSignal,
+          apiExtras
         });
         clarificationFinalReply = `需要进一步确认：${question}`;
         emitUpdate("clarification", question, {
@@ -630,7 +674,9 @@ export class ToolPlanningChatAgent {
                 temperature: synthTarget.temperature ?? 0.2,
                 maxTokens: synthTarget.maxTokens,
                 messages: ctx.messages,
-                abortSignal
+                abortSignal,
+                extraBody: apiExtras?.extraBody,
+                reasoningEffort: apiExtras?.reasoningEffort
               },
               (delta) => {
                 onDelta?.(delta);

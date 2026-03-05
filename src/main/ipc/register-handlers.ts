@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { toPublicConfigSummary, type AppConfig } from "../config";
-import { ToolPlanningChatAgent } from "../orchestration/chat";
+import type { ChatAgentFactory } from "../orchestration/chat/chat-agent-factory";
 import { LocalOrchestrator } from "../orchestration/workflow";
 import { SandboxService } from "../sandbox";
 import { ModelOnboardingService, SettingsService } from "../settings";
@@ -90,7 +90,7 @@ import { resolveRuntimeTarget } from "../llm/runtime/runtime-target";
 
 type RegisterIpcHandlersInput = {
   config: AppConfig;
-  toolPlanningChatAgent: ToolPlanningChatAgent;
+  chatAgentFactory: ChatAgentFactory;
   orchestrator: LocalOrchestrator;
   sandboxService: SandboxService;
   settingsService: SettingsService;
@@ -163,7 +163,14 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
     activeChatRequests.set(requestId, controller);
 
     try {
-      return await input.toolPlanningChatAgent.send(
+      const { agent, context } = input.chatAgentFactory.createAgent({
+        conversationId: chatInput.conversationId,
+        modelProfileId: chatInput.modelProfileId,
+        mode: chatInput.mode,
+        thinkingEnabled: chatInput.thinkingEnabled,
+        reasoningEffort: chatInput.reasoningEffort
+      });
+      return await agent.send(
         chatInput,
         (stage, message, payload) => {
           const update: ChatUpdateEvent = {
@@ -183,7 +190,8 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
           };
           input.eventBus.broadcastChatDelta(update);
         },
-        controller.signal
+        controller.signal,
+        context
       );
     } finally {
       activeChatRequests.delete(requestId);

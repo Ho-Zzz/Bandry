@@ -11,13 +11,14 @@ import { LeadRouteAlert } from "./lead-route-alert";
 import { useCopilotBootstrap } from "./hooks/use-copilot-bootstrap";
 import { useCopilotPageState } from "./hooks/use-copilot-page-state";
 import { CopilotThread } from "./thread/copilot-thread";
+import { useModelCapabilities } from "../../hooks/use-model-capabilities";
 
 export const CopilotPage = () => {
   const { conversationId: routeConversationId } = useParams<{ conversationId?: string }>();
   const navigate = useNavigate();
   const latestRouteConversationIdRef = useRef<string | undefined>(routeConversationId);
 
-  const { state, setChatMode, setClarificationInput, clearClarificationInput } = useCopilotPageState();
+  const { state, setChatMode, setClarificationInput, clearClarificationInput, setThinkingEnabled } = useCopilotPageState();
   const { profilesLoading, leadRouteReady, memoryStatus } = useCopilotBootstrap();
 
   const { conversations, deleteConversation, fetchConversations } = useConversationStore();
@@ -30,11 +31,15 @@ export const CopilotPage = () => {
     cancelCurrentRequest,
     submitClarificationCustom,
     submitClarificationOption,
-    workspacePath
+    workspacePath,
+    activeModelProfileId
   } = useCopilotRuntime({
     conversationId: routeConversationId,
-    mode: state.chatMode
+    mode: state.chatMode,
+    thinkingEnabled: state.thinkingEnabled
   });
+  const { supportsThinking, profileId: resolvedProfileId } = useModelCapabilities(activeModelProfileId);
+  const latestProfileIdRef = useRef<string | undefined>(undefined);
 
   const setPreviewWorkspacePath = usePreviewStore((s) => s.setWorkspacePath);
   const isPreviewOpen = usePreviewStore((s) => s.isOpen);
@@ -52,6 +57,17 @@ export const CopilotPage = () => {
       clearClarificationInput();
     }
   }, [clearClarificationInput, pendingClarification]);
+
+  useEffect(() => {
+    if (!resolvedProfileId) {
+      return;
+    }
+    if (latestProfileIdRef.current === resolvedProfileId) {
+      return;
+    }
+    latestProfileIdRef.current = resolvedProfileId;
+    setThinkingEnabled(supportsThinking);
+  }, [resolvedProfileId, setThinkingEnabled, supportsThinking]);
 
   useEffect(() => {
     const hasConversationInList = conversationId
@@ -128,6 +144,8 @@ export const CopilotPage = () => {
               clarificationInput={state.clarificationInput}
               chatMode={state.chatMode}
               isLoading={isLoading}
+              thinkingEnabled={state.thinkingEnabled}
+              supportsThinking={supportsThinking}
               onClarificationInputChange={setClarificationInput}
               onClarificationOptionSelect={(value) => {
                 void handleClarificationOption(value);
@@ -136,6 +154,7 @@ export const CopilotPage = () => {
                 void handleClarificationCustomSubmit();
               }}
               onChatModeChange={setChatMode}
+              onThinkingEnabledChange={setThinkingEnabled}
               onCancelGeneration={handleCancelGeneration}
             />
           )}

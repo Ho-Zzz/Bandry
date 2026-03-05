@@ -14,10 +14,13 @@ type CopilotThreadProps = {
   clarificationInput: string;
   chatMode: ChatMode;
   isLoading: boolean;
+  thinkingEnabled: boolean;
+  supportsThinking: boolean;
   onClarificationInputChange: (value: string) => void;
   onClarificationOptionSelect: (value: string) => void;
   onClarificationCustomSubmit: () => void;
   onChatModeChange: (mode: ChatMode) => void;
+  onThinkingEnabledChange: (enabled: boolean) => void;
   onCancelGeneration: () => void;
 };
 
@@ -26,10 +29,13 @@ export const CopilotThread = ({
   clarificationInput,
   chatMode,
   isLoading,
+  thinkingEnabled,
+  supportsThinking,
   onClarificationInputChange,
   onClarificationOptionSelect,
   onClarificationCustomSubmit,
   onChatModeChange,
+  onThinkingEnabledChange,
   onCancelGeneration
 }: CopilotThreadProps) => {
   return (
@@ -68,7 +74,10 @@ export const CopilotThread = ({
           <CopilotComposer
             chatMode={chatMode}
             isLoading={isLoading}
+            thinkingEnabled={thinkingEnabled}
+            supportsThinking={supportsThinking}
             onChatModeChange={onChatModeChange}
+            onThinkingEnabledChange={onThinkingEnabledChange}
             onCancelGeneration={onCancelGeneration}
           />
         </ThreadPrimitive.ViewportFooter>

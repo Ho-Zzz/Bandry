@@ -85,6 +85,26 @@ describe("middleware loader order", () => {
     expect(middlewares[middlewares.length - 1]?.name).toBe("clarification");
   });
 
+  it("includes todolist and subagent_limit when requestParams.isPlanMode is true", () => {
+    const config = createConfig();
+    const sandboxService = new SandboxService(config);
+
+    const middlewares = buildMiddlewares({
+      config,
+      modelsFactory: {} as never,
+      sandboxService,
+      conversationStore: undefined,
+      mode: "default",
+      requestParams: {
+        isPlanMode: true
+      }
+    });
+
+    expect(middlewares.map((item) => item.name)).toContain("todolist");
+    expect(middlewares.map((item) => item.name)).toContain("subagent_limit");
+    expect(middlewares[middlewares.length - 1]?.name).toBe("clarification");
+  });
+
   it("uses NoopMemoryMiddleware when no memoryProvider given", () => {
     const config = createConfig();
     const sandboxService = new SandboxService(config);

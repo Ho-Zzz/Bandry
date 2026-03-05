@@ -90,7 +90,9 @@ const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
       model: profile.model,
       enabled: profile.enabled,
       temperature: profile.temperature,
-      maxTokens: profile.maxTokens
+      maxTokens: profile.maxTokens,
+      capabilities: profile.capabilities,
+      whenThinkingEnabled: profile.whenThinkingEnabled
     })),
     routing: { ...config.routing.assignments },
     memory: {

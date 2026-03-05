@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AuiIf, ComposerPrimitive } from "@assistant-ui/react";
 import { ArrowUpIcon, BrainIcon, Maximize2Icon, Minimize2Icon, PaperclipIcon, SquareIcon, UsersIcon, ZapIcon } from "lucide-react";
 import { clsx } from "clsx";
+import { Switch } from "@heroui/react";
 
 import type { ChatMode } from "../../../../shared/ipc";
 import { ComposerAttachmentItem, IconButton } from "../assistant-ui/primitives";
@@ -9,7 +10,10 @@ import { ComposerAttachmentItem, IconButton } from "../assistant-ui/primitives";
 type CopilotComposerProps = {
   chatMode: ChatMode;
   isLoading: boolean;
+  thinkingEnabled: boolean;
+  supportsThinking: boolean;
   onChatModeChange: (mode: ChatMode) => void;
+  onThinkingEnabledChange: (enabled: boolean) => void;
   onCancelGeneration: () => void;
 };
 
@@ -43,29 +47,61 @@ const ModeIcon = ({ mode }: { mode: ChatMode }) => {
   return <ZapIcon size={13} />;
 };
 
-export const CopilotComposer = ({ chatMode, isLoading, onChatModeChange, onCancelGeneration }: CopilotComposerProps) => {
+export const CopilotComposer = ({
+  chatMode,
+  isLoading,
+  thinkingEnabled,
+  supportsThinking,
+  onChatModeChange,
+  onThinkingEnabledChange,
+  onCancelGeneration
+}: CopilotComposerProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const forceThinkingByMode = chatMode === "thinking";
+  const effectiveThinkingEnabled = forceThinkingByMode ? true : thinkingEnabled;
+  const disableThinkingSwitch = isLoading || forceThinkingByMode;
 
   return (
     <ComposerPrimitive.Root className="relative flex w-full flex-col">
       <ComposerPrimitive.AttachmentDropzone className="flex w-full flex-col rounded-3xl border border-zinc-300 bg-white px-1 pt-2 outline-none transition-shadow has-[textarea:focus-visible]:border-emerald-500 has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-emerald-200 data-[dragging=true]:border-emerald-500 data-[dragging=true]:border-dashed data-[dragging=true]:bg-emerald-50">
-        <div className="mb-1 flex items-center justify-between px-3">
-          <label className="inline-flex items-center gap-1 text-xs text-zinc-500">
-            <ModeIcon mode={chatMode} />
-            <span>Mode</span>
-          </label>
-          <select
-            value={chatMode}
-            onChange={(event) => onChatModeChange(event.target.value as ChatMode)}
-            className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none"
-            disabled={isLoading}
-          >
-            {modeOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+        <div className="mb-1 flex flex-col gap-2 px-3">
+          <div className="flex items-center justify-between">
+            <label className="inline-flex items-center gap-1 text-xs text-zinc-500">
+              <ModeIcon mode={chatMode} />
+              <span>Mode</span>
+            </label>
+            <select
+              value={chatMode}
+              onChange={(event) => onChatModeChange(event.target.value as ChatMode)}
+              className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none"
+              disabled={isLoading}
+            >
+              {modeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5">
+            <div className="flex flex-col">
+              <span className="text-xs font-medium text-zinc-700">Thinking</span>
+              <span className="text-[11px] text-zinc-500">
+                {forceThinkingByMode
+                  ? "Mode=thinking forces this on"
+                  : supportsThinking
+                    ? "Model supports native thinking"
+                    : "Model does not declare thinking support; best-effort fallback"}
+              </span>
+            </div>
+            <Switch
+              size="sm"
+              isSelected={effectiveThinkingEnabled}
+              isDisabled={disableThinkingSwitch}
+              onValueChange={onThinkingEnabledChange}
+            />
+          </div>
         </div>
 
         <ComposerPrimitive.Attachments

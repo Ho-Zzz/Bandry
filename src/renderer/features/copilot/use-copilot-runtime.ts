@@ -16,6 +16,7 @@ import { useCopilotChat, type Message } from "./use-copilot-chat";
 type UseCopilotRuntimeOptions = {
   conversationId?: string;
   mode?: ChatMode;
+  thinkingEnabled?: boolean;
 };
 
 type TraceToolArgs = {
@@ -255,7 +256,8 @@ const findReloadSeedText = (messages: Message[], parentId: string | null): strin
 export const useCopilotRuntime = (options: UseCopilotRuntimeOptions = {}) => {
   const chat = useCopilotChat({
     conversationId: options.conversationId,
-    mode: options.mode
+    mode: options.mode,
+    thinkingEnabled: options.thinkingEnabled
   });
 
   const attachmentAdapter = useMemo(() => createAttachmentAdapter(), []);

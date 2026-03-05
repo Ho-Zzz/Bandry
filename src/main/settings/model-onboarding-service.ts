@@ -154,6 +154,25 @@ const buildProfileId = (
   return `${base}_${Date.now()}`;
 };
 
+const mapCatalogCapabilitiesToProfile = (item: CatalogModelItem): {
+  supportsThinking?: boolean;
+  supportsReasoningEffort?: boolean;
+  supportsVision?: boolean;
+  supportsToolCall?: boolean;
+} => {
+  const hasImageInput = item.capabilities.inputModalities.some(
+    (modality) => modality.toLowerCase() === "image"
+  );
+  const supportsReasoning = Boolean(item.capabilities.reasoning);
+
+  return {
+    supportsThinking: supportsReasoning,
+    supportsReasoningEffort: supportsReasoning,
+    supportsVision: hasImageInput,
+    supportsToolCall: Boolean(item.capabilities.toolCall)
+  };
+};
+
 export class ModelOnboardingService {
   constructor(
     private readonly settingsService: SettingsService,
@@ -240,7 +259,8 @@ export class ModelOnboardingService {
       provider: input.provider,
       model: modelId,
       enabled: true,
-      temperature: 0.2
+      temperature: 0.2,
+      capabilities: mapCatalogCapabilitiesToProfile(catalogModel)
     });
 
     const saveResult = await this.settingsService.saveState({

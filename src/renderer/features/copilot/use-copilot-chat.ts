@@ -40,6 +40,7 @@ export type PendingClarification = {
 type UseCopilotChatOptions = {
   conversationId?: string;
   mode?: ChatMode;
+  thinkingEnabled?: boolean;
 };
 
 const makeRequestId = (): string => {
@@ -102,6 +103,7 @@ export const getConversationWorkspacePath = (conversationId: string): string | u
 export function useCopilotChat(options: UseCopilotChatOptions = {}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>(options.conversationId);
+  const [activeModelProfileId, setActiveModelProfileId] = useState<string | undefined>(undefined);
   const [activeRequestByConversation, setActiveRequestByConversation] = useState<Record<string, string>>({});
   const [pendingClarification, setPendingClarification] = useState<PendingClarification | null>(null);
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
@@ -144,6 +146,16 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         [convId]: requestId
       };
     });
+  }, []);
+
+  const getDefaultModelProfileId = useCallback(async (): Promise<string | undefined> => {
+    try {
+      const summary = await window.api.getConfigSummary();
+      const profileId = summary.routing["chat.default"]?.trim();
+      return profileId || undefined;
+    } catch {
+      return undefined;
+    }
   }, []);
 
   const clearConversationRequestIfMatch = useCallback((convId: string, requestId: string) => {
@@ -216,6 +228,13 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
 
   // Load existing messages when conversationId changes
   useEffect(() => {
+    void (async () => {
+      const defaultProfileId = await getDefaultModelProfileId();
+      setActiveModelProfileId(defaultProfileId);
+    })();
+  }, [getDefaultModelProfileId]);
+
+  useEffect(() => {
     loadVersionRef.current += 1;
     const currentVersion = loadVersionRef.current;
 
@@ -229,16 +248,26 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
       const cachedWs = workspaceByConversation.get(options.conversationId);
       if (cachedWs) {
         setWorkspacePath(cachedWs);
-      } else {
-        window.api.conversationGet(options.conversationId).then((conv) => {
-          if (conv?.workspace_path) {
-            workspaceByConversation.set(options.conversationId!, conv.workspace_path);
-            setWorkspacePath(conv.workspace_path);
-          } else {
+      }
+      window.api
+        .conversationGet(options.conversationId)
+        .then(async (conv) => {
+          if (!cachedWs) {
+            if (conv?.workspace_path) {
+              workspaceByConversation.set(options.conversationId!, conv.workspace_path);
+              setWorkspacePath(conv.workspace_path);
+            } else {
+              setWorkspacePath(null);
+            }
+          }
+          const resolvedProfileId = conv?.model_profile_id?.trim() || await getDefaultModelProfileId();
+          setActiveModelProfileId(resolvedProfileId);
+        })
+        .catch(() => {
+          if (!cachedWs) {
             setWorkspacePath(null);
           }
-        }).catch(() => setWorkspacePath(null));
-      }
+        });
 
       void loadMessages(options.conversationId, currentVersion).then(() => {
         // Clean up orphaned pending messages after load
@@ -288,8 +317,11 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
       setPendingClarification(null);
       traceByRequestIdRef.current = {};
       setWorkspacePath(null);
+      void getDefaultModelProfileId().then((profileId) => {
+        setActiveModelProfileId(profileId);
+      });
     }
-  }, [loadMessages, options.conversationId, activeRequestByConversation]);
+  }, [activeRequestByConversation, getDefaultModelProfileId, loadMessages, options.conversationId]);
 
   // Subscribe to chat updates
   useEffect(() => {
@@ -373,15 +405,18 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
 
       // Create conversation if needed
       let currentConvId: string;
+      const resolvedModelProfileId = activeModelProfileId ?? await getDefaultModelProfileId();
+      setActiveModelProfileId(resolvedModelProfileId);
       if (conversationId) {
         currentConvId = conversationId;
       } else {
         try {
           const conv = await window.api.conversationCreate({
-            model_profile_id: undefined
+            model_profile_id: resolvedModelProfileId
           });
           currentConvId = conv.id;
           setConversationId(currentConvId);
+          setActiveModelProfileId(conv.model_profile_id ?? resolvedModelProfileId);
           upsertConversation(conv);
         } catch (error) {
           console.error("Failed to create conversation:", error);
@@ -479,7 +514,9 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           conversationId: currentConvId,
           message: content,
           history,
-          mode: effectiveMode
+          mode: effectiveMode,
+          modelProfileId: resolvedModelProfileId,
+          thinkingEnabled: effectiveMode === "thinking" ? true : (options.thinkingEnabled ?? false)
         });
 
         // Capture workspace path for this conversation and persist to DB
@@ -570,7 +607,16 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         clearConversationRequestIfMatch(currentConvId, requestId);
       }
     },
-    [clearConversationRequestIfMatch, conversationId, options.mode, setConversationActiveRequest, upsertConversation]
+    [
+      activeModelProfileId,
+      clearConversationRequestIfMatch,
+      conversationId,
+      getDefaultModelProfileId,
+      options.mode,
+      options.thinkingEnabled,
+      setConversationActiveRequest,
+      upsertConversation
+    ]
   );
 
   const cancelCurrentRequest = useCallback(async (): Promise<boolean> => {
@@ -639,6 +685,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
     isLoading,
     conversationId,
     pendingClarification,
-    workspacePath
+    workspacePath,
+    activeModelProfileId
   };
 }

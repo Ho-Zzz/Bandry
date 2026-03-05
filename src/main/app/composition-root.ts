@@ -6,7 +6,7 @@ import type { Channel } from "../channels";
 import { ModelsCatalogService } from "../llm";
 import { ModelsFactory } from "../llm/runtime";
 import { OpenVikingMemoryProvider, OpenVikingProcessManager } from "../memory/openviking";
-import { ToolPlanningChatAgent } from "../orchestration/chat";
+import { ChatAgentFactory } from "../orchestration/chat";
 import { LocalOrchestrator } from "../orchestration/workflow";
 import { SandboxService } from "../sandbox";
 import { ModelOnboardingService, SettingsService } from "../settings";
@@ -18,7 +18,7 @@ export type MainCompositionRoot = {
   config: ReturnType<typeof loadAppConfig>;
   modelsFactory: ModelsFactory;
   sandboxService: SandboxService;
-  toolPlanningChatAgent: ToolPlanningChatAgent;
+  chatAgentFactory: ChatAgentFactory;
   orchestrator: LocalOrchestrator;
   conversationStore: ConversationStore;
   settingsService: SettingsService;
@@ -72,13 +72,17 @@ export const createCompositionRoot = (eventBus: IpcEventBus): MainCompositionRoo
   userFilesService.initialize().catch((error) => {
     console.error("Failed to initialize user files service:", error);
   });
-
-  const toolPlanningChatAgent = new ToolPlanningChatAgent(
+  const openVikingState: MainCompositionRoot["openViking"] = {
+    processManager: null,
+    memoryProvider: null
+  };
+  const chatAgentFactory = new ChatAgentFactory({
     config,
     modelsFactory,
     sandboxService,
-    conversationStore
-  );
+    conversationStore,
+    getMemoryProvider: () => openVikingState.memoryProvider
+  });
   const orchestrator = new LocalOrchestrator(config, sandboxService, modelsFactory);
 
   const settingsService = new SettingsService({ config });
@@ -86,7 +90,7 @@ export const createCompositionRoot = (eventBus: IpcEventBus): MainCompositionRoo
   const modelOnboardingService = new ModelOnboardingService(settingsService, modelsCatalogService);
 
   const channelManager = new ChannelManager(
-    toolPlanningChatAgent,
+    chatAgentFactory,
     conversationStore,
     eventBus,
     config.channels
@@ -100,16 +104,13 @@ export const createCompositionRoot = (eventBus: IpcEventBus): MainCompositionRoo
     config,
     modelsFactory,
     sandboxService,
-    toolPlanningChatAgent,
+    chatAgentFactory,
     orchestrator,
     conversationStore,
     settingsService,
     modelOnboardingService,
     channelManager,
     userFilesService,
-    openViking: {
-      processManager: null,
-      memoryProvider: null
-    }
+    openViking: openVikingState
   };
 };

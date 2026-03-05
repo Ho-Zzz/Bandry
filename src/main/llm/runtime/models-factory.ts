@@ -51,6 +51,8 @@ export class ModelsFactory {
         messages,
         temperature: input.temperature ?? 0.2,
         maxTokens: input.maxTokens,
+        extraBody: input.extraBody,
+        reasoningEffort: input.reasoningEffort,
         runtimeConfig: {
           provider: resolved.provider,
           baseUrl: resolved.baseUrl,

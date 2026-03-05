@@ -16,6 +16,18 @@ export type ChatHistoryMessage = {
  */
 export type ChatMode = "default" | "thinking" | "subagents";
 
+export type ModelCapabilities = {
+  supportsThinking?: boolean;
+  supportsReasoningEffort?: boolean;
+  supportsVision?: boolean;
+  supportsToolCall?: boolean;
+};
+
+export type ThinkingConfig = {
+  extraBody?: Record<string, unknown>;
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+};
+
 export type ChatSendInput = {
   requestId?: string;
   conversationId?: string;
@@ -24,6 +36,10 @@ export type ChatSendInput = {
   modelProfileId?: string;
   /** Chat mode - defaults to 'default' if not specified */
   mode?: ChatMode;
+  /** Enable thinking mode for models that support it */
+  thinkingEnabled?: boolean;
+  /** Reasoning effort level */
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
 };
 
 export type ChatSendResult = {
@@ -145,6 +161,8 @@ export type RuntimeConfigSummary = {
     provider: ModelProvider;
     model: string;
     enabled: boolean;
+    capabilities?: ModelCapabilities;
+    whenThinkingEnabled?: ThinkingConfig;
   }>;
   routing: Record<string, string>;
   tools: {
@@ -255,6 +273,8 @@ export type SettingsModelProfile = {
   enabled: boolean;
   temperature?: number;
   maxTokens?: number;
+  capabilities?: ModelCapabilities;
+  whenThinkingEnabled?: ThinkingConfig;
 };
 
 export type SettingsChannelType = "feishu";

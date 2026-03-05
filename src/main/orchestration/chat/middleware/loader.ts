@@ -1,4 +1,4 @@
-import type { AppConfig } from "../../../config";
+import type { AppConfig, ModelCapabilities } from "../../../config";
 import type { ModelsFactory } from "../../../llm/runtime";
 import type { MemoryProvider } from "../../../memory/contracts/types";
 import type { SandboxService } from "../../../sandbox";
@@ -35,6 +35,11 @@ export type MiddlewareLoaderOptions = {
   memoryProvider?: MemoryProvider;
   mode?: ChatMode;
   conversationId?: string;
+  modelCapabilities?: ModelCapabilities;
+  requestParams?: {
+    thinkingEnabled?: boolean;
+    isPlanMode?: boolean;
+  };
 };
 
 /**
@@ -50,14 +55,17 @@ export type MiddlewareLoaderOptions = {
  * 7. SummarizationMiddleware - Context compression (optional)
  * 8. TitleMiddleware - Title generation (only if conversation has no title)
  * 9. MemoryMiddleware - Memory queue
- * 10. TodoListMiddleware - Task list management (subagents mode only)
- * 11. SubagentLimitMiddleware - Concurrency limits (subagents mode only)
+ * 10. TodoListMiddleware - Task list management (subagents / plan mode)
+ * 11. SubagentLimitMiddleware - Concurrency limits (subagents / plan mode)
  * 12. ClarificationMiddleware - User clarification (must be last)
  */
 export const buildMiddlewares = (
   options: MiddlewareLoaderOptions,
 ): Middleware[] => {
   const mode = options.mode ?? "default";
+  const isPlanMode = options.requestParams?.isPlanMode === true;
+  const supportsVision = options.modelCapabilities?.supportsVision === true;
+  void supportsVision;
 
   const memoryMiddleware = options.memoryProvider
     ? new MemoryMiddleware(options.memoryProvider)
@@ -91,7 +99,7 @@ export const buildMiddlewares = (
   middlewares.push(memoryMiddleware);
 
   // Add mode-specific middlewares
-  if (mode === "subagents") {
+  if (mode === "subagents" || isPlanMode) {
     middlewares.push(new TodoListMiddleware());
     middlewares.push(new SubagentLimitMiddleware());
   }

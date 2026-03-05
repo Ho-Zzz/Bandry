@@ -5,6 +5,7 @@ import type { ChatMode } from "../../../../shared/ipc";
 type CopilotPageState = {
   chatMode: ChatMode;
   clarificationInput: string;
+  thinkingEnabled: boolean;
 };
 
 type CopilotPageAction =
@@ -18,11 +19,16 @@ type CopilotPageAction =
     }
   | {
       type: "clear-clarification-input";
+    }
+  | {
+      type: "set-thinking-enabled";
+      enabled: boolean;
     };
 
 const initialState: CopilotPageState = {
   chatMode: "default",
-  clarificationInput: ""
+  clarificationInput: "",
+  thinkingEnabled: false
 };
 
 const reducer = (state: CopilotPageState, action: CopilotPageAction): CopilotPageState => {
@@ -43,6 +49,16 @@ const reducer = (state: CopilotPageState, action: CopilotPageAction): CopilotPag
     return {
       ...state,
       clarificationInput: action.value
+    };
+  }
+
+  if (action.type === "set-thinking-enabled") {
+    if (state.thinkingEnabled === action.enabled) {
+      return state;
+    }
+    return {
+      ...state,
+      thinkingEnabled: action.enabled
     };
   }
 
@@ -67,11 +83,15 @@ export const useCopilotPageState = () => {
   const clearClarificationInput = useCallback(() => {
     dispatch({ type: "clear-clarification-input" });
   }, []);
+  const setThinkingEnabled = useCallback((enabled: boolean) => {
+    dispatch({ type: "set-thinking-enabled", enabled });
+  }, []);
 
   return {
     state,
     setChatMode,
     setClarificationInput,
-    clearClarificationInput
+    clearClarificationInput,
+    setThinkingEnabled
   };
 };
