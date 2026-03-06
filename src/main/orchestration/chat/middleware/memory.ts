@@ -17,6 +17,11 @@ export class MemoryMiddleware implements Middleware {
     try {
       // Read memory layers (L0/L1 by default)
       const query = this.getLatestUserQuery(ctx);
+      const memoryStepStarted = ctx.metadata.memoryStepStarted === true;
+
+      if (!memoryStepStarted) {
+        ctx.runtime?.onUpdate?.("planning", "回忆相关上下文");
+      }
 
       // Add timeout protection to prevent blocking
       const timeoutMs = 3000; // 3 second timeout
@@ -33,12 +38,22 @@ export class MemoryMiddleware implements Middleware {
           "[MemoryMiddleware] Context injection failed or timed out:",
           error.message,
         );
+        ctx.runtime?.onUpdate?.("planning", "回忆上下文失败，继续直接回答");
         return [] as Awaited<ReturnType<typeof this.memory.injectContext>>;
       });
 
       if (chunks.length === 0) {
-        return ctx;
+        ctx.runtime?.onUpdate?.("planning", "未命中相关记忆");
+        return {
+          ...ctx,
+          metadata: {
+            ...ctx.metadata,
+            memoryStepStarted: true,
+          },
+        };
       }
+
+      ctx.runtime?.onUpdate?.("planning", `已回忆 ${chunks.length} 条相关记忆`);
 
       // Format memory context as system message
       const memoryContent = this.formatMemoryContext(chunks);
@@ -57,6 +72,7 @@ export class MemoryMiddleware implements Middleware {
         messages: updatedMessages,
         metadata: {
           ...ctx.metadata,
+          memoryStepStarted: true,
           memoryChunksInjected: chunks.length,
         },
       };

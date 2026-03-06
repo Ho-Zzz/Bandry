@@ -38,8 +38,7 @@ export const CopilotPage = () => {
     mode: state.chatMode,
     thinkingEnabled: state.thinkingEnabled
   });
-  const { supportsThinking, profileId: resolvedProfileId } = useModelCapabilities(activeModelProfileId);
-  const latestProfileIdRef = useRef<string | undefined>(undefined);
+  const { supportsThinking } = useModelCapabilities(activeModelProfileId);
 
   const setPreviewWorkspacePath = usePreviewStore((s) => s.setWorkspacePath);
   const isPreviewOpen = usePreviewStore((s) => s.isOpen);
@@ -57,17 +56,6 @@ export const CopilotPage = () => {
       clearClarificationInput();
     }
   }, [clearClarificationInput, pendingClarification]);
-
-  useEffect(() => {
-    if (!resolvedProfileId) {
-      return;
-    }
-    if (latestProfileIdRef.current === resolvedProfileId) {
-      return;
-    }
-    latestProfileIdRef.current = resolvedProfileId;
-    setThinkingEnabled(supportsThinking);
-  }, [resolvedProfileId, setThinkingEnabled, supportsThinking]);
 
   useEffect(() => {
     const hasConversationInList = conversationId

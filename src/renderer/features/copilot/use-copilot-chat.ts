@@ -25,6 +25,8 @@ export type Message = {
   timestamp: number;
   trace?: ChatUpdateEvent[];
   requestId?: string;
+  mode?: ChatMode;
+  thinkingEnabled?: boolean;
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
@@ -39,6 +41,11 @@ export type PendingClarification = {
 
 type UseCopilotChatOptions = {
   conversationId?: string;
+  mode?: ChatMode;
+  thinkingEnabled?: boolean;
+};
+
+export type RequestSettings = {
   mode?: ChatMode;
   thinkingEnabled?: boolean;
 };
@@ -89,6 +96,67 @@ export const resolvePendingClarificationFromUpdate = (
 };
 
 export const normalizeClarificationInput = (value: string): string => value.trim();
+
+const parseModeFromPlanningTrace = (message: string): ChatMode | undefined => {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized.startsWith("mode:")) {
+    return undefined;
+  }
+
+  const value = normalized.slice("mode:".length).trim();
+  if (value === "default" || value === "thinking" || value === "subagents") {
+    return value;
+  }
+
+  return undefined;
+};
+
+const parseThinkingEnabledFromPlanningTrace = (message: string): boolean | undefined => {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized.startsWith("thinking enabled:")) {
+    return undefined;
+  }
+
+  const value = normalized.slice("thinking enabled:".length).trim();
+  if (value === "true") {
+    return true;
+  }
+
+  if (value === "false") {
+    return false;
+  }
+
+  return undefined;
+};
+
+export const resolveRequestSettingsFromTrace = (trace?: ChatUpdateEvent[]): RequestSettings => {
+  if (!trace || trace.length === 0) {
+    return {};
+  }
+
+  let mode: ChatMode | undefined;
+  let thinkingEnabled: boolean | undefined;
+
+  for (const event of trace) {
+    if (event.stage !== "planning") {
+      continue;
+    }
+
+    mode ??= parseModeFromPlanningTrace(event.message);
+    if (thinkingEnabled === undefined) {
+      thinkingEnabled = parseThinkingEnabledFromPlanningTrace(event.message);
+    }
+
+    if (mode !== undefined && thinkingEnabled !== undefined) {
+      break;
+    }
+  }
+
+  return {
+    ...(mode ? { mode } : {}),
+    ...(thinkingEnabled !== undefined ? { thinkingEnabled } : {})
+  };
+};
 
 /**
  * Module-level map storing workspace paths per conversation.
@@ -174,6 +242,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
       const dbMessages = await window.api.messageList(convId);
       const loadedMessages: Message[] = dbMessages.map((m: MessageResult) => {
         const trace = m.trace ? (JSON.parse(m.trace) as ChatUpdateEvent[]) : undefined;
+        const requestSettings = resolveRequestSettingsFromTrace(trace);
 
         return {
           id: m.id,
@@ -183,6 +252,8 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           timestamp: m.created_at,
           trace,
           requestId: getRequestIdFromTrace(trace),
+          mode: requestSettings.mode,
+          thinkingEnabled: requestSettings.thinkingEnabled,
           prompt_tokens: m.prompt_tokens,
           completion_tokens: m.completion_tokens,
           total_tokens: m.total_tokens
@@ -396,12 +467,19 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
     };
   }, []);
 
+  useEffect(() => {
+    return window.api.onConversationUpdate((conversation) => {
+      upsertConversation(conversation);
+    });
+  }, [upsertConversation]);
+
   const sendMessage = useCallback(
     async (content: string, messageMode?: ChatMode) => {
       const requestId = makeRequestId();
       const userMessageId = `user-${Date.now()}`;
       const assistantMessageId = `assistant-${Date.now()}`;
       const effectiveMode = messageMode ?? options.mode ?? "default";
+      const effectiveThinkingEnabled = effectiveMode === "thinking" ? true : (options.thinkingEnabled ?? false);
 
       // Create conversation if needed
       let currentConvId: string;
@@ -468,7 +546,9 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         status: "pending",
         timestamp: Date.now(),
         trace: [],
-        requestId
+        requestId,
+        mode: effectiveMode,
+        thinkingEnabled: effectiveThinkingEnabled
       };
 
       traceByRequestIdRef.current[requestId] = [];
@@ -516,7 +596,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           history,
           mode: effectiveMode,
           modelProfileId: resolvedModelProfileId,
-          thinkingEnabled: effectiveMode === "thinking" ? true : (options.thinkingEnabled ?? false)
+          thinkingEnabled: effectiveThinkingEnabled
         });
 
         // Capture workspace path for this conversation and persist to DB

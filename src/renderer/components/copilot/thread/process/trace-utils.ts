@@ -1,4 +1,5 @@
 import { parseToolResult } from "../../../../features/copilot/trace-paths";
+import type { ChatMode } from "../../../../../shared/ipc";
 
 type TraceToolArgs = {
   stage?: string;
@@ -45,6 +46,18 @@ export type ProcessSection = {
   type: ProcessSectionType;
   title: string;
   items: TraceItem[];
+};
+
+export type ProcessDisplayState = {
+  isRunning: boolean;
+  mode?: ChatMode;
+  thinkingEnabled?: boolean;
+};
+
+export type ProcessStep = {
+  id: string;
+  label: string;
+  tone: "active" | "pending" | "error";
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -102,6 +115,115 @@ export const formatDuration = (ms?: number): string | null => {
   }
 
   return `${(ms / 1000).toFixed(1)} s`;
+};
+
+export const resolveProcessStatusLabel = ({
+  isRunning,
+  mode,
+  thinkingEnabled
+}: ProcessDisplayState): string => {
+  if (!isRunning) {
+    return "Reasoning";
+  }
+
+  if (mode === "thinking" || thinkingEnabled) {
+    return "Thinking";
+  }
+
+  if (mode === "subagents") {
+    return "Coordinating";
+  }
+
+  return "Generating";
+};
+
+const isTraceNoise = (message: string): boolean => {
+  return (
+    message.startsWith("Mode:") ||
+    message.startsWith("Thinking enabled:") ||
+    message.startsWith("Thinking fallback:") ||
+    message.startsWith("规划步骤 ") ||
+    message.startsWith("summarization ")
+  );
+};
+
+const resolveStepLabel = (item: TraceItem, statusLabel: string): string | null => {
+  const message = item.message.trim();
+  if (!message || isTraceNoise(message)) {
+    return null;
+  }
+
+  if (message.includes("回忆")) {
+    return "回忆";
+  }
+
+  if (
+    message.includes("进入直接回答阶段") ||
+    message.includes("进入最终总结阶段") ||
+    message.includes("Planner 已直接产出最终回答") ||
+    message.includes("最终回答已生成")
+  ) {
+    return "回答";
+  }
+
+  if (item.stage === "tool" || item.stage === "subagent") {
+    const toolSource = parseToolResult(message)?.source ?? item.source ?? parseToolSource(message);
+    return toolSource ?? "工具";
+  }
+
+  if (item.stage === "planning" || item.stage === "model") {
+    return statusLabel;
+  }
+
+  if (item.stage === "error") {
+    return "异常";
+  }
+
+  return null;
+};
+
+export const buildProcessSteps = (
+  items: TraceItem[],
+  isRunning: boolean,
+  statusLabel: string
+): ProcessStep[] => {
+  const labels: string[] = [statusLabel];
+
+  for (const item of items) {
+    const label = resolveStepLabel(item, statusLabel);
+    if (!label) {
+      continue;
+    }
+
+    if (labels[labels.length - 1] === label) {
+      continue;
+    }
+
+    labels.push(label);
+  }
+
+  return labels.slice(0, 6).map((label, index, all) => ({
+    id: `${label}-${index}`,
+    label,
+    tone:
+      items.some((item) => item.stage === "error" || item.status === "failed") && index === all.length - 1
+        ? "error"
+        : isRunning && index === all.length - 1
+          ? "active"
+          : "pending"
+  }));
+};
+
+export const resolveLatestProcessDetail = (items: TraceItem[]): string | null => {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const message = items[index]?.message?.trim();
+    if (!message || isTraceNoise(message)) {
+      continue;
+    }
+    return truncateText(message, 120);
+  }
+
+  return null;
 };
 
 export const formatTime = (timestamp?: number): string | null => {

@@ -4,7 +4,7 @@ import type { AppConfig } from "../../../config";
 import type { ModelCapabilities } from "../../../config";
 import type { SandboxService } from "../../../sandbox";
 import type { ConversationStore } from "../../../persistence/sqlite";
-import type { ChatMode, ChatUpdatePayload, ChatUpdateStage } from "../../../../shared/ipc";
+import type { ChatMode, ChatUpdatePayload, ChatUpdateStage, ConversationResult } from "../../../../shared/ipc";
 import type { PlannerActionTool, ToolObservation } from "../planner-types";
 
 /**
@@ -102,6 +102,7 @@ export type MiddlewareContext = {
     sandboxService: SandboxService;
     conversationStore?: ConversationStore;
     onUpdate?: (stage: ChatUpdateStage, message: string, payload?: ChatUpdatePayload) => void;
+    onConversationUpdated?: (conversation: ConversationResult) => void;
     abortSignal?: AbortSignal;
   };
 };

@@ -6,6 +6,7 @@ const eventBus: IpcEventBus = {
   broadcastTaskUpdate: (u) => console.log("[event:task]", u.status),
   broadcastChatUpdate: (u) => console.log("[event:chat]", u.stage, u.message),
   broadcastChatDelta: () => {},
+  broadcastConversationUpdate: (u) => console.log("[event:conversation]", u.id, u.title),
   broadcastChannelStatus: (u) => console.log("[event:channel]", u.channelId, u.status),
 };
 

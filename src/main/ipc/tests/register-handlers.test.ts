@@ -111,6 +111,7 @@ describe("registerIpcHandlers chat:send", () => {
         broadcastTaskUpdate: vi.fn(),
         broadcastChatUpdate: vi.fn(),
         broadcastChatDelta: vi.fn(),
+        broadcastConversationUpdate: vi.fn(),
         broadcastChannelStatus: vi.fn()
       },
       getOpenViking: () => ({

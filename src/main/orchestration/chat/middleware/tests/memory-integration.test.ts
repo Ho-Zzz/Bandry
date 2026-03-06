@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { ContextChunk, Conversation, MemoryProvider } from "../../../../memory/contracts/types";
 import { MemoryMiddleware } from "../memory";
 import type { MiddlewareContext } from "../types";
+import type { AppConfig } from "../../../../config";
+import type { ModelsFactory } from "../../../../llm/runtime";
+import type { SandboxService } from "../../../../sandbox";
 
 const createMockProvider = (chunks: ContextChunk[] = []): MemoryProvider & {
   injectContext: ReturnType<typeof vi.fn>;
@@ -22,6 +25,12 @@ const createCtx = (overrides: Partial<MiddlewareContext> = {}): MiddlewareContex
   tools: [],
   metadata: {},
   state: "before_llm",
+  runtime: {
+    config: {} as AppConfig,
+    modelsFactory: {} as ModelsFactory,
+    sandboxService: {} as SandboxService,
+    onUpdate: vi.fn()
+  },
   ...overrides
 });
 
@@ -46,6 +55,8 @@ describe("MemoryMiddleware integration", () => {
     expect(result.messages[0].content).toContain("Memory Context");
     expect(result.messages[0].content).toContain("User prefers TypeScript");
     expect(result.metadata.memoryChunksInjected).toBe(1);
+    expect(ctx.runtime?.onUpdate).toHaveBeenCalledWith("planning", "回忆相关上下文");
+    expect(ctx.runtime?.onUpdate).toHaveBeenCalledWith("planning", "已回忆 1 条相关记忆");
   });
 
   it("passes through context unchanged when no chunks returned", async () => {
@@ -56,6 +67,9 @@ describe("MemoryMiddleware integration", () => {
 
     expect(result.messages).toHaveLength(2);
     expect(result.metadata.memoryChunksInjected).toBeUndefined();
+    expect(result.metadata.memoryStepStarted).toBe(true);
+    expect(ctx.runtime?.onUpdate).toHaveBeenCalledWith("planning", "回忆相关上下文");
+    expect(ctx.runtime?.onUpdate).toHaveBeenCalledWith("planning", "未命中相关记忆");
   });
 
   it("stores conversation on response", async () => {

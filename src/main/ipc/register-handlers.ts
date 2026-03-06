@@ -191,7 +191,12 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
           input.eventBus.broadcastChatDelta(update);
         },
         controller.signal,
-        context
+        {
+          ...context,
+          onConversationUpdated: (conversation) => {
+            input.eventBus.broadcastConversationUpdate(conversation);
+          }
+        }
       );
     } finally {
       activeChatRequests.delete(requestId);

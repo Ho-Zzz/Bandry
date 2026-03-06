@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircleIcon, BrainIcon, ChevronDownIcon, Loader2Icon } from "lucide-react";
 
-import { formatDuration, type TraceItem } from "./trace-utils";
+import { buildProcessSteps, formatDuration, resolveLatestProcessDetail, type TraceItem } from "./trace-utils";
 
 type ProcessLayerProps = {
   items: TraceItem[];
   isRunning: boolean;
+  statusLabel: string;
 };
 
-export const ProcessLayer = ({ items, isRunning }: ProcessLayerProps) => {
+export const ProcessLayer = ({ items, isRunning, statusLabel }: ProcessLayerProps) => {
   // Auto-expand when running, collapse when completed
   const [expanded, setExpanded] = useState(isRunning);
 
@@ -21,8 +22,9 @@ export const ProcessLayer = ({ items, isRunning }: ProcessLayerProps) => {
     return formatDuration(Math.max(...timestamps) - Math.min(...timestamps));
   }, [items]);
 
-  const latest = items[items.length - 1];
   const hasError = items.some((item) => item.status === "failed" || item.stage === "error");
+  const processSteps = useMemo(() => buildProcessSteps(items, isRunning, statusLabel), [items, isRunning, statusLabel]);
+  const latestDetail = useMemo(() => resolveLatestProcessDetail(items), [items]);
 
   // Auto-expand when running starts
   const prevIsRunning = useRef(isRunning);
@@ -33,7 +35,7 @@ export const ProcessLayer = ({ items, isRunning }: ProcessLayerProps) => {
     prevIsRunning.current = isRunning;
   }, [isRunning]);
 
-  // Show layer even when no items yet (during initial thinking)
+  // Show layer even when no items yet during initial generation.
   if (items.length === 0 && !isRunning) {
     return null;
   }
@@ -53,37 +55,39 @@ export const ProcessLayer = ({ items, isRunning }: ProcessLayerProps) => {
           ) : (
             <BrainIcon size={13} className="shrink-0 text-emerald-700" />
           )}
-          <span className="text-xs font-medium text-zinc-700">{isRunning ? "Thinking" : "Reasoning"}</span>
-          <span className="text-xs text-zinc-500">
-            {items.length} steps
-            {elapsed ? ` · ${elapsed}` : ""}
-          </span>
+          <span className="text-xs font-medium text-zinc-700">{statusLabel}</span>
+          {elapsed ? <span className="text-xs text-zinc-500">{elapsed}</span> : null}
         </div>
 
         <ChevronDownIcon size={14} className={expanded ? "text-zinc-500 rotate-180" : "text-zinc-500"} />
       </button>
 
       {!expanded ? (
-        <p className="pl-6 text-xs text-zinc-500">
-          {items.length > 0 ? latest?.message : "正在准备执行..."}
-        </p>
+        latestDetail ? <p className="pl-6 text-xs text-zinc-500">{latestDetail}</p> : null
       ) : (
-        <div className="mt-1 max-h-44 overflow-y-auto pl-6">
-          {items.length === 0 ? (
-            <div className="flex items-center gap-2 text-xs text-zinc-400 py-1">
-              <Loader2Icon size={12} className="animate-spin" />
-              <span>正在初始化任务...</span>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {items.slice(-8).map((item) => (
-                <div key={item.id} className="flex items-start gap-1 text-xs text-zinc-500">
-                  <span className="mt-[2px] text-zinc-300">•</span>
-                  <span>{item.message}</span>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="mt-2 space-y-2 pl-6">
+          <div className="flex flex-wrap items-center gap-2">
+            {processSteps.map((step) => (
+              <div key={step.id} className="flex items-center gap-2">
+                <span
+                  className={
+                    step.tone === "error"
+                      ? "rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700"
+                      : step.tone === "active"
+                        ? "rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700"
+                        : "rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600"
+                  }
+                >
+                  {step.label}
+                </span>
+                {step.id !== processSteps[processSteps.length - 1]?.id ? (
+                  <span className="text-[11px] text-zinc-300">-</span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+
+          {latestDetail ? <p className="text-xs text-zinc-500">{latestDetail}</p> : null}
         </div>
       )}
     </div>

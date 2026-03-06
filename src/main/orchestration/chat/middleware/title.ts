@@ -38,6 +38,21 @@ const generateFallbackTitle = (userMessage: string): string => {
   return truncateTitle(userMessage);
 };
 
+const extractTemporaryTitle = (userMessage: string): string => {
+  const firstSentence = userMessage.split(/[。！？,.!?]/)[0]?.trim();
+  if (firstSentence) {
+    return truncateTitle(firstSentence);
+  }
+  return generateFallbackTitle(userMessage);
+};
+
+const shouldSkipModelTitleGeneration = (
+  userMessage: string,
+  assistantReply: string
+): boolean => {
+  return userMessage.length < 16 && assistantReply.length < 80;
+};
+
 export class TitleMiddleware implements Middleware {
   name = "title";
 
@@ -46,21 +61,48 @@ export class TitleMiddleware implements Middleware {
     if (!runtime?.conversationStore || !ctx.conversationId) {
       return ctx;
     }
+    const conversationStore = runtime.conversationStore;
 
     const conversation = runtime.conversationStore.getConversation(ctx.conversationId);
     if (!conversation || (conversation.title && conversation.title.trim().length > 0)) {
       return ctx;
     }
 
-    const firstUser = ctx.messages.find((message) => message.role === "user")?.content?.trim();
+    const currentUser = [...ctx.messages]
+      .reverse()
+      .find((message) => message.role === "user")
+      ?.content
+      ?.trim();
     const assistantReply = ctx.finalResponse?.trim();
-    if (!firstUser || !assistantReply) {
+    if (!currentUser || !assistantReply) {
       return ctx;
     }
 
-    // Generate title asynchronously to avoid blocking the main response
     const conversationId = ctx.conversationId;
-    void this.generateTitleAsync(runtime, conversationId, firstUser, assistantReply);
+
+    // Write a temporary title first for immediate UI feedback.
+    const temporaryTitle = extractTemporaryTitle(currentUser);
+    if (temporaryTitle) {
+      const updatedConversation = conversationStore.updateConversation(conversationId, { title: temporaryTitle });
+      if (updatedConversation) {
+        runtime.onConversationUpdated?.(updatedConversation);
+      }
+    }
+
+    if (shouldSkipModelTitleGeneration(currentUser, assistantReply)) {
+      if (!temporaryTitle) {
+        const fallbackTitle = generateFallbackTitle(currentUser);
+        if (fallbackTitle) {
+          const updatedConversation = conversationStore.updateConversation(conversationId, { title: fallbackTitle });
+          if (updatedConversation) {
+            runtime.onConversationUpdated?.(updatedConversation);
+          }
+        }
+      }
+      return ctx;
+    }
+
+    void this.generateTitleAsync(runtime, conversationId, currentUser, assistantReply, temporaryTitle);
 
     return ctx;
   }
@@ -68,38 +110,21 @@ export class TitleMiddleware implements Middleware {
   private async generateTitleAsync(
     runtime: MiddlewareContext["runtime"],
     conversationId: string,
-    firstUser: string,
-    assistantReply: string
+    currentUser: string,
+    assistantReply: string,
+    temporaryTitle: string
   ): Promise<void> {
-    if (!runtime?.conversationStore) {
+    if (!runtime) {
       return;
     }
+
     const conversationStore = runtime.conversationStore;
-
-    // For very short conversations (greetings, simple Q&A), skip LLM and use fallback directly
-    const isSimpleConversation = firstUser.length < 30 || assistantReply.length < 150;
-    if (isSimpleConversation) {
-      const title = generateFallbackTitle(firstUser);
-      if (title && title.trim().length > 0) {
-        conversationStore.updateConversation(conversationId, { title });
-        // Don't emit update for simple conversations to reduce noise
-      }
+    if (!conversationStore) {
       return;
     }
-
     let title = "";
     try {
       const target = resolveRuntimeTarget(runtime.config, "lead.synthesizer");
-
-      // Skip title generation if using slow reasoning models
-      const isReasoningModel = target.model.toLowerCase().includes('reasoner') ||
-                               target.model.toLowerCase().includes('o1') ||
-                               target.model.toLowerCase().includes('o3');
-      if (isReasoningModel) {
-        title = generateFallbackTitle(firstUser);
-        conversationStore.updateConversation(conversationId, { title });
-        return;
-      }
 
       // Create a new AbortController for title generation
       // This ensures title generation won't be affected by the main request's abort signal
@@ -120,7 +145,7 @@ export class TitleMiddleware implements Middleware {
             },
             {
               role: "user",
-              content: `User request: ${firstUser.slice(0, 200)}\nAssistant reply: ${assistantReply.slice(0, 300)}`
+              content: `Current user message: ${currentUser.slice(0, 300)}\nCurrent assistant reply: ${assistantReply.slice(0, 400)}`
             }
           ],
           abortSignal: titleAbortController.signal
@@ -130,7 +155,7 @@ export class TitleMiddleware implements Middleware {
 
         // If model returns empty content, use fallback
         if (!title || title.trim().length === 0) {
-          title = generateFallbackTitle(firstUser);
+          title = generateFallbackTitle(currentUser);
         }
       } catch (error) {
         clearTimeout(timeoutId);
@@ -138,7 +163,7 @@ export class TitleMiddleware implements Middleware {
       }
     } catch {
       // If LLM fails, generate a smarter fallback title
-      title = generateFallbackTitle(firstUser);
+      title = generateFallbackTitle(currentUser);
       // Don't log errors to reduce noise
     }
 
@@ -146,7 +171,11 @@ export class TitleMiddleware implements Middleware {
       return;
     }
 
-    conversationStore.updateConversation(conversationId, { title });
-    // Don't emit update to reduce trace noise
+    if (title !== temporaryTitle) {
+      const updatedConversation = conversationStore.updateConversation(conversationId, { title });
+      if (updatedConversation) {
+        runtime.onConversationUpdated?.(updatedConversation);
+      }
+    }
   }
 }

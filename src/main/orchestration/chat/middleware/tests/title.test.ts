@@ -47,7 +47,7 @@ const createConfig = () => {
 };
 
 describe("TitleMiddleware", () => {
-  it("generates and persists title when conversation has no title", async () => {
+  it("writes temporary title first and then model-generated final title", async () => {
     const middleware = new TitleMiddleware();
     const config = createConfig();
 
@@ -71,11 +71,12 @@ describe("TitleMiddleware", () => {
       taskId: "t1",
       conversationId: "conv-1",
       workspacePath: "/tmp/workspace",
-      messages: [{ role: "user", content: "帮我整理迁移方案" }],
+      messages: [{ role: "user", content: "帮我整理 Bandry 桌面端迁移方案和跨端数据同步策略及发布回滚预案。并拆成阶段目标和风险清单" }],
       tools: [],
       metadata: {},
       state: "after_agent",
-      finalResponse: "这里是完整方案",
+      finalResponse:
+        "这里是完整方案，包含迁移范围、阶段目标、依赖拆分、发布顺序、回滚预案以及每个阶段的主要风险与缓解建议。".repeat(3),
       runtime: {
         config,
         modelsFactory: modelsFactory as never,
@@ -86,16 +87,16 @@ describe("TitleMiddleware", () => {
     };
 
     const result = await middleware.afterAgent!(ctx);
+    await Promise.resolve();
 
-    // Title generation is now async, so we need to wait a bit
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    expect(modelsFactory.generateText).not.toHaveBeenCalled();
-    expect(conversationStore.updateConversation).toHaveBeenCalledWith("conv-1", {
-      title: "整理迁移方案"
+    expect(modelsFactory.generateText).toHaveBeenCalledTimes(1);
+    expect(conversationStore.updateConversation).toHaveBeenNthCalledWith(1, "conv-1", {
+      title: "帮我整理 Bandry 桌面端迁移方案和跨端数据同步策略及发布回滚预案"
+    });
+    expect(conversationStore.updateConversation).toHaveBeenNthCalledWith(2, "conv-1", {
+      title: "Bandry Delegation Plan"
     });
     expect(onUpdate).not.toHaveBeenCalled();
-    // Metadata is no longer set since title generation is async
     expect(result.metadata.titleGenerated).toBeUndefined();
   });
 
@@ -123,11 +124,12 @@ describe("TitleMiddleware", () => {
       taskId: "t2",
       conversationId: "conv-2",
       workspacePath: "/tmp/workspace",
-      messages: [{ role: "user", content: "帮我分析数据" }],
+      messages: [{ role: "user", content: "帮我分析最近三个月的数据走势、异常点和渠道波动，并整理成团队月度复盘标题" }],
       tools: [],
       metadata: {},
       state: "after_agent",
-      finalResponse: "这里是分析结果",
+      finalResponse:
+        "这里是一个比较完整的分析结果，包含核心趋势、分段变化、异常点以及后续建议，同时给出渠道贡献拆分和下一步验证动作。".repeat(3),
       runtime: {
         config,
         modelsFactory: modelsFactory as never,
@@ -138,15 +140,57 @@ describe("TitleMiddleware", () => {
     };
 
     const result = await middleware.afterAgent!(ctx);
+    await Promise.resolve();
 
-    // Wait for async title generation
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    expect(modelsFactory.generateText).not.toHaveBeenCalled();
-    expect(conversationStore.updateConversation).toHaveBeenCalledWith("conv-2", {
-      title: "分析数据"
+    expect(modelsFactory.generateText).toHaveBeenCalledTimes(1);
+    expect(conversationStore.updateConversation).toHaveBeenNthCalledWith(1, "conv-2", {
+      title: "帮我分析最近三个月的数据走势、异常点和渠道波动，并整理成团队月度复盘标题"
+    });
+    expect(conversationStore.updateConversation).toHaveBeenNthCalledWith(2, "conv-2", {
+      title: "分析最近三个月的数据走势、异常点和渠道波动，并整理成团队月度"
     });
     expect(onUpdate).not.toHaveBeenCalled();
     expect(result.metadata.titleGenerated).toBeUndefined();
+  });
+
+  it("skips model title generation for short conversations", async () => {
+    const middleware = new TitleMiddleware();
+    const config = createConfig();
+
+    const modelsFactory = {
+      generateText: vi.fn()
+    };
+
+    const conversationStore = {
+      getConversation: vi.fn(() => ({ id: "conv-3", title: undefined })),
+      updateConversation: vi.fn()
+    };
+
+    const ctx: MiddlewareContext = {
+      sessionId: "s3",
+      taskId: "t3",
+      conversationId: "conv-3",
+      workspacePath: "/tmp/workspace",
+      messages: [{ role: "user", content: "今天天气怎么样？" }],
+      tools: [],
+      metadata: {},
+      state: "after_agent",
+      finalResponse: "今天晴，气温 26 度。",
+      runtime: {
+        config,
+        modelsFactory: modelsFactory as never,
+        sandboxService: {} as never,
+        conversationStore: conversationStore as never,
+        onUpdate: vi.fn()
+      }
+    };
+
+    await middleware.afterAgent!(ctx);
+
+    expect(modelsFactory.generateText).not.toHaveBeenCalled();
+    expect(conversationStore.updateConversation).toHaveBeenCalledTimes(1);
+    expect(conversationStore.updateConversation).toHaveBeenCalledWith("conv-3", {
+      title: "今天天气怎么样"
+    });
   });
 });

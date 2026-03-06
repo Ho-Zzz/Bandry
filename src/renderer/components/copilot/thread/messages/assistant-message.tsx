@@ -2,11 +2,13 @@ import { useMemo } from "react";
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
 import { BotIcon } from "lucide-react";
 
+import type { ChatMode } from "../../../../../shared/ipc";
 import { ProcessLayer } from "../process/process-layer";
 import { ToolResultLayer } from "../process/tool-result-layer";
 import {
   buildToolSummaries,
-  extractTraceItems
+  extractTraceItems,
+  resolveProcessStatusLabel
 } from "../process/trace-utils";
 import { AssistantActionBar, BranchPicker, MessageError } from "./message-action-bars";
 import { AssistantTextPart, HiddenTraceGroup, HiddenTracePart } from "./message-parts";
@@ -25,12 +27,29 @@ export const AssistantMessage = () => {
   // Extract token data from metadata
   const tokenData = useMemo(() => {
     const custom = metadata?.custom as Record<string, unknown> | undefined;
+    const modeValue = custom?.mode;
+    const mode: ChatMode | undefined =
+      modeValue === "default" || modeValue === "thinking" || modeValue === "subagents"
+        ? modeValue
+        : undefined;
     return {
+      mode,
+      thinkingEnabled: typeof custom?.thinkingEnabled === "boolean" ? custom.thinkingEnabled : undefined,
       prompt_tokens: custom?.prompt_tokens as number | undefined,
       completion_tokens: custom?.completion_tokens as number | undefined,
       total_tokens: custom?.total_tokens as number | undefined
     };
   }, [metadata]);
+
+  const processStatusLabel = useMemo(
+    () =>
+      resolveProcessStatusLabel({
+        isRunning,
+        mode: tokenData.mode,
+        thinkingEnabled: tokenData.thinkingEnabled
+      }),
+    [isRunning, tokenData.mode, tokenData.thinkingEnabled]
+  );
 
   return (
     <MessagePrimitive.Root className="relative mx-auto w-full max-w-[var(--thread-max-width)] py-3" data-role="assistant">
@@ -40,7 +59,7 @@ export const AssistantMessage = () => {
         </div>
 
         <div className="min-w-0 flex-1 space-y-2 break-words px-1 leading-relaxed text-zinc-900">
-          <ProcessLayer items={traceItems} isRunning={isRunning} />
+          <ProcessLayer items={traceItems} isRunning={isRunning} statusLabel={processStatusLabel} />
           <ToolResultLayer summaries={toolSummaries} />
           <MessagePrimitive.Parts
             components={{

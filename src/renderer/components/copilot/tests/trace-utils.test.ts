@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { buildProcessSections, buildSourcesFromParts, buildToolSummaries, extractTraceItems, formatDuration, hasSearchLikeToolActivity, tryFormatJson } from "../thread/process/trace-utils";
+import {
+  buildProcessSteps,
+  buildProcessSections,
+  buildSourcesFromParts,
+  buildToolSummaries,
+  extractTraceItems,
+  formatDuration,
+  hasSearchLikeToolActivity,
+  resolveLatestProcessDetail,
+  resolveProcessStatusLabel,
+  tryFormatJson
+} from "../thread/process/trace-utils";
 
 describe("trace-utils", () => {
   it("extracts trace items from tool-call parts and propagates workspacePath", () => {
@@ -178,5 +189,86 @@ describe("trace-utils", () => {
         }
       ])
     ).toBe(false);
+  });
+
+  it("uses mode-aware running labels instead of always showing thinking", () => {
+    expect(
+      resolveProcessStatusLabel({
+        isRunning: true,
+        mode: "default",
+        thinkingEnabled: false
+      })
+    ).toBe("Generating");
+
+    expect(
+      resolveProcessStatusLabel({
+        isRunning: true,
+        mode: "thinking",
+        thinkingEnabled: true
+      })
+    ).toBe("Thinking");
+
+    expect(
+      resolveProcessStatusLabel({
+        isRunning: true,
+        mode: "subagents",
+        thinkingEnabled: false
+      })
+    ).toBe("Coordinating");
+  });
+
+  it("builds concise process steps for key milestones", () => {
+    expect(
+      buildProcessSteps(
+        [
+          {
+            id: "1",
+            kind: "Plan",
+            stage: "planning",
+            message: "回忆相关上下文"
+          },
+          {
+            id: "2",
+            kind: "Tool",
+            stage: "tool",
+            message: "执行工具：web_search",
+            source: "web_search"
+          },
+          {
+            id: "3",
+            kind: "Result",
+            stage: "final",
+            message: "最终回答已生成"
+          }
+        ],
+        true,
+        "Thinking"
+      ).map((step) => step.label)
+    ).toEqual(["Thinking", "回忆", "web_search", "回答"]);
+  });
+
+  it("resolves latest meaningful detail and skips trace noise", () => {
+    expect(
+      resolveLatestProcessDetail([
+        {
+          id: "1",
+          kind: "Plan",
+          stage: "planning",
+          message: "Mode: default"
+        },
+        {
+          id: "2",
+          kind: "Plan",
+          stage: "planning",
+          message: "Thinking enabled: false"
+        },
+        {
+          id: "3",
+          kind: "Plan",
+          stage: "planning",
+          message: "已回忆 2 条相关记忆"
+        }
+      ])
+    ).toBe("已回忆 2 条相关记忆");
   });
 });

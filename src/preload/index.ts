@@ -134,6 +134,17 @@ const api = {
       ipcRenderer.removeListener("chat:delta", wrappedListener);
     };
   },
+  onConversationUpdate: (listener: (update: ConversationResult) => void): (() => void) => {
+    const wrappedListener = (_event: IpcRendererEvent, update: ConversationResult): void => {
+      listener(update);
+    };
+
+    ipcRenderer.on("conversation:update", wrappedListener);
+
+    return () => {
+      ipcRenderer.removeListener("conversation:update", wrappedListener);
+    };
+  },
   onTaskUpdate: (listener: (update: TaskUpdateEvent) => void): (() => void) => {
     const wrappedListener = (_event: IpcRendererEvent, update: TaskUpdateEvent): void => {
       listener(update);

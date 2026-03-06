@@ -9,6 +9,7 @@ import type {
   ChatMode,
   ChatSendInput,
   ChatSendResult,
+  ConversationResult,
   ChatUpdatePayload,
   ChatUpdateStage
 } from "../../../shared/ipc";
@@ -23,7 +24,7 @@ import {
   isFileExistsObservation,
   resolvePersistWritePath
 } from "./persist-policy";
-import type { ToolObservation } from "./planner-types";
+import type { PlannerActionTool, ToolObservation } from "./planner-types";
 import { createMiddlewarePipeline } from "./middleware";
 import { buildFinalSystemPrompt, buildPlannerSystemPrompt } from "./prompts";
 import { executePlannerTool } from "./tool-executor";
@@ -35,6 +36,7 @@ export type ChatRequestContext = {
   modelProfileId?: string;
   modelCapabilities?: ModelCapabilities;
   thinkingEnabled?: boolean;
+  onConversationUpdated?: (conversation: ConversationResult) => void;
   apiExtras?: {
     extraBody?: Record<string, unknown>;
     reasoningEffort?: ReasoningEffort;
@@ -117,6 +119,85 @@ const extractJsonArray = (text: string): string | null => {
 const extractPersistedPath = (output: string): string | undefined => {
   const match = output.match(/path=([^\s,]+)/i);
   return match?.[1];
+};
+
+const summarizeToolIntent = (tool: string, reason?: string, input?: PlannerActionTool["input"]): string | null => {
+  const normalizedReason = normalizeSpaces(reason ?? "");
+  if (normalizedReason) {
+    return normalizedReason;
+  }
+
+  if (tool === "web_search") {
+    const query = normalizeSpaces(input?.query ?? "");
+    return query ? `我需要搜索和“${truncate(query, 36)}”相关的信息` : "我需要先搜索相关信息";
+  }
+
+  if (tool === "web_fetch") {
+    const url = normalizeSpaces(input?.url ?? "");
+    return url ? `我需要读取这个页面：${truncate(url, 48)}` : "我需要读取相关页面内容";
+  }
+
+  if (tool === "read_file") {
+    const path = normalizeSpaces(input?.path ?? "");
+    return path ? `我需要查看文件内容：${truncate(path, 48)}` : "我需要查看相关文件内容";
+  }
+
+  if (tool === "list_dir") {
+    const path = normalizeSpaces(input?.path ?? "");
+    return path ? `我需要先检查目录：${truncate(path, 48)}` : "我需要先检查相关目录";
+  }
+
+  if (tool === "write_file") {
+    const path = normalizeSpaces(input?.path ?? "");
+    return path ? `我需要先把结果写入文件：${truncate(path, 48)}` : "我需要先把结果写入文件";
+  }
+
+  if (tool === "memory_search") {
+    return "我需要补充检索相关记忆";
+  }
+
+  if (tool === "delegate_sub_tasks") {
+    return "我需要拆分任务并并行处理";
+  }
+
+  return null;
+};
+
+const describeAnswerStage = (params: {
+  observationsCount: number;
+  mode: ChatMode;
+  thinkingEnabled?: boolean;
+  directFromPlanner?: boolean;
+}): string => {
+  if (params.directFromPlanner) {
+    return "准备回答";
+  }
+
+  if (params.observationsCount > 0) {
+    return "整理工具结果并准备回答";
+  }
+
+  if (params.mode === "thinking" || params.thinkingEnabled) {
+    return "整理思路并准备回答";
+  }
+
+  return "准备回答";
+};
+
+const shouldBypassFinalSynthesizer = (params: {
+  mode: ChatMode;
+  thinkingEnabled?: boolean;
+  observations: ToolObservation[];
+  persistRequired: boolean;
+  plannerDraftAnswer?: string;
+}): boolean => {
+  return (
+    params.mode === "default" &&
+    params.thinkingEnabled !== true &&
+    params.observations.length === 0 &&
+    !params.persistRequired &&
+    Boolean(params.plannerDraftAnswer?.trim())
+  );
 };
 
 export class ToolPlanningChatAgent {
@@ -328,6 +409,7 @@ export class ToolPlanningChatAgent {
         sandboxService: this.sandboxService,
         conversationStore: this.conversationStore,
         onUpdate: emitUpdate,
+        onConversationUpdated: requestContext?.onConversationUpdated,
         abortSignal
       }
     });
@@ -381,6 +463,7 @@ export class ToolPlanningChatAgent {
     }
 
     emitUpdate("planning", "正在规划是否需要调用工具...");
+    emitUpdate("planning", mode === "thinking" || requestContext?.thinkingEnabled ? "分析问题并整理思路" : "分析问题");
 
     for (let step = 0; step < MAX_TOOL_STEPS; step += 1) {
       if (clarificationFinalReply) {
@@ -485,6 +568,12 @@ export class ToolPlanningChatAgent {
           emitUpdate("planning", "检测到请求要求落盘，继续规划 write_file 步骤");
           continue;
         }
+        emitUpdate("planning", describeAnswerStage({
+          observationsCount: observations.length,
+          mode,
+          thinkingEnabled: requestContext?.thinkingEnabled,
+          directFromPlanner: true
+        }));
         emitUpdate("final", "Planner 返回非结构化输出，进入流式回答阶段");
         break;
       }
@@ -502,6 +591,12 @@ export class ToolPlanningChatAgent {
           continue;
         }
         plannerDraftAnswer = action.answer;
+        emitUpdate("planning", describeAnswerStage({
+          observationsCount: observations.length,
+          mode,
+          thinkingEnabled: requestContext?.thinkingEnabled,
+          directFromPlanner: true
+        }));
         emitUpdate("final", "Planner 选择直接回答，进入流式回答阶段");
         break;
       }
@@ -540,6 +635,10 @@ export class ToolPlanningChatAgent {
       }
       attemptedToolSignatures.add(toolSignature);
 
+      const toolIntent = summarizeToolIntent(action.tool, action.reason, action.input);
+      if (toolIntent) {
+        emitUpdate("planning", toolIntent);
+      }
       emitUpdate("tool", `执行工具：${action.tool}${action.reason ? `（${normalizeSpaces(action.reason)}）` : ""}`);
       throwIfAborted(abortSignal);
       const observation = await pipeline.executeToolCall(
@@ -615,6 +714,11 @@ export class ToolPlanningChatAgent {
 
     throwIfAborted(abortSignal);
     if (!clarificationFinalReply) {
+      emitUpdate("planning", describeAnswerStage({
+        observationsCount: observations.length,
+        mode,
+        thinkingEnabled: requestContext?.thinkingEnabled
+      }));
       emitUpdate(
         "model",
         observations.length > 0
@@ -629,6 +733,28 @@ export class ToolPlanningChatAgent {
         provider: synthTarget.provider,
         model: synthTarget.model,
         text: clarificationFinalReply,
+        latencyMs: 0
+      };
+      middlewareCtx = await pipeline.runAfterAgent({
+        ...middlewareCtx,
+        finalResponse: finalResponse.text
+      });
+    } else if (
+      shouldBypassFinalSynthesizer({
+        mode,
+        thinkingEnabled: requestContext?.thinkingEnabled,
+        observations,
+        persistRequired,
+        plannerDraftAnswer
+      })
+    ) {
+      const directReply = plannerDraftAnswer?.trim() ?? "";
+      emitUpdate("model", "Planner 已直接产出最终回答，跳过总结模型");
+      onDelta?.(directReply);
+      finalResponse = {
+        provider: plannerTarget.provider,
+        model: plannerTarget.model,
+        text: directReply,
         latencyMs: 0
       };
       middlewareCtx = await pipeline.runAfterAgent({

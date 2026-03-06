@@ -31,15 +31,20 @@ export class OpenVikingMemoryProvider implements MemoryProvider {
       const chunks: ContextChunk[] = [];
       const seen = new Set<string>();
 
-      for (const targetUri of this.options.targetUris) {
-        const result = await this.client.search({
-          query: trimmedQuery,
-          sessionId: ovSessionId,
+      const searchResults = await Promise.all(
+        this.options.targetUris.map(async (targetUri) => ({
           targetUri,
-          limit: this.options.topK,
-          scoreThreshold: this.options.scoreThreshold
-        });
+          result: await this.client.search({
+            query: trimmedQuery,
+            sessionId: ovSessionId,
+            targetUri,
+            limit: this.options.topK,
+            scoreThreshold: this.options.scoreThreshold
+          })
+        }))
+      );
 
+      for (const { result } of searchResults) {
         const matched = this.collectMatchedContexts(result);
         for (const item of matched) {
           if (!item.uri || seen.has(item.uri)) {

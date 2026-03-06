@@ -142,6 +142,7 @@ declare global {
       // Event Listeners
       onChatUpdate: (listener: (update: ChatUpdateEvent) => void) => () => void;
       onChatDelta: (listener: (update: ChatDeltaEvent) => void) => () => void;
+      onConversationUpdate: (listener: (update: ConversationResult) => void) => () => void;
       onTaskUpdate: (listener: (update: TaskUpdateEvent) => void) => () => void;
 
       // Soul API

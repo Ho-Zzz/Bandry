@@ -63,6 +63,7 @@ describe("ChannelManager", () => {
       broadcastTaskUpdate: vi.fn(),
       broadcastChatUpdate: vi.fn(),
       broadcastChatDelta: vi.fn(),
+      broadcastConversationUpdate: vi.fn(),
       broadcastChannelStatus: vi.fn()
     };
 
