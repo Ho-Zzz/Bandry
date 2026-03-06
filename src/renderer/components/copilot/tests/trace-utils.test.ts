@@ -271,4 +271,28 @@ describe("trace-utils", () => {
       ])
     ).toBe("已回忆 2 条相关记忆");
   });
+
+  it("summarizes tool results into user-facing detail text", () => {
+    expect(
+      resolveLatestProcessDetail([
+        {
+          id: "1",
+          kind: "Result",
+          stage: "tool",
+          message: "web_search -> success: found https://example.com/a and https://example.com/b"
+        }
+      ])
+    ).toBe("已找到 2 条候选来源");
+
+    expect(
+      resolveLatestProcessDetail([
+        {
+          id: "1",
+          kind: "Result",
+          stage: "tool",
+          message: "write_file -> success: path=/mnt/workspace/output/report.md"
+        }
+      ])
+    ).toBe("已写入结果文件");
+  });
 });

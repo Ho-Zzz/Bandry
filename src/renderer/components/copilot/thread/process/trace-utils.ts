@@ -147,6 +147,55 @@ const isTraceNoise = (message: string): boolean => {
   );
 };
 
+const summarizeToolResultDetail = (source: string, status: "success" | "failed", output: string): string => {
+  if (status === "failed") {
+    if (source === "web_search") {
+      return "搜索失败，改为直接回答";
+    }
+    if (source === "web_fetch") {
+      return "页面读取失败";
+    }
+    if (source === "read_file") {
+      return "文件读取失败";
+    }
+    if (source === "write_file") {
+      return "文件写入失败";
+    }
+    return `${source} 执行失败`;
+  }
+
+  if (source === "web_search") {
+    const urls = extractUrlsFromText(output);
+    return urls.length > 0 ? `已找到 ${urls.length} 条候选来源` : "已完成信息搜索";
+  }
+
+  if (source === "web_fetch") {
+    return "已读取页面内容";
+  }
+
+  if (source === "read_file") {
+    return "已查看文件内容";
+  }
+
+  if (source === "list_dir") {
+    return "已检查目录内容";
+  }
+
+  if (source === "write_file") {
+    return "已写入结果文件";
+  }
+
+  if (source === "memory_search") {
+    return "已补充相关记忆";
+  }
+
+  if (source === "delegate_sub_tasks") {
+    return "已完成并行子任务";
+  }
+
+  return `${source} 已完成`;
+};
+
 const resolveStepLabel = (item: TraceItem, statusLabel: string): string | null => {
   const message = item.message.trim();
   if (!message || isTraceNoise(message)) {
@@ -220,6 +269,12 @@ export const resolveLatestProcessDetail = (items: TraceItem[]): string | null =>
     if (!message || isTraceNoise(message)) {
       continue;
     }
+
+    const parsedResult = parseToolResult(message);
+    if (parsedResult) {
+      return summarizeToolResultDetail(parsedResult.source, parsedResult.status, parsedResult.output);
+    }
+
     return truncateText(message, 120);
   }
 
