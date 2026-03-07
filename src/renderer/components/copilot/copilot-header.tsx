@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BrainIcon, ChevronDownIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import { BrainIcon, MoreHorizontalIcon, SettingsIcon, Trash2Icon } from "lucide-react";
 
 type CopilotHeaderProps = {
   memoryActive: boolean;
@@ -45,12 +45,13 @@ export const CopilotHeader = ({
         <button
           type="button"
           onClick={() => setMenuOpen((previous) => !previous)}
-          className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs text-zinc-600 transition-colors hover:bg-zinc-50"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 transition-colors hover:bg-zinc-50"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
+          aria-label="Open menu"
+          title="Menu"
         >
-          Menu
-          <ChevronDownIcon size={13} className={menuOpen ? "rotate-180" : ""} />
+          <MoreHorizontalIcon size={14} />
         </button>
 
         {menuOpen ? (

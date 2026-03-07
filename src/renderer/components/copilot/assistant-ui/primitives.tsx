@@ -1,5 +1,5 @@
-import type { ButtonHTMLAttributes, PropsWithChildren } from "react";
-import { AttachmentPrimitive, useAuiState } from "@assistant-ui/react";
+import type { ButtonHTMLAttributes, MouseEvent, PropsWithChildren } from "react";
+import { AttachmentPrimitive } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { XIcon } from "lucide-react";
 import { clsx } from "clsx";
@@ -30,75 +30,57 @@ export const IconButton = ({ tooltip, className, type = "button", children, ...r
 
 const FILE_PATH_REGEX = /(\/[\w./-]+\.\w+)/g;
 const FILE_PATH_DETECT_REGEX = /(\/[\w./-]+\.\w+)/;
+const MARKDOWN_LINK_REGEX = /\[[^\]]+\]\([^)]+\)/;
+const ESCAPED_MARKDOWN_LINK_REGEX = /\\\[([^\]]+)\\\]\(([^)]+)\)/g;
 
-const parseTextWithFilePaths = (text: string): Array<{ type: "text" | "file"; content: string }> => {
-  const parts: Array<{ type: "text" | "file"; content: string }> = [];
-  let lastIndex = 0;
-  let match;
-
-  const regex = new RegExp(FILE_PATH_REGEX);
-  while ((match = regex.exec(text)) !== null) {
-    // Add text before the file path
-    if (match.index > lastIndex) {
-      parts.push({ type: "text", content: text.slice(lastIndex, match.index) });
-    }
-    // Add the file path
-    parts.push({ type: "file", content: match[0] });
-    lastIndex = regex.lastIndex;
+const autoLinkFilePaths = (text: string): string => {
+  if (!text.trim()) {
+    return text;
   }
 
-  // Add remaining text
-  if (lastIndex < text.length) {
-    parts.push({ type: "text", content: text.slice(lastIndex) });
+  // Some model outputs escape markdown link brackets (e.g. \[...\](...)).
+  // Normalize first so react-markdown can parse links.
+  const normalized = text.replace(ESCAPED_MARKDOWN_LINK_REGEX, "[$1]($2)");
+
+  if (MARKDOWN_LINK_REGEX.test(normalized)) {
+    return normalized;
   }
 
-  return parts.length > 0 ? parts : [{ type: "text", content: text }];
+  return normalized.replace(FILE_PATH_REGEX, (path) => `[${path}](${path})`);
 };
 
 export const MarkdownText = () => {
-  const text = useAuiState((s) => {
-    const parts = s.message.parts;
-    const textPart = parts.find((p) => typeof p === "object" && p !== null && "type" in p && p.type === "text");
-    return textPart && typeof textPart === "object" && "text" in textPart ? String(textPart.text) : "";
-  });
-
   const openPreview = usePreviewStore((s) => s.openPreview);
   const workspacePath = usePreviewStore((s) => s.workspacePath);
+  const handleMarkdownClick = (event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    const anchor = target.closest("a");
+    if (!anchor) {
+      return;
+    }
+    const href = anchor.getAttribute("href");
+    if (!href) {
+      return;
+    }
 
-  // Check if text contains file paths (e.g., "已保存到文件：/mnt/workspace/output/report.md")
-  const hasFilePaths = FILE_PATH_DETECT_REGEX.test(text);
+    const decodedPath = decodeURIComponent(href);
+    if (!FILE_PATH_DETECT_REGEX.test(decodedPath)) {
+      return;
+    }
 
-  if (hasFilePaths) {
-    const parts = parseTextWithFilePaths(text);
-    return (
-      <div className="text-sm leading-7 text-zinc-900">
-        {parts.map((part, index) => {
-          if (part.type === "file") {
-            const fileName = part.content.split("/").pop() || part.content;
-            return (
-              <button
-                key={index}
-                type="button"
-                onClick={() => {
-                  void openPreview(part.content, fileName, workspacePath);
-                }}
-                className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700 hover:bg-emerald-100 hover:underline"
-              >
-                {part.content}
-              </button>
-            );
-          }
-          return <span key={index}>{part.content}</span>;
-        })}
-      </div>
-    );
-  }
+    event.preventDefault();
+    const fileName = decodedPath.split("/").pop() || decodedPath;
+    void openPreview(decodedPath, fileName, workspacePath);
+  };
 
   return (
-    <MarkdownTextPrimitive
-      smooth={false}
-      className="text-sm leading-7 text-zinc-900 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:text-emerald-700 [&_a]:underline [&_code]:rounded [&_code]:bg-zinc-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-zinc-900 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:my-3 [&_pre]:my-3 [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-zinc-200 [&_pre]:bg-zinc-100 [&_pre]:p-3 [&_pre]:text-zinc-900 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-zinc-900 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6"
-    />
+    <div onClick={handleMarkdownClick}>
+      <MarkdownTextPrimitive
+        smooth={false}
+        preprocess={autoLinkFilePaths}
+        className="text-sm leading-7 text-zinc-900 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:text-emerald-700 [&_a]:underline [&_code]:rounded [&_code]:bg-zinc-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-zinc-900 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:my-3 [&_pre]:my-3 [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-zinc-200 [&_pre]:bg-zinc-100 [&_pre]:p-3 [&_pre]:text-zinc-900 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-zinc-900 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6"
+      />
+    </div>
   );
 };
 

@@ -101,10 +101,38 @@ export const resolveFinalAssistantContent = (
   streamedContent: string | undefined,
   resultReply: string
 ): string => {
-  if (streamedContent && streamedContent.trim().length > 0) {
-    return streamedContent;
+  if (resultReply.trim().length > 0) {
+    return resultReply;
   }
-  return resultReply;
+  return streamedContent ?? "";
+};
+
+export const mergeAssistantDelta = (
+  currentContent: string,
+  delta: string
+): string => {
+  if (!delta) {
+    return currentContent;
+  }
+  if (!currentContent) {
+    return delta;
+  }
+  if (currentContent.endsWith(delta)) {
+    return currentContent;
+  }
+
+  // Deduplicate retransmitted prefixes by finding the largest overlap
+  // between current tail and new delta head.
+  const maxOverlap = Math.min(currentContent.length, delta.length);
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    const currentSuffix = currentContent.slice(-overlap);
+    const deltaPrefix = delta.slice(0, overlap);
+    if (currentSuffix === deltaPrefix) {
+      return `${currentContent}${delta.slice(overlap)}`;
+    }
+  }
+
+  return `${currentContent}${delta}`;
 };
 
 const parseModeFromPlanningTrace = (message: string): ChatMode | undefined => {
@@ -470,7 +498,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
 
           return {
             ...message,
-            content: `${message.content}${update.delta}`
+            content: mergeAssistantDelta(message.content, update.delta)
           };
         })
       );
