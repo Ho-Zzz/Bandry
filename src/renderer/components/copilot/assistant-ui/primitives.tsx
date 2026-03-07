@@ -31,22 +31,36 @@ export const IconButton = ({ tooltip, className, type = "button", children, ...r
 const FILE_PATH_REGEX = /(\/[\w./-]+\.\w+)/g;
 const FILE_PATH_DETECT_REGEX = /(\/[\w./-]+\.\w+)/;
 const MARKDOWN_LINK_REGEX = /\[[^\]]+\]\([^)]+\)/;
-const ESCAPED_MARKDOWN_LINK_REGEX = /\\\[([^\]]+)\\\]\(([^)]+)\)/g;
+const FILE_MARKDOWN_LINK_REGEX = /\[(\/[\w./-]+\.\w+)\]\((\/[\w./-]+\.\w+)\)/g;
+
+const getFileName = (filePath: string): string => {
+  const parts = filePath.split("/");
+  const name = parts[parts.length - 1];
+  return name || filePath;
+};
 
 const autoLinkFilePaths = (text: string): string => {
   if (!text.trim()) {
     return text;
   }
 
-  // Some model outputs escape markdown link brackets (e.g. \[...\](...)).
+  // Some model outputs escape markdown link tokens (e.g. \[...\]\(...\)).
   // Normalize first so react-markdown can parse links.
-  const normalized = text.replace(ESCAPED_MARKDOWN_LINK_REGEX, "[$1]($2)");
+  const normalizedEscapes = text
+    .replace(/\\\[/g, "[")
+    .replace(/\\\]/g, "]")
+    .replace(/\\\(/g, "(")
+    .replace(/\\\)/g, ")");
+
+  const normalized = normalizedEscapes.replace(FILE_MARKDOWN_LINK_REGEX, (_match, _label, href) => {
+    return `[${getFileName(href)}](${href})`;
+  });
 
   if (MARKDOWN_LINK_REGEX.test(normalized)) {
     return normalized;
   }
 
-  return normalized.replace(FILE_PATH_REGEX, (path) => `[${path}](${path})`);
+  return normalized.replace(FILE_PATH_REGEX, (filePath) => `[${getFileName(filePath)}](${filePath})`);
 };
 
 export const MarkdownText = () => {

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import type { AppConfig, ModelCapabilities, RuntimeRole } from "../../config";
 import type { GenerateTextResult, ModelsFactory } from "../../llm/runtime";
 import { resolveRuntimeTarget, type RuntimeModelTarget } from "../../llm/runtime/runtime-target";
@@ -120,6 +121,18 @@ const extractJsonArray = (text: string): string | null => {
 const extractPersistedPath = (output: string): string | undefined => {
   const match = output.match(/path=([^\s,]+)/i);
   return match?.[1];
+};
+
+const PERSIST_PATH_LINE_REGEX = /^\s*(?:文件路径|保存路径|已保存到文件)\s*[:：].*$/gim;
+const STANDALONE_OUTPUT_LINK_LINE_REGEX = /^\s*\[[^\]]+\]\(\/mnt\/workspace\/output\/[^)]+\)\s*$/gim;
+
+const sanitizePersistSummary = (text: string): string => {
+  const cleaned = text
+    .replace(PERSIST_PATH_LINE_REGEX, "")
+    .replace(STANDALONE_OUTPUT_LINK_LINE_REGEX, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return cleaned;
 };
 
 const summarizeToolIntent = (tool: string, reason?: string, input?: PlannerActionTool["input"]): string | null => {
@@ -628,6 +641,11 @@ export class ToolPlanningChatAgent {
         };
       }
 
+      if (persistRequired && persistDone && action.tool === "write_file") {
+        emitUpdate("planning", "检测到已完成落盘，跳过额外写入并进入回答阶段");
+        break;
+      }
+
       const toolSignature = `${action.tool}:${JSON.stringify(action.input ?? {})}`;
       if (attemptedToolSignatures.has(toolSignature)) {
         emitUpdate("final", "检测到重复工具调用，改为直接回答");
@@ -882,9 +900,11 @@ export class ToolPlanningChatAgent {
     }
 
     if (persistRequired && persistDone && persistedPath && !clarificationFinalReply) {
+      const sanitized = sanitizePersistSummary(finalResponse.text);
+      const fileName = path.posix.basename(persistedPath);
       finalResponse = {
         ...finalResponse,
-        text: `${finalResponse.text}\n\n已保存到文件：${persistedPath}`
+        text: `${sanitized ? `${sanitized}\n\n` : ""}已保存到文件：[${fileName}](${persistedPath})`
       };
     }
 

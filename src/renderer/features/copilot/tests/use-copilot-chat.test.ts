@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ChatUpdateEvent } from "../../../../shared/ipc";
 import {
-  isConversationLoading,
   mergeAssistantDelta,
+  normalizePersistSummary,
+  isConversationLoading,
   normalizeClarificationInput,
   resolveRequestSettingsFromTrace,
   resolvePendingClarificationFromUpdate,
@@ -81,5 +82,31 @@ describe("use-copilot-chat helpers", () => {
     expect(mergeAssistantDelta("你好世界", "世界和平")).toBe("你好世界和平");
     expect(mergeAssistantDelta("abc", "abc")).toBe("abc");
     expect(mergeAssistantDelta("Hello", " world")).toBe("Hello world");
+  });
+
+  it("normalizes persisted summary to a single markdown link line", () => {
+    const content = [
+      "我已经将我们的对话保存为 Markdown 文件。文件已保存在当前工作区：",
+      "",
+      "文件路径: /mnt/workspace/output/conversation-20260307-204244.md",
+      "",
+      "文件包含了完整的对话记录。",
+      "",
+      "已保存到文件：conversation-20260307-205556.md"
+    ].join("\n");
+
+    const trace: ChatUpdateEvent[] = [
+      {
+        requestId: "req_3",
+        stage: "tool",
+        message: "write_file -> success: Wrote file successfully: path=/mnt/workspace/output/conversation-20260307-205556.md, bytes=1024",
+        timestamp: 3
+      }
+    ];
+
+    const normalized = normalizePersistSummary(content, trace);
+    expect(normalized).not.toContain("文件路径:");
+    expect(normalized).not.toContain("已保存到文件：conversation-20260307-205556.md");
+    expect(normalized).toContain("已保存到文件：[conversation-20260307-205556.md](/mnt/workspace/output/conversation-20260307-205556.md)");
   });
 });
