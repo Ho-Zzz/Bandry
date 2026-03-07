@@ -428,7 +428,7 @@ export const buildProcessLineItems = (
   }
 
   if (!isRunning && lines.length > 0) {
-    return lines.map((line, index, all) => {
+    return lines.map((line) => {
       if (line.status !== "running") {
         return line;
       }

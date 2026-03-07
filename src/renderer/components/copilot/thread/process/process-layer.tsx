@@ -61,6 +61,7 @@ const resolveLineIcon = (icon: ProcessLineIcon, status: ProcessLineItem["status"
 export const ProcessLayer = ({ items, isRunning, mode, thinkingEnabled }: ProcessLayerProps) => {
   const [expanded, setExpanded] = useState(false);
   const [userToggled, setUserToggled] = useState(false);
+  const [tick, setTick] = useState(0);
   const lines = useMemo(
     () =>
       buildProcessLineItems(items, isRunning, {
@@ -70,14 +71,31 @@ export const ProcessLayer = ({ items, isRunning, mode, thinkingEnabled }: Proces
     [items, isRunning, mode, thinkingEnabled]
   );
 
+  useEffect(() => {
+    if (!isRunning) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setTick((previous) => previous + 1);
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [isRunning]);
+
   const elapsed = useMemo(() => {
+    void tick;
     const timestamps = items.map((item) => item.timestamp).filter((value): value is number => value !== undefined);
-    if (timestamps.length < 2) {
+    if (timestamps.length === 0) {
       return null;
     }
 
-    return formatDuration(Math.max(...timestamps) - Math.min(...timestamps));
-  }, [items]);
+    const minTimestamp = Math.min(...timestamps);
+    const maxTimestamp = isRunning ? Date.now() : Math.max(...timestamps);
+    return formatDuration(Math.max(0, maxTimestamp - minTimestamp));
+  }, [items, isRunning, tick]);
 
   const hasError = lines.some((line) => line.status === "failed");
   const latestLine = lines[lines.length - 1];
