@@ -80,6 +80,7 @@ import type {
   UserFilesSaveConversationResult
 } from "../../shared/ipc";
 import type { OpenVikingHttpClient } from "../memory/openviking/http-client";
+import { OpenVikingHttpError } from "../memory/openviking/http-client";
 import type { OpenVikingProcessManager } from "../memory/openviking/process-manager";
 import type { IpcEventBus } from "./event-bus";
 import type { SoulService } from "../soul/soul-service";
@@ -112,6 +113,17 @@ const sleep = async (ms: number): Promise<void> => {
   await new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
+};
+
+const isMissingVikingDirectory = (error: unknown): boolean => {
+  if (!(error instanceof OpenVikingHttpError)) {
+    return false;
+  }
+  if (error.statusCode !== 500) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return message.includes("no such directory");
 };
 
 export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRunningTasks: () => void } => {
@@ -471,7 +483,17 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
       if (!ov.httpClient) {
         throw new Error("OpenViking is not running");
       }
-      const result = await ov.httpClient.ls(listInput.uri);
+      let result;
+      try {
+        result = await ov.httpClient.ls(listInput.uri);
+      } catch (error) {
+        // OpenViking may return 500 when a virtual directory has not been created yet.
+        // Treat this as an empty listing so Memory Studio can load without surfacing an error.
+        if (isMissingVikingDirectory(error)) {
+          return { entries: [] };
+        }
+        throw error;
+      }
       return {
         entries: result.map((entry) => {
           const uriStr = entry.uri ?? "";
