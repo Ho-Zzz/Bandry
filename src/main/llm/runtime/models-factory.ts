@@ -4,6 +4,7 @@ import type { AppConfig, LlmProvider } from "../../config";
 import { ModelService } from "./model-service";
 import { ModelRequestError } from "./model-request-error";
 import type { AuditRecord, GenerateTextInput, GenerateTextResult, LlmMessage } from "./types";
+import { runtimeLogger } from "../../logging/runtime-logger";
 
 type ProviderResolvedConfig = {
   provider: LlmProvider;
@@ -42,8 +43,23 @@ export class ModelsFactory {
     const messages = this.resolveMessages(input);
     const promptChars = messages.reduce((sum, message) => sum + message.content.length, 0);
     const startedAt = Date.now();
+    const phase = input.phase ?? "model";
+    const traceId = input.traceId;
+    const modelCallId = input.modelCallId;
 
-    console.log(`[LLM] Starting request: ${resolved.provider}/${model} (${promptChars} chars, ${messages.length} messages)`);
+    runtimeLogger.info({
+      module: "llm",
+      phase,
+      traceId,
+      modelCallId,
+      msg: "Starting request",
+      extra: {
+        provider: resolved.provider,
+        model,
+        promptChars,
+        messageCount: messages.length,
+      },
+    });
 
     try {
       const stream = this.modelService.chat({
@@ -71,7 +87,18 @@ export class ModelsFactory {
           if (!firstTokenAt) {
             firstTokenAt = Date.now();
             const ttft = firstTokenAt - startedAt;
-            console.log(`[LLM] First token received: ${resolved.provider}/${model} (TTFT: ${ttft}ms)`);
+            runtimeLogger.info({
+              module: "llm",
+              phase,
+              traceId,
+              modelCallId,
+              msg: "First token received",
+              durationMs: ttft,
+              extra: {
+                provider: resolved.provider,
+                model,
+              },
+            });
           }
           text += event.delta;
           onDelta?.(event.delta);
@@ -110,7 +137,22 @@ export class ModelsFactory {
         usage
       };
 
-      console.log(`[LLM] Completed: ${resolved.provider}/${model} (${completed.latencyMs}ms, ${text.length} chars${usage ? `, ${usage.totalTokens} tokens` : ''})`);
+      runtimeLogger.info({
+        module: "llm",
+        phase,
+        traceId,
+        modelCallId,
+        msg: "Completed",
+        durationMs: completed.latencyMs,
+        extra: {
+          provider: resolved.provider,
+          model,
+          responseChars: text.length,
+          totalTokens: usage?.totalTokens,
+          promptTokens: usage?.promptTokens,
+          completionTokens: usage?.completionTokens,
+        },
+      });
 
       await this.writeAuditRecord({
         timestamp: new Date().toISOString(),
@@ -131,7 +173,20 @@ export class ModelsFactory {
       const normalized = error instanceof Error ? error : new Error("Model request failed");
       const status = normalized instanceof ModelRequestError ? normalized.status : undefined;
 
-      console.error(`[LLM] Failed: ${resolved.provider}/${model} (${duration}ms) - ${normalized.message}`);
+      runtimeLogger.error({
+        module: "llm",
+        phase,
+        traceId,
+        modelCallId,
+        msg: "Failed",
+        durationMs: duration,
+        extra: {
+          provider: resolved.provider,
+          model,
+          status,
+          error: normalized.message,
+        },
+      });
 
       await this.writeAuditRecord({
         timestamp: new Date().toISOString(),

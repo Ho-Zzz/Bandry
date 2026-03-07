@@ -4,7 +4,8 @@ import {
   isConversationLoading,
   normalizeClarificationInput,
   resolveRequestSettingsFromTrace,
-  resolvePendingClarificationFromUpdate
+  resolvePendingClarificationFromUpdate,
+  resolveFinalAssistantContent
 } from "../use-copilot-chat";
 
 describe("use-copilot-chat helpers", () => {
@@ -66,5 +67,11 @@ describe("use-copilot-chat helpers", () => {
       mode: "default",
       thinkingEnabled: false
     });
+  });
+
+  it("keeps streamed content when final reply arrives", () => {
+    expect(resolveFinalAssistantContent("streaming text", "full reply")).toBe("streaming text");
+    expect(resolveFinalAssistantContent("   ", "full reply")).toBe("full reply");
+    expect(resolveFinalAssistantContent(undefined, "full reply")).toBe("full reply");
   });
 });

@@ -1,6 +1,7 @@
 import type { ContextChunk, Conversation, MemoryProvider } from "../contracts/types";
 import type { OpenVikingFindResult, OpenVikingMatchedContext } from "./types";
 import { OpenVikingHttpClient } from "./http-client";
+import { runtimeLogger } from "../../logging/runtime-logger";
 
 type OpenVikingMemoryProviderOptions = {
   targetUris: string[];
@@ -62,7 +63,15 @@ export class OpenVikingMemoryProvider implements MemoryProvider {
 
       return chunks.slice(0, this.options.topK);
     } catch (error) {
-      console.error("[OpenVikingMemoryProvider] Failed to inject context:", error);
+      runtimeLogger.error({
+        module: "openviking",
+        phase: "memory_inject",
+        traceId: sessionId,
+        msg: "Failed to inject context",
+        extra: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       return [];
     }
   }
@@ -81,7 +90,15 @@ export class OpenVikingMemoryProvider implements MemoryProvider {
           await this.persistConversation(pending);
         }
       } catch (error) {
-        console.error("[OpenVikingMemoryProvider] Failed to persist conversation:", error);
+        runtimeLogger.error({
+          module: "openviking",
+          phase: "memory_persist",
+          traceId: conversation.sessionId,
+          msg: "Failed to persist conversation",
+          extra: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
       } finally {
         this.pendingStorage.delete(conversation.sessionId);
         this.pendingConversations.delete(conversation.sessionId);
@@ -103,7 +120,15 @@ export class OpenVikingMemoryProvider implements MemoryProvider {
       try {
         await this.persistConversation(conversation);
       } catch (error) {
-        console.error("[OpenVikingMemoryProvider] Flush persist failed:", error);
+        runtimeLogger.error({
+          module: "openviking",
+          phase: "memory_flush",
+          traceId: conversation.sessionId,
+          msg: "Flush persist failed",
+          extra: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
       }
     }
   }
@@ -138,8 +163,16 @@ export class OpenVikingMemoryProvider implements MemoryProvider {
     } catch (error) {
       // Silently fail persistence to avoid blocking or logging noise
       // Memory persistence is best-effort and should not affect chat functionality
-      if (error instanceof Error && !error.message.includes('timeout')) {
-        console.warn("[OpenVikingMemoryProvider] Persist failed:", error.message);
+      if (error instanceof Error && !error.message.includes("timeout")) {
+        runtimeLogger.warn({
+          module: "openviking",
+          phase: "memory_persist",
+          traceId: conversation.sessionId,
+          msg: "Persist failed",
+          extra: {
+            error: error.message,
+          },
+        });
       }
     }
   }

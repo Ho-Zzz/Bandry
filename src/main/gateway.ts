@@ -1,6 +1,7 @@
 import { OpenVikingMemoryProvider, OpenVikingProcessManager } from "./memory/openviking";
 import { createCompositionRoot } from "./app/composition-root";
 import type { IpcEventBus } from "./ipc/event-bus";
+import { runtimeLogger } from "./logging/runtime-logger";
 
 const eventBus: IpcEventBus = {
   broadcastTaskUpdate: (u) => console.log("[event:task]", u.status),
@@ -28,7 +29,12 @@ const syncOpenViking = async (): Promise<void> => {
   const manager = new OpenVikingProcessManager(composition.config);
   try {
     const { runtime } = await manager.start();
-    console.log(`[Gateway] OpenViking started at ${runtime.url}`);
+    runtimeLogger.info({
+      module: "openviking",
+      phase: "gateway_startup",
+      msg: "Gateway OpenViking started",
+      extra: { url: runtime.url },
+    });
 
     composition.openViking.processManager = manager;
     composition.openViking.memoryProvider = new OpenVikingMemoryProvider(
@@ -41,7 +47,14 @@ const syncOpenViking = async (): Promise<void> => {
       }
     );
   } catch (error) {
-    console.error("[Gateway] OpenViking failed to start, memory disabled:", error);
+    runtimeLogger.error({
+      module: "openviking",
+      phase: "gateway_startup",
+      msg: "Gateway OpenViking failed to start",
+      extra: {
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
     await manager.stop();
     composition.openViking.processManager = null;
     composition.openViking.memoryProvider = null;

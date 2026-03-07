@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import type { AppConfig } from "../../config";
+import { runtimeLogger } from "../../logging/runtime-logger";
 import { writeOpenVikingConfig } from "./config-builder";
 import { OpenVikingHttpClient } from "./http-client";
 import { resolveOpenVikingCommand } from "./python-resolver";
@@ -128,10 +129,22 @@ export class OpenVikingProcessManager {
       if (content.includes(original)) {
         content = content.replace(original, patched);
         fsSync.writeFileSync(agfsManagerPath, content, "utf8");
-        console.log("[OpenViking] Patched AGFS timeout: 5s -> 30s");
+        runtimeLogger.info({
+          module: "openviking",
+          phase: "prepare_env",
+          msg: "Patched AGFS timeout",
+          extra: { from: "5s", to: "30s" },
+        });
       }
     } catch (error) {
-      console.warn("[OpenViking] Could not patch AGFS timeout:", error);
+      runtimeLogger.warn({
+        module: "openviking",
+        phase: "prepare_env",
+        msg: "Could not patch AGFS timeout",
+        extra: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
     }
   }
 
@@ -143,12 +156,24 @@ export class OpenVikingProcessManager {
       return;
     }
 
-    console.log("[OpenViking] Warming up AGFS binary (macOS Gatekeeper may take a moment) ...");
+    runtimeLogger.info({
+      module: "openviking",
+      phase: "prepare_env",
+      msg: "Warming up AGFS binary (macOS Gatekeeper may take a moment)",
+    });
     try {
       execFileSync(agfsBinary, ["--help"], { stdio: "pipe", timeout: 60_000 });
-      console.log("[OpenViking] AGFS binary warm-up done");
+      runtimeLogger.info({
+        module: "openviking",
+        phase: "prepare_env",
+        msg: "AGFS binary warm-up done",
+      });
     } catch {
-      console.warn("[OpenViking] AGFS binary warm-up failed (non-fatal)");
+      runtimeLogger.warn({
+        module: "openviking",
+        phase: "prepare_env",
+        msg: "AGFS binary warm-up failed (non-fatal)",
+      });
     }
   }
 
@@ -179,13 +204,25 @@ export class OpenVikingProcessManager {
         try {
           if (!fsSync.existsSync(lockPath)) continue;
           fsSync.unlinkSync(lockPath);
-          console.log(`[OpenViking] Removed stale lock: ${lockPath}`);
+          runtimeLogger.info({
+            module: "openviking",
+            phase: "prepare_env",
+            msg: "Removed stale lock",
+            extra: { lockPath },
+          });
         } catch {
           // Best-effort: if we can't remove it, let OpenViking report the error
         }
       }
     } catch (error) {
-      console.warn("[OpenViking] Could not clean stale locks:", error);
+      runtimeLogger.warn({
+        module: "openviking",
+        phase: "prepare_env",
+        msg: "Could not clean stale locks",
+        extra: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
     }
   }
 
@@ -249,7 +286,11 @@ export class OpenVikingProcessManager {
     child.stdout.on("data", (chunk: Buffer) => {
       const line = chunk.toString("utf8").trim();
       if (line) {
-        console.log(`[OpenViking] ${line}`);
+        runtimeLogger.info({
+          module: "openviking",
+          phase: "child_stdout",
+          msg: line,
+        });
       }
     });
 
@@ -263,7 +304,11 @@ export class OpenVikingProcessManager {
       if (this.stderrBuffer.length > 60) {
         this.stderrBuffer.shift();
       }
-      console.warn(`[OpenViking] ${line}`);
+      runtimeLogger.warn({
+        module: "openviking",
+        phase: "child_stderr",
+        msg: line,
+      });
     });
 
     this.child = child;
@@ -313,28 +358,55 @@ export class OpenVikingProcessManager {
       const canRestart = this.restartAttempts < OpenVikingProcessManager.MAX_RESTART_ATTEMPTS;
       this.restartAttempts += 1;
 
-      console.warn(
-        `[OpenViking] Process exited unexpectedly (code=${code}, signal=${signal}). ` +
-        `Restart attempt ${this.restartAttempts}/${OpenVikingProcessManager.MAX_RESTART_ATTEMPTS}.`
-      );
+      runtimeLogger.warn({
+        module: "openviking",
+        phase: "crash",
+        msg: "Process exited unexpectedly",
+        extra: {
+          exitCode: code,
+          signal: signal?.toString() ?? null,
+          restartAttempt: this.restartAttempts,
+          maxRestartAttempts: OpenVikingProcessManager.MAX_RESTART_ATTEMPTS,
+        },
+      });
 
       if (!canRestart) {
-        console.error("[OpenViking] Max restart attempts exhausted, giving up.");
+        runtimeLogger.error({
+          module: "openviking",
+          phase: "crash",
+          msg: "Max restart attempts exhausted",
+        });
         this.onCrashCallback?.({ exitCode: code, signal: signal?.toString() ?? null, willRestart: false });
         return;
       }
 
       const delay = OpenVikingProcessManager.RESTART_DELAY_MS * this.restartAttempts;
-      console.log(`[OpenViking] Scheduling restart in ${delay}ms...`);
+      runtimeLogger.info({
+        module: "openviking",
+        phase: "restart",
+        msg: "Scheduling restart",
+        extra: { delayMs: delay },
+      });
 
       setTimeout(() => {
         void this.start()
           .then(() => {
-            console.log("[OpenViking] Auto-restart succeeded");
+            runtimeLogger.info({
+              module: "openviking",
+              phase: "restart",
+              msg: "Auto-restart succeeded",
+            });
             this.onCrashCallback?.({ exitCode: code, signal: signal?.toString() ?? null, willRestart: true });
           })
           .catch((err) => {
-            console.error("[OpenViking] Auto-restart failed:", err);
+            runtimeLogger.error({
+              module: "openviking",
+              phase: "restart",
+              msg: "Auto-restart failed",
+              extra: {
+                error: err instanceof Error ? err.message : String(err),
+              },
+            });
             this.onCrashCallback?.({ exitCode: code, signal: signal?.toString() ?? null, willRestart: false });
           });
       }, delay);

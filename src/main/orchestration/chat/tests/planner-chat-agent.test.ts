@@ -433,7 +433,7 @@ describe("ToolPlanningChatAgent", () => {
     );
   });
 
-  it("skips final synthesizer for default direct answers without tools", async () => {
+  it("uses final synthesizer streaming for default direct answers without tools", async () => {
     const config = createConfig();
     const modelsFactory = {
       isProviderConfigured: vi.fn(() => true),
@@ -443,7 +443,16 @@ describe("ToolPlanningChatAgent", () => {
         text: '{"action":"answer","answer":"直接返回 planner 的回答"}',
         latencyMs: 30
       })),
-      generateTextStream: vi.fn()
+      generateTextStream: vi.fn(async (_input, onDelta: (delta: string) => void) => {
+        onDelta("直接");
+        onDelta("返回 planner 的回答");
+        return {
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: "直接返回 planner 的回答",
+          latencyMs: 40
+        };
+      })
     };
 
     const sandboxService = {
@@ -463,7 +472,7 @@ describe("ToolPlanningChatAgent", () => {
     });
 
     expect(result.reply).toBe("直接返回 planner 的回答");
-    expect(modelsFactory.generateTextStream).not.toHaveBeenCalled();
+    expect(modelsFactory.generateTextStream).toHaveBeenCalledTimes(1);
   });
 
   it("emits clarification payload and stops execution when planner asks clarification", async () => {

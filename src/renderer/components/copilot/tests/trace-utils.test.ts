@@ -1,15 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildProcessSteps,
   buildProcessSections,
+  buildProcessLineItems,
   buildSourcesFromParts,
   buildToolSummaries,
   extractTraceItems,
   formatDuration,
   hasSearchLikeToolActivity,
-  resolveLatestProcessDetail,
-  resolveProcessStatusLabel,
   tryFormatJson
 } from "../thread/process/trace-utils";
 
@@ -191,108 +189,111 @@ describe("trace-utils", () => {
     ).toBe(false);
   });
 
-  it("uses mode-aware running labels instead of always showing thinking", () => {
-    expect(
-      resolveProcessStatusLabel({
-        isRunning: true,
-        mode: "default",
-        thinkingEnabled: false
-      })
-    ).toBe("Generating");
+  it("builds line-based process items for planning and tool execution", () => {
+    const lines = buildProcessLineItems(
+      [
+        {
+          id: "p1",
+          kind: "Plan",
+          stage: "planning",
+          message: "回忆相关上下文"
+        },
+        {
+          id: "t1",
+          kind: "Tool",
+          stage: "tool",
+          message: "执行工具：web_search（查找最新信息）",
+          source: "web_search"
+        },
+        {
+          id: "r1",
+          kind: "Result",
+          stage: "tool",
+          message: "web_search -> success: found https://example.com/a"
+        }
+      ],
+      true
+    );
 
-    expect(
-      resolveProcessStatusLabel({
-        isRunning: true,
-        mode: "thinking",
-        thinkingEnabled: true
-      })
-    ).toBe("Thinking");
-
-    expect(
-      resolveProcessStatusLabel({
-        isRunning: true,
-        mode: "subagents",
-        thinkingEnabled: false
-      })
-    ).toBe("Coordinating");
+    expect(lines.map((line) => line.title)).toEqual(["回忆完成", "搜索完成"]);
+    expect(lines[0]?.status).toBe("success");
+    expect(lines[1]?.status).toBe("success");
   });
 
-  it("builds concise process steps for key milestones", () => {
-    expect(
-      buildProcessSteps(
-        [
-          {
-            id: "1",
-            kind: "Plan",
-            stage: "planning",
-            message: "回忆相关上下文"
-          },
-          {
-            id: "2",
-            kind: "Tool",
-            stage: "tool",
-            message: "执行工具：web_search",
-            source: "web_search"
-          },
-          {
-            id: "3",
-            kind: "Result",
-            stage: "final",
-            message: "最终回答已生成"
-          }
-        ],
-        true,
-        "Thinking"
-      ).map((step) => step.label)
-    ).toEqual(["Thinking", "回忆", "web_search", "回答"]);
+  it("turns remaining running lines into completed when request stops", () => {
+    const lines = buildProcessLineItems(
+      [
+        {
+          id: "t1",
+          kind: "Tool",
+          stage: "tool",
+          message: "执行工具：read_file",
+          source: "read_file"
+        }
+      ],
+      false
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.status).toBe("success");
+    expect(lines[0]?.title).toContain("完成");
   });
 
-  it("resolves latest meaningful detail and skips trace noise", () => {
-    expect(
-      resolveLatestProcessDetail([
+  it("hides answer preparation and completion lines", () => {
+    const lines = buildProcessLineItems(
+      [
         {
           id: "1",
           kind: "Plan",
           stage: "planning",
-          message: "Mode: default"
+          message: "准备回答"
         },
         {
           id: "2",
           kind: "Plan",
-          stage: "planning",
-          message: "Thinking enabled: false"
+          stage: "model",
+          message: "整理工具结果并准备回答"
         },
         {
           id: "3",
-          kind: "Plan",
-          stage: "planning",
-          message: "已回忆 2 条相关记忆"
+          kind: "Result",
+          stage: "final",
+          message: "最终回答已生成"
+        },
+        {
+          id: "4",
+          kind: "Result",
+          stage: "final",
+          message: "最终回答已生成"
         }
-      ])
-    ).toBe("已回忆 2 条相关记忆");
+      ],
+      false
+    );
+
+    expect(lines.filter((line) => line.title === "准备回答")).toHaveLength(0);
+    expect(lines.filter((line) => line.title === "回答完成")).toHaveLength(0);
   });
 
-  it("summarizes tool results into user-facing detail text", () => {
-    expect(
-      resolveLatestProcessDetail([
+  it("uses thinking-oriented running copy in thinking mode", () => {
+    const lines = buildProcessLineItems(
+      [
         {
-          id: "1",
-          kind: "Result",
+          id: "t1",
+          kind: "Tool",
           stage: "tool",
-          message: "web_search -> success: found https://example.com/a and https://example.com/b"
+          message: "执行工具：web_search",
+          source: "web_search"
         }
-      ])
-    ).toBe("已找到 2 条候选来源");
+      ],
+      true,
+      {
+        mode: "thinking",
+        thinkingEnabled: true
+      }
+    );
 
-    expect(
-      resolveLatestProcessDetail([
-        {
-          id: "1",
-          kind: "Result",
-          stage: "tool",
-          message: "write_file -> success: path=/mnt/workspace/output/report.md"
-        }
-      ])
-    ).toBe("已写入结果文件");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.title).toBe("思考检索中");
+    expect(lines[0]?.status).toBe("running");
   });
 });

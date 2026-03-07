@@ -29,6 +29,7 @@ import { createMiddlewarePipeline } from "./middleware";
 import { buildFinalSystemPrompt, buildPlannerSystemPrompt } from "./prompts";
 import { executePlannerTool } from "./tool-executor";
 import { normalizeSpaces, truncate } from "./text-utils";
+import { runtimeLogger } from "../../logging/runtime-logger";
 
 type ReasoningEffort = "minimal" | "low" | "medium" | "high";
 
@@ -184,22 +185,6 @@ const describeAnswerStage = (params: {
   return "准备回答";
 };
 
-const shouldBypassFinalSynthesizer = (params: {
-  mode: ChatMode;
-  thinkingEnabled?: boolean;
-  observations: ToolObservation[];
-  persistRequired: boolean;
-  plannerDraftAnswer?: string;
-}): boolean => {
-  return (
-    params.mode === "default" &&
-    params.thinkingEnabled !== true &&
-    params.observations.length === 0 &&
-    !params.persistRequired &&
-    Boolean(params.plannerDraftAnswer?.trim())
-  );
-};
-
 export class ToolPlanningChatAgent {
   private memoryProvider?: MemoryProvider;
 
@@ -308,7 +293,6 @@ export class ToolPlanningChatAgent {
     requestContext?: ChatRequestContext
   ): Promise<ChatSendResult> {
     const requestStartTime = Date.now();
-    console.log(`[Chat] Request started: "${input.message.slice(0, 50)}${input.message.length > 50 ? '...' : ''}"`);
 
     const message = input.message.trim();
     if (!message) {
@@ -337,6 +321,18 @@ export class ToolPlanningChatAgent {
     let persistDone = false;
     let persistPathHint = resolvedPersistPath?.ok ? resolvedPersistPath.path : "";
     let persistedPath: string | undefined;
+    const requestTraceId = input.requestId?.trim() || randomUUID();
+
+    runtimeLogger.info({
+      module: "chat",
+      phase: "request_start",
+      traceId: requestTraceId,
+      msg: "Request started",
+      extra: {
+        mode,
+        messagePreview: `${message.slice(0, 50)}${message.length > 50 ? "..." : ""}`,
+      },
+    });
 
     const emitUpdate = (stage: ChatUpdateStage, updateMessage: string, payload?: ChatUpdatePayload): void => {
       onUpdate?.(stage, updateMessage, payload);
@@ -389,7 +385,7 @@ export class ToolPlanningChatAgent {
       }
     });
     let middlewareCtx = await pipeline.runBeforeAgent({
-      sessionId: input.requestId?.trim() || randomUUID(),
+      sessionId: requestTraceId,
       taskId: randomUUID(),
       conversationId: input.conversationId,
       workspacePath: "",
@@ -477,6 +473,7 @@ export class ToolPlanningChatAgent {
 
       let planner: GenerateTextResult;
       try {
+        const plannerModelCallId = `planner-${step + 1}-${Date.now().toString(36)}`;
         const plannerMessages = [
           {
             role: "system" as const,
@@ -511,6 +508,9 @@ export class ToolPlanningChatAgent {
               temperature: plannerTarget.temperature ?? 0,
               maxTokens: plannerTarget.maxTokens,
               messages: ctx.messages,
+              traceId: middlewareCtx.sessionId,
+              phase: "planner",
+              modelCallId: plannerModelCallId,
               abortSignal,
               extraBody: apiExtras?.extraBody,
               reasoningEffort: apiExtras?.reasoningEffort
@@ -739,30 +739,9 @@ export class ToolPlanningChatAgent {
         ...middlewareCtx,
         finalResponse: finalResponse.text
       });
-    } else if (
-      shouldBypassFinalSynthesizer({
-        mode,
-        thinkingEnabled: requestContext?.thinkingEnabled,
-        observations,
-        persistRequired,
-        plannerDraftAnswer
-      })
-    ) {
-      const directReply = plannerDraftAnswer?.trim() ?? "";
-      emitUpdate("model", "Planner 已直接产出最终回答，跳过总结模型");
-      onDelta?.(directReply);
-      finalResponse = {
-        provider: plannerTarget.provider,
-        model: plannerTarget.model,
-        text: directReply,
-        latencyMs: 0
-      };
-      middlewareCtx = await pipeline.runAfterAgent({
-        ...middlewareCtx,
-        finalResponse: finalResponse.text
-      });
     } else {
       try {
+        const finalModelCallId = `final-${Date.now().toString(36)}`;
         const finalMessages = [
           {
             role: "system" as const,
@@ -800,6 +779,9 @@ export class ToolPlanningChatAgent {
                 temperature: synthTarget.temperature ?? 0.2,
                 maxTokens: synthTarget.maxTokens,
                 messages: ctx.messages,
+                traceId: middlewareCtx.sessionId,
+                phase: "final",
+                modelCallId: finalModelCallId,
                 abortSignal,
                 extraBody: apiExtras?.extraBody,
                 reasoningEffort: apiExtras?.reasoningEffort
@@ -910,7 +892,20 @@ export class ToolPlanningChatAgent {
     emitUpdate("final", "最终回答已生成");
 
     const totalDuration = Date.now() - requestStartTime;
-    console.log(`[Chat] Request completed: ${totalDuration}ms (accumulated LLM: ${accumulatedLatency}ms, overhead: ${totalDuration - accumulatedLatency}ms)`);
+    runtimeLogger.info({
+      module: "chat",
+      phase: "request_end",
+      traceId: middlewareCtx.sessionId,
+      msg: "Request completed",
+      durationMs: totalDuration,
+      extra: {
+        accumulatedVisibleLlmMs: accumulatedLatency,
+        computedOverheadMs: totalDuration - accumulatedLatency,
+        promptTokens: accumulatedPromptTokens,
+        completionTokens: accumulatedCompletionTokens,
+        totalTokens: accumulatedTotalTokens,
+      },
+    });
 
     return buildStreamResult(
       finalResponse,

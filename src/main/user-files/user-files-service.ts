@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import type { OpenVikingHttpClient } from "../memory/openviking/http-client";
 import type { ConversationExporter } from "./conversation-exporter";
 import type { UserFileRecord, FileEntry } from "./types";
+import { runtimeLogger } from "../logging/runtime-logger";
 
 export class UserFilesService {
   private readonly userFilesDir: string;
@@ -64,7 +65,15 @@ export class UserFilesService {
 
     // 4. Sync to OpenViking (async, non-blocking)
     this.syncToOpenViking(record.id, fullPath).catch((error) => {
-      console.error(`Failed to sync file to OpenViking: ${filePath}`, error);
+      runtimeLogger.error({
+        module: "openviking",
+        phase: "file_sync",
+        msg: "Failed to sync file to OpenViking",
+        extra: {
+          filePath,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
     });
 
     return record;
@@ -133,7 +142,16 @@ export class UserFilesService {
       try {
         await this.openVikingClient.rm(record.viking_uri, recursive);
       } catch (error) {
-        console.error("Failed to delete from OpenViking:", error);
+        runtimeLogger.error({
+          module: "openviking",
+          phase: "file_delete",
+          msg: "Failed to delete from OpenViking",
+          extra: {
+            filePath,
+            uri: record.viking_uri,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
       }
     }
 
@@ -168,7 +186,15 @@ export class UserFilesService {
 
     if (record) {
       this.syncToOpenViking(record.id, newFullPath).catch((error) => {
-        console.error(`Failed to sync renamed file to OpenViking: ${newPath}`, error);
+        runtimeLogger.error({
+          module: "openviking",
+          phase: "file_sync",
+          msg: "Failed to sync renamed file to OpenViking",
+          extra: {
+            filePath: newPath,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
       });
     }
   }
@@ -198,7 +224,16 @@ export class UserFilesService {
         )
         .run(vikingUri, Date.now(), recordId);
     } catch (error) {
-      console.error("Failed to sync to OpenViking:", error);
+      runtimeLogger.error({
+        module: "openviking",
+        phase: "file_sync",
+        msg: "Failed to sync to OpenViking",
+        extra: {
+          recordId,
+          fullPath,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       throw error;
     }
   }
