@@ -252,6 +252,18 @@ export type SettingsModelProfile = {
   maxTokens?: number;
 };
 
+export type SettingsChannelType = "feishu";
+
+export type SettingsChannelItem = {
+  id: string;
+  name?: string;
+  type: SettingsChannelType;
+  appId: string;
+  appSecret: string;
+  allowedChatIds: string[];
+  enabled: boolean;
+};
+
 export type GlobalSettingsState = {
   providers: Record<
     ModelProvider,
@@ -306,6 +318,10 @@ export type GlobalSettingsState = {
       timeoutMs: number;
       maxResults: number;
     };
+  };
+  channels: {
+    enabled: boolean;
+    channels: SettingsChannelItem[];
   };
 };
 
@@ -459,9 +475,111 @@ export type MemoryListResourcesResult = {
   entries: MemoryListResourceEntry[];
 };
 
+export type MemoryReadResourceInput = {
+  uri: string;
+};
+
+export type MemoryReadResourceResult = {
+  uri: string;
+  content: string;
+};
+
+export type ReadFileBase64Input = {
+  path: string;
+};
+
+export type ReadFileBase64Result = {
+  base64: string;
+  mimeType: string;
+};
+
+export type MemoryDeleteResourceInput = {
+  uri: string;
+  recursive?: boolean;
+};
+
+export type MemoryDeleteResourceResult = {
+  ok: boolean;
+};
+
 export type MemoryStatusResult = {
   enabled: boolean;
   running: boolean;
   url?: string;
   error?: string;
+};
+
+// Soul types
+export type SoulState = {
+  soulContent: string;
+  identityContent: string;
+};
+
+export type SoulUpdateInput = {
+  soulContent?: string;
+  identityContent?: string;
+};
+
+export type SoulOperationResult = {
+  ok: boolean;
+  message: string;
+};
+
+export type SoulInterviewInput = {
+  history: { role: "user" | "assistant"; content: string }[];
+};
+
+export type SoulInterviewResult = {
+  reply: string;
+  done: boolean;
+};
+
+export type SoulInterviewSummarizeInput = {
+  history: { role: "user" | "assistant"; content: string }[];
+};
+
+export type SoulInterviewSummarizeResult = {
+  soulContent: string;
+  identityContent: string;
+};
+
+// Skill types
+export type SkillItem = {
+  name: string;
+  description: string;
+  tags: string[];
+  content: string;
+  isBundled: boolean;
+  enabled: boolean;
+};
+
+export type SkillCreateInput = {
+  name: string;
+  description: string;
+  tags: string[];
+  content: string;
+};
+
+export type SkillUpdateInput = {
+  description?: string;
+  tags?: string[];
+  content?: string;
+};
+
+export type SkillOperationResult = {
+  ok: boolean;
+  message: string;
+};
+
+export type SkillToggleInput = {
+  name: string;
+  enabled: boolean;
+};
+
+// Channel types
+export type ChannelStatusEvent = {
+  channelId: string;
+  status: "stopped" | "starting" | "running" | "error";
+  message?: string;
+  timestamp: number;
 };

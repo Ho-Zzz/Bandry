@@ -71,10 +71,12 @@ describe("buildOpenVikingConfig", () => {
       apiKey: "test",
       dataDir: "/tmp"
     }) as {
+      server: { root_api_key: string };
       vlm: { provider: string; model: string };
       embedding: { dense: { provider: string; model: string; dimension: number } };
     };
 
+    expect(result.server.root_api_key).toBe("test");
     expect(result.vlm.provider).toBe("openai");
     expect(result.vlm.model).toBe("gpt-4.1-mini");
     expect(result.embedding.dense.provider).toBe("volcengine");

@@ -24,10 +24,15 @@ Allowed actions:
 
 Available tools: ${enabledTools}
 
+Tool input examples:
+- write_file: {"action":"tool","tool":"write_file","input":{"path":"/mnt/workspace/notes.txt","content":"file content here"},"reason":"..."}
+- read_file: {"action":"tool","tool":"read_file","input":{"path":"/mnt/workspace/notes.txt"},"reason":"..."}
+
 Rules:
 - Use at most one tool per step (except for parallel \`task\` calls in subagents mode)
 - Include "reason" field to explain tool choice
 - For greetings or simple Q&A, always use action=answer
+- When user asks to create/save a file, ALWAYS use write_file tool - never pretend to write in answer text
 - For GitHub searches, ALWAYS use github_search tool
 - For general web searches, use web_search tool
 - In subagents mode, you may output multiple \`task\` tool calls for parallel execution`;

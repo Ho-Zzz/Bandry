@@ -389,6 +389,50 @@ describe("loadAppConfig", () => {
     ]);
   });
 
+  it("uses openviking-server as default OpenViking entry command", async () => {
+    const fixture = await createFixture();
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {}
+    });
+
+    expect(config.openviking.serverCommand).toBe("openviking-server");
+    expect(config.openviking.serverArgs).toEqual([]);
+  });
+
+  it("migrates legacy openviking serve command to openviking-server", async () => {
+    const fixture = await createFixture();
+    const userConfigPath = path.join(fixture.userHome, ".bandry", "config", "config.json");
+
+    await fs.writeFile(
+      userConfigPath,
+      JSON.stringify(
+        {
+          openviking: {
+            serverCommand: "openviking",
+            serverArgs: ["serve"]
+          }
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {}
+    });
+
+    expect(config.openviking.serverCommand).toBe("openviking-server");
+    expect(config.openviking.serverArgs).toEqual([]);
+  });
+
   it("syncs memory fact extractor routing with lead model routing", async () => {
     const fixture = await createFixture();
     const userConfigPath = path.join(fixture.userHome, ".bandry", "config", "config.json");
@@ -479,5 +523,54 @@ describe("loadAppConfig", () => {
     expect(config.tools.webSearch.enabled).toBe(true);
     expect(config.tools.webSearch.apiKey).toBe("tvly-from-user");
     expect(config.tools.webSearch.maxResults).toBe(7);
+  });
+
+  it("loads channels from user config and ignores legacy FEISHU env vars", async () => {
+    const fixture = await createFixture();
+    const userConfigPath = path.join(fixture.userHome, ".bandry", "config", "config.json");
+
+    await fs.writeFile(
+      userConfigPath,
+      JSON.stringify(
+        {
+          channels: {
+            enabled: true,
+            channels: [
+              {
+                id: "ops_feishu",
+                name: "Ops Channel",
+                type: "feishu",
+                appId: "cli_app_id",
+                appSecret: "cli_app_secret",
+                allowedChatIds: ["chat_a", "chat_b"],
+                enabled: true
+              }
+            ]
+          }
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const config = loadAppConfig({
+      cwd: fixture.workspaceDir,
+      userHome: fixture.userHome,
+      skipDotenv: true,
+      env: {
+        CHANNELS_ENABLED: "false",
+        FEISHU_APP_ID: "env_app_id",
+        FEISHU_APP_SECRET: "env_app_secret",
+        FEISHU_ALLOWED_CHAT_IDS: "chat_env"
+      }
+    });
+
+    expect(config.channels.enabled).toBe(true);
+    expect(config.channels.channels).toHaveLength(1);
+    expect(config.channels.channels[0].id).toBe("ops_feishu");
+    expect(config.channels.channels[0].appId).toBe("cli_app_id");
+    expect(config.channels.channels[0].appSecret).toBe("cli_app_secret");
+    expect(config.channels.channels[0].allowedChatIds).toEqual(["chat_a", "chat_b"]);
   });
 });

@@ -9,11 +9,17 @@ import type {
   ConversationResult,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
+  MemoryDeleteResourceInput,
+  MemoryDeleteResourceResult,
   MemoryListResourcesInput,
   MemoryListResourcesResult,
+  MemoryReadResourceInput,
+  MemoryReadResourceResult,
   MemorySearchInput,
   MemorySearchResult,
   MemoryStatusResult,
+  ReadFileBase64Input,
+  ReadFileBase64Result,
   ModelsCatalogListInput,
   ModelsCatalogListResult,
   ModelsConnectInput,
@@ -41,7 +47,19 @@ import type {
   SandboxWriteFileResult,
   TaskStartInput,
   TaskStartResult,
-  TaskUpdateEvent
+  TaskUpdateEvent,
+  SoulState,
+  SoulUpdateInput,
+  SoulOperationResult,
+  SoulInterviewInput,
+  SoulInterviewResult,
+  SoulInterviewSummarizeInput,
+  SoulInterviewSummarizeResult,
+  SkillItem,
+  SkillCreateInput,
+  SkillUpdateInput,
+  SkillOperationResult,
+  SkillToggleInput
 } from "../../shared/ipc";
 
 declare global {
@@ -85,16 +103,37 @@ declare global {
       messageUpdate: (id: string, input: MessageUpdateInput) => Promise<MessageResult | null>;
       messageDelete: (id: string) => Promise<boolean>;
 
+      // Dialog API
+      dialogOpenFiles: (filters?: { name: string; extensions: string[] }[]) => Promise<string[]>;
+      // File API
+      readFileBase64: (input: ReadFileBase64Input) => Promise<ReadFileBase64Result>;
+
       // Memory API
       memoryStatus: () => Promise<MemoryStatusResult>;
       memorySearch: (input: MemorySearchInput) => Promise<MemorySearchResult>;
       memoryAddResource: (input: MemoryAddResourceInput) => Promise<MemoryAddResourceResult>;
+      memoryDeleteResource: (input: MemoryDeleteResourceInput) => Promise<MemoryDeleteResourceResult>;
       memoryListResources: (input: MemoryListResourcesInput) => Promise<MemoryListResourcesResult>;
+      memoryReadResource: (input: MemoryReadResourceInput) => Promise<MemoryReadResourceResult>;
 
       // Event Listeners
       onChatUpdate: (listener: (update: ChatUpdateEvent) => void) => () => void;
       onChatDelta: (listener: (update: ChatDeltaEvent) => void) => () => void;
       onTaskUpdate: (listener: (update: TaskUpdateEvent) => void) => () => void;
+
+      // Soul API
+      soulGet: () => Promise<SoulState>;
+      soulUpdate: (input: SoulUpdateInput) => Promise<SoulOperationResult>;
+      soulReset: () => Promise<SoulOperationResult>;
+      soulInterview: (input: SoulInterviewInput) => Promise<SoulInterviewResult>;
+      soulInterviewSummarize: (input: SoulInterviewSummarizeInput) => Promise<SoulInterviewSummarizeResult>;
+
+      // Skills API
+      skillsList: () => Promise<SkillItem[]>;
+      skillsCreate: (input: SkillCreateInput) => Promise<SkillOperationResult>;
+      skillsUpdate: (name: string, input: SkillUpdateInput) => Promise<SkillOperationResult>;
+      skillsDelete: (name: string) => Promise<SkillOperationResult>;
+      skillsToggle: (input: SkillToggleInput) => Promise<SkillOperationResult>;
     };
   }
 }

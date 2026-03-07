@@ -269,6 +269,24 @@ export const applyLayer = (target: AppConfig, layer: ConfigLayer): void => {
     }
   }
 
+  if (layer.channels) {
+    const channelsLayer = layer.channels;
+    if (channelsLayer.enabled !== undefined) {
+      target.channels.enabled = channelsLayer.enabled;
+    }
+    if (channelsLayer.channels !== undefined) {
+      target.channels.channels = channelsLayer.channels.map((ch) => ({
+        ...(ch.id !== undefined ? { id: ch.id } : {}),
+        ...(ch.name !== undefined ? { name: ch.name } : {}),
+        type: ch.type ?? "feishu",
+        appId: ch.appId ?? "",
+        appSecret: ch.appSecret ?? "",
+        ...(ch.allowedChatIds ? { allowedChatIds: ch.allowedChatIds } : {}),
+        enabled: ch.enabled ?? true,
+      }));
+    }
+  }
+
   if (!layer.providers) {
     return;
   }

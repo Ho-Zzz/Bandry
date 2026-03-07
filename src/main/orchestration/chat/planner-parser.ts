@@ -146,6 +146,7 @@ export const parsePlannerAction = (rawText: string): PlannerAction | null => {
         root.tool === "github_search" ||
         root.tool === "delegate_sub_tasks" ||
         root.tool === "ask_clarification" ||
+        root.tool === "memory_search" ||
         root.tool === "write_todos" ||
         root.tool === "task")
     ) {

@@ -61,4 +61,62 @@ describe("SettingsService memory validation", () => {
     const result = await service.saveState({ state });
     expect(result.ok).toBe(true);
   });
+
+  it("rejects enabling channels without enabled channel entries", async () => {
+    const service = await createService("channels-empty");
+    const state = service.getState();
+    state.channels.enabled = true;
+    state.channels.channels = [];
+
+    const result = await service.saveState({ state });
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("至少需要一个启用中的 Channel");
+  });
+
+  it("rejects enabled feishu channel with missing app credentials", async () => {
+    const service = await createService("channels-invalid");
+    const state = service.getState();
+    state.channels.enabled = true;
+    state.channels.channels = [
+      {
+        id: "ops",
+        type: "feishu",
+        appId: "",
+        appSecret: "",
+        allowedChatIds: [],
+        enabled: true
+      }
+    ];
+
+    const result = await service.saveState({ state });
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("appId");
+    expect(result.message).toContain("appSecret");
+  });
+
+  it("accepts valid feishu channels config and persists to runtime state", async () => {
+    const service = await createService("channels-valid");
+    const state = service.getState();
+    state.channels.enabled = true;
+    state.channels.channels = [
+      {
+        id: "ops_feishu",
+        name: "Ops",
+        type: "feishu",
+        appId: "app_123",
+        appSecret: "secret_123",
+        allowedChatIds: ["chat_1", "chat_2"],
+        enabled: true
+      }
+    ];
+
+    const result = await service.saveState({ state });
+    expect(result.ok).toBe(true);
+
+    const latest = service.getState();
+    expect(latest.channels.enabled).toBe(true);
+    expect(latest.channels.channels).toHaveLength(1);
+    expect(latest.channels.channels[0].id).toBe("ops_feishu");
+    expect(latest.channels.channels[0].appId).toBe("app_123");
+  });
 });

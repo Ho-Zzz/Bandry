@@ -10,11 +10,17 @@ import type {
   ConversationResult,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
+  MemoryDeleteResourceInput,
+  MemoryDeleteResourceResult,
   MemoryListResourcesInput,
   MemoryListResourcesResult,
+  MemoryReadResourceInput,
+  MemoryReadResourceResult,
   MemorySearchInput,
   MemorySearchResult,
   MemoryStatusResult,
+  ReadFileBase64Input,
+  ReadFileBase64Result,
   MessageInput,
   MessageResult,
   MessageUpdateInput,
@@ -42,7 +48,19 @@ import type {
   SandboxWriteFileResult,
   TaskStartInput,
   TaskStartResult,
-  TaskUpdateEvent
+  TaskUpdateEvent,
+  SoulState,
+  SoulUpdateInput,
+  SoulOperationResult,
+  SoulInterviewInput,
+  SoulInterviewResult,
+  SoulInterviewSummarizeInput,
+  SoulInterviewSummarizeResult,
+  SkillItem,
+  SkillCreateInput,
+  SkillUpdateInput,
+  SkillOperationResult,
+  SkillToggleInput
 } from "../shared/ipc";
 
 const api = {
@@ -106,6 +124,12 @@ const api = {
       ipcRenderer.removeListener("task:update", wrappedListener);
     };
   },
+  // Dialog API
+  dialogOpenFiles: (filters?: { name: string; extensions: string[] }[]): Promise<string[]> =>
+    ipcRenderer.invoke("dialog:open-files", filters),
+  // File API
+  readFileBase64: (input: ReadFileBase64Input): Promise<ReadFileBase64Result> =>
+    ipcRenderer.invoke("fs:read-file-base64", input),
   // Memory API
   memoryStatus: (): Promise<MemoryStatusResult> =>
     ipcRenderer.invoke("memory:status"),
@@ -113,8 +137,12 @@ const api = {
     ipcRenderer.invoke("memory:search", input),
   memoryAddResource: (input: MemoryAddResourceInput): Promise<MemoryAddResourceResult> =>
     ipcRenderer.invoke("memory:add-resource", input),
+  memoryDeleteResource: (input: MemoryDeleteResourceInput): Promise<MemoryDeleteResourceResult> =>
+    ipcRenderer.invoke("memory:delete-resource", input),
   memoryListResources: (input: MemoryListResourcesInput): Promise<MemoryListResourcesResult> =>
     ipcRenderer.invoke("memory:list-resources", input),
+  memoryReadResource: (input: MemoryReadResourceInput): Promise<MemoryReadResourceResult> =>
+    ipcRenderer.invoke("memory:read-resource", input),
   // Conversation API
   conversationCreate: (input: ConversationInput): Promise<ConversationResult> =>
     ipcRenderer.invoke("conversation:create", input),
@@ -134,7 +162,29 @@ const api = {
   messageUpdate: (id: string, input: MessageUpdateInput): Promise<MessageResult | null> =>
     ipcRenderer.invoke("message:update", id, input),
   messageDelete: (id: string): Promise<boolean> =>
-    ipcRenderer.invoke("message:delete", id)
+    ipcRenderer.invoke("message:delete", id),
+  // Soul API
+  soulGet: (): Promise<SoulState> =>
+    ipcRenderer.invoke("soul:get"),
+  soulUpdate: (input: SoulUpdateInput): Promise<SoulOperationResult> =>
+    ipcRenderer.invoke("soul:update", input),
+  soulReset: (): Promise<SoulOperationResult> =>
+    ipcRenderer.invoke("soul:reset"),
+  soulInterview: (input: SoulInterviewInput): Promise<SoulInterviewResult> =>
+    ipcRenderer.invoke("soul:interview", input),
+  soulInterviewSummarize: (input: SoulInterviewSummarizeInput): Promise<SoulInterviewSummarizeResult> =>
+    ipcRenderer.invoke("soul:interview:summarize", input),
+  // Skills API
+  skillsList: (): Promise<SkillItem[]> =>
+    ipcRenderer.invoke("skills:list"),
+  skillsCreate: (input: SkillCreateInput): Promise<SkillOperationResult> =>
+    ipcRenderer.invoke("skills:create", input),
+  skillsUpdate: (name: string, input: SkillUpdateInput): Promise<SkillOperationResult> =>
+    ipcRenderer.invoke("skills:update", name, input),
+  skillsDelete: (name: string): Promise<SkillOperationResult> =>
+    ipcRenderer.invoke("skills:delete", name),
+  skillsToggle: (input: SkillToggleInput): Promise<SkillOperationResult> =>
+    ipcRenderer.invoke("skills:toggle", input)
 };
 
 contextBridge.exposeInMainWorld("api", api);

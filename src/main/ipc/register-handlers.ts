@@ -1,4 +1,6 @@
-import { ipcMain } from "electron";
+import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
+import { BrowserWindow, dialog, ipcMain } from "electron";
 import { toPublicConfigSummary, type AppConfig } from "../config";
 import { ToolPlanningChatAgent } from "../orchestration/chat";
 import { LocalOrchestrator } from "../orchestration/workflow";
@@ -17,11 +19,17 @@ import type {
   GlobalSettingsState,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
+  MemoryDeleteResourceInput,
+  MemoryDeleteResourceResult,
   MemoryListResourcesInput,
   MemoryListResourcesResult,
+  MemoryReadResourceInput,
+  MemoryReadResourceResult,
   MemorySearchInput,
   MemorySearchResult,
   MemoryStatusResult,
+  ReadFileBase64Input,
+  ReadFileBase64Result,
   MessageInput,
   MessageResult,
   MessageUpdateInput,
@@ -43,11 +51,22 @@ import type {
   TaskStartInput,
   TaskStartResult,
   TaskStatus,
-  TaskUpdateEvent
+  TaskUpdateEvent,
+  SoulUpdateInput,
+  SkillCreateInput,
+  SkillUpdateInput,
+  SoulInterviewInput,
+  SoulInterviewSummarizeInput,
+  SkillToggleInput
 } from "../../shared/ipc";
 import type { OpenVikingHttpClient } from "../memory/openviking/http-client";
 import type { OpenVikingProcessManager } from "../memory/openviking/process-manager";
 import type { IpcEventBus } from "./event-bus";
+import type { SoulService } from "../soul/soul-service";
+import type { SkillService } from "../skills/skill-service";
+import type { ModelsFactory } from "../llm/runtime";
+import { INTERVIEW_SYSTEM_PROMPT, SUMMARIZE_SYSTEM_PROMPT } from "../soul/interview-prompts";
+import { resolveRuntimeTarget } from "../llm/runtime/runtime-target";
 
 type RegisterIpcHandlersInput = {
   config: AppConfig;
@@ -62,6 +81,9 @@ type RegisterIpcHandlersInput = {
     processManager: OpenVikingProcessManager | null;
     httpClient: OpenVikingHttpClient | null;
   };
+  soulService: SoulService;
+  skillService: SkillService;
+  modelsFactory: ModelsFactory;
   onSettingsSaved?: () => void;
 };
 
@@ -294,6 +316,41 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
     return await input.sandboxService.exec(execInput);
   });
 
+  ipcMain.handle(
+    "dialog:open-files",
+    async (_event, filters?: { name: string; extensions: string[] }[]): Promise<string[]> => {
+      const win = BrowserWindow.getFocusedWindow();
+      if (!win) {
+        return [];
+      }
+      const result = await dialog.showOpenDialog(win, {
+        properties: ["openFile", "multiSelections"],
+        filters: filters ?? [{ name: "All Files", extensions: ["*"] }]
+      });
+      return result.canceled ? [] : result.filePaths;
+    }
+  );
+
+  const MIME_MAP: Record<string, string> = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp"
+  };
+
+  ipcMain.handle(
+    "fs:read-file-base64",
+    async (_event, fileInput: ReadFileBase64Input): Promise<ReadFileBase64Result> => {
+      const buffer = await readFile(fileInput.path);
+      const ext = extname(fileInput.path).toLowerCase();
+      return {
+        base64: buffer.toString("base64"),
+        mimeType: MIME_MAP[ext] ?? "application/octet-stream"
+      };
+    }
+  );
+
   ipcMain.handle("memory:status", async (): Promise<MemoryStatusResult> => {
     const ov = input.getOpenViking();
     if (!ov.processManager) {
@@ -323,16 +380,20 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
       limit: searchInput.limit
     });
 
-    const items = [
+    const merged = [
       ...(result.memories ?? []),
       ...(result.resources ?? []),
       ...(result.skills ?? [])
-    ].map((item) => ({
+    ]
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+      .slice(0, searchInput.limit ?? 10);
+
+    const items = merged.map((item) => ({
       uri: item.uri,
       abstract: item.abstract,
       score: item.score,
-      category: item.category,
-      matchReason: item.match_reason
+      category: item.context_type || item.category || undefined,
+      matchReason: item.match_reason || undefined
     }));
 
     return { items, total: items.length };
@@ -359,14 +420,136 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
       }
       const result = await ov.httpClient.ls(listInput.uri);
       return {
-        entries: result.entries.map((entry) => ({
-          name: entry.name,
-          uri: entry.uri,
-          type: entry.type
-        }))
+        entries: result.map((entry) => {
+          const uriStr = entry.uri ?? "";
+          const fallbackName = uriStr.split("/").filter(Boolean).pop() ?? uriStr;
+          return {
+            name: entry.name ?? fallbackName,
+            uri: uriStr,
+            type: entry.isDir ? ("directory" as const) : ("file" as const)
+          };
+        })
       };
     }
   );
+
+  ipcMain.handle(
+    "memory:delete-resource",
+    async (_event, deleteInput: MemoryDeleteResourceInput): Promise<MemoryDeleteResourceResult> => {
+      const ov = input.getOpenViking();
+      if (!ov.httpClient) {
+        throw new Error("OpenViking is not running");
+      }
+      await ov.httpClient.rm(deleteInput.uri, deleteInput.recursive ?? false);
+      return { ok: true };
+    }
+  );
+
+  ipcMain.handle(
+    "memory:read-resource",
+    async (_event, readInput: MemoryReadResourceInput): Promise<MemoryReadResourceResult> => {
+      const ov = input.getOpenViking();
+      if (!ov.httpClient) {
+        throw new Error("OpenViking is not running");
+      }
+      const result = await ov.httpClient.read(readInput.uri);
+      return {
+        uri: readInput.uri,
+        content: typeof result === "string" ? result : (result as Record<string, unknown>).content as string ?? ""
+      };
+    }
+  );
+
+  // Soul API
+  ipcMain.handle("soul:get", async () => {
+    return input.soulService.get();
+  });
+
+  ipcMain.handle("soul:update", async (_event, updateInput: SoulUpdateInput) => {
+    return input.soulService.update(updateInput);
+  });
+
+  ipcMain.handle("soul:reset", async () => {
+    return input.soulService.reset();
+  });
+
+  ipcMain.handle("soul:interview", async (_event, interviewInput: SoulInterviewInput) => {
+    const target = resolveRuntimeTarget(input.config, "lead.planner");
+    const history = interviewInput.history.map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content
+    }));
+
+    const result = await input.modelsFactory.generateText({
+      systemPrompt: INTERVIEW_SYSTEM_PROMPT,
+      ...(history.length > 0
+        ? { messages: history }
+        : { prompt: "Start the interview. Greet the user and ask your first question." }),
+      runtimeConfig: target.runtimeConfig,
+      model: target.model,
+      temperature: 0.8,
+      maxTokens: 500
+    });
+
+    const done = result.text.includes("[INTERVIEW_COMPLETE]");
+    const reply = result.text.replace("[INTERVIEW_COMPLETE]", "").trim();
+
+    return { reply, done };
+  });
+
+  ipcMain.handle("soul:interview:summarize", async (_event, summarizeInput: SoulInterviewSummarizeInput) => {
+    const target = resolveRuntimeTarget(input.config, "lead.planner");
+    const transcript = summarizeInput.history
+      .map((m) => `${m.role === "user" ? "User" : "AI"}: ${m.content}`)
+      .join("\n\n");
+
+    const result = await input.modelsFactory.generateText({
+      systemPrompt: SUMMARIZE_SYSTEM_PROMPT,
+      prompt: transcript,
+      runtimeConfig: target.runtimeConfig,
+      model: target.model,
+      temperature: 0.3,
+      maxTokens: 2000
+    });
+
+    try {
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error("No JSON found in response");
+      }
+      const parsed = JSON.parse(jsonMatch[0]) as { soulContent: string; identityContent: string };
+      return {
+        soulContent: parsed.soulContent,
+        identityContent: parsed.identityContent
+      };
+    } catch {
+      return {
+        soulContent: result.text,
+        identityContent: "---\nname: Bandry\ntagline: Your local AI coding companion\n---\n\n# Identity\n"
+      };
+    }
+  });
+
+  // Skills API
+  ipcMain.handle("skills:list", async () => {
+    return input.skillService.list();
+  });
+
+  ipcMain.handle("skills:create", async (_event, createInput: SkillCreateInput) => {
+    return input.skillService.create(createInput);
+  });
+
+  ipcMain.handle("skills:update", async (_event, name: string, updateInput: SkillUpdateInput) => {
+    return input.skillService.update(name, updateInput);
+  });
+
+  ipcMain.handle("skills:delete", async (_event, name: string) => {
+    return input.skillService.delete(name);
+  });
+
+  ipcMain.handle("skills:toggle", async (_event, toggleInput: SkillToggleInput) => {
+    return input.skillService.toggle(toggleInput);
+  });
 
   return {
     clearRunningTasks: (): void => {

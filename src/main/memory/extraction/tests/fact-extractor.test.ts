@@ -103,7 +103,9 @@ const createMockConfig = (): AppConfig => ({
   },
   features: {
     enableMemory: false,
-    enableMCP: false
+    enableMCP: false,
+    enableSkills: false,
+    enableSoul: false
   },
   openviking: {
     enabled: true,
@@ -112,8 +114,8 @@ const createMockConfig = (): AppConfig => ({
     apiKey: "",
     vlmProfileId: "profile_openai_default",
     embeddingProfileId: "profile_openai_default",
-    serverCommand: "openviking",
-    serverArgs: ["serve"],
+    serverCommand: "openviking-server",
+    serverArgs: [],
     startTimeoutMs: 20_000,
     healthcheckIntervalMs: 500,
     memoryTopK: 6,
@@ -174,6 +176,10 @@ const createMockConfig = (): AppConfig => ({
       maxResults: 10
     }
   },
+  channels: {
+    enabled: false,
+    channels: []
+  },
   paths: {
     projectRoot: "",
     bandryHome: "",
@@ -189,6 +195,8 @@ const createMockConfig = (): AppConfig => ({
     databasePath: "",
     traceDir: "",
     resourcesDir: "",
+    skillsDir: "",
+    soulDir: "",
     dotenvPath: ""
   },
   runtime: {

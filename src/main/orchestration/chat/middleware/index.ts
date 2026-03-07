@@ -15,3 +15,5 @@ export * from "./resource-injection";
 export * from "./resource-curation";
 export * from "./clarification";
 export * from "./todolist";
+export * from "./soul";
+export * from "./skill";

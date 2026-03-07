@@ -26,7 +26,7 @@ Bandry 通过集成 [OpenViking](https://github.com/volcengine/OpenViking)（字
 │          │     ├── removeStaleLockFiles()  // 清理残留 LOCK      │
 │          │     ├── writeOpenVikingConfig()  // 生成 ov.conf      │
 │          │     ├── resolveOpenVikingCommand()  // 解析命令路径    │
-│          │     ├── spawn(openviking serve)  // 启动 Python 进程  │
+│          │     ├── spawn(openviking-server) // 启动 Python 进程  │
 │          │     ├── waitForHealthy()  // GET /health 轮询         │
 │          │     └── attachCrashWatcher()  // 崩溃监听+自动重启    │
 │          │                                                       │
@@ -103,7 +103,8 @@ src/main/orchestration/chat/
 
 scripts/
 ├── setup-python-env.sh           # 安装便携版 Python + OpenViking
-└── ensure-openviking.sh          # pnpm dev 预检（幂等）
+├── ensure-openviking.sh           # pnpm dev 预检（幂等）
+└── upgrade-openviking.sh          # 升级 OpenViking + 重建运行数据
 ```
 
 ---
@@ -206,8 +207,21 @@ pnpm dev
 4. `prepareEnvironment()`:
    - Patch AGFS 超时 5s → 30s（macOS 首次启动需要）
    - Warm up agfs-server binary（触发 macOS Gatekeeper 缓存）
-5. 生成 `ov.conf` → spawn `openviking serve` → 健康检查通过
+5. 生成 `ov.conf` → spawn `openviking-server` → 健康检查通过
 6. 注入 `MemoryMiddleware` 到 chat pipeline
+
+### 快速升级命令
+
+```bash
+# 升级到最新版本（默认会备份并重建 ov.conf/data）
+pnpm ov:upgrade
+
+# 升级到指定版本
+pnpm ov:upgrade -- --version 0.2.1
+
+# 升级但保留现有数据目录
+pnpm ov:upgrade -- --keep-data
+```
 
 ### 进程管理
 

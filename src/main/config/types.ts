@@ -98,6 +98,8 @@ export type AppPaths = {
   resourcesDir: string;
   pluginsDir: string;
   traceDir: string;
+  skillsDir: string;
+  soulDir: string;
   projectConfigPath: string;
   userConfigPath: string;
   auditLogPath: string;
@@ -145,6 +147,8 @@ export type LlmLayerConfig = Partial<{
 export type FeaturesLayerConfig = Partial<{
   enableMemory: boolean;
   enableMCP: boolean;
+  enableSkills: boolean;
+  enableSoul: boolean;
 }>;
 
 export type OpenVikingLayerConfig = Partial<{
@@ -175,11 +179,26 @@ export type PathsLayerConfig = Partial<
     | "resourcesDir"
     | "pluginsDir"
     | "traceDir"
+    | "skillsDir"
+    | "soulDir"
     | "auditLogPath"
     | "sandboxAuditLogPath"
     | "databasePath"
   >
 >;
+
+export type ChannelsLayerConfig = Partial<{
+  enabled: boolean;
+  channels: Array<{
+    id?: string;
+    name?: string;
+    type: string;
+    appId?: string;
+    appSecret?: string;
+    allowedChatIds?: string[];
+    enabled?: boolean;
+  }>;
+}>;
 
 export type ConfigLayer = {
   llm?: LlmLayerConfig;
@@ -194,6 +213,7 @@ export type ConfigLayer = {
   modelProfiles?: ModelProfileLayer[];
   routing?: RoutingLayerConfig;
   tools?: InternalToolsLayerConfig;
+  channels?: ChannelsLayerConfig;
 };
 
 export type ProviderConfig = {
@@ -237,6 +257,8 @@ export type AppConfig = {
   features: {
     enableMemory: boolean;
     enableMCP: boolean;
+    enableSkills: boolean;
+    enableSoul: boolean;
   };
   openviking: {
     enabled: boolean;
@@ -260,6 +282,18 @@ export type AppConfig = {
   modelProfiles: ModelProfile[];
   routing: RoutingConfig;
   tools: InternalToolsConfig;
+  channels: {
+    enabled: boolean;
+    channels: Array<{
+      id?: string;
+      name?: string;
+      type: string;
+      appId: string;
+      appSecret: string;
+      allowedChatIds?: string[];
+      enabled?: boolean;
+    }>;
+  };
   paths: AppPaths;
   runtime: RuntimeConfig;
 };

@@ -85,6 +85,8 @@ export const createDefaultConfig = (
     features: {
       enableMemory: false,
       enableMCP: false,
+      enableSkills: true,
+      enableSoul: true,
     },
     openviking: {
       enabled: true,
@@ -93,8 +95,8 @@ export const createDefaultConfig = (
       apiKey: "",
       vlmProfileId: "",
       embeddingProfileId: "",
-      serverCommand: "openviking",
-      serverArgs: ["serve"],
+      serverCommand: "openviking-server",
+      serverArgs: [],
       startTimeoutMs: 20_000,
       healthcheckIntervalMs: 500,
       memoryTopK: 6,
@@ -145,6 +147,10 @@ export const createDefaultConfig = (
         timeoutMs: 15_000,
         maxResults: 10
       }
+    },
+    channels: {
+      enabled: false,
+      channels: []
     },
     paths: input.paths,
     runtime: input.runtime

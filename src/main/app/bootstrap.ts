@@ -2,12 +2,15 @@ import { app, BrowserWindow } from "electron";
 import { OpenVikingMemoryProvider, OpenVikingProcessManager } from "../memory/openviking";
 import { createIpcEventBus } from "../ipc/event-bus";
 import { registerIpcHandlers } from "../ipc/register-handlers";
-import { createCompositionRoot } from "./composition-root";
+import { buildConfiguredChannels, createCompositionRoot } from "./composition-root";
 import { createMainWindow } from "./window";
+import { ensureSoulFiles } from "../soul";
+import { SoulService } from "../soul/soul-service";
+import { SkillService } from "../skills/skill-service";
 
 export const startMainApp = (): void => {
-  const composition = createCompositionRoot();
   const eventBus = createIpcEventBus();
+  const composition = createCompositionRoot(eventBus);
 
   const shutdownOpenViking = async (): Promise<void> => {
     await composition.openViking.memoryProvider?.flush();
@@ -80,6 +83,13 @@ export const startMainApp = (): void => {
     }
   };
 
+  const syncChannels = async (): Promise<void> => {
+    await composition.channelManager.reconfigure(
+      composition.config.channels,
+      buildConfiguredChannels(composition.config.channels)
+    );
+  };
+
   const { clearRunningTasks } = registerIpcHandlers({
     config: composition.config,
     toolPlanningChatAgent: composition.toolPlanningChatAgent,
@@ -95,13 +105,19 @@ export const startMainApp = (): void => {
         ? composition.openViking.processManager.createHttpClient()
         : null
     }),
+    soulService: new SoulService(composition.config.paths.soulDir),
+    skillService: new SkillService(composition.config.paths.skillsDir),
+    modelsFactory: composition.modelsFactory,
     onSettingsSaved: () => {
+      void syncChannels();
       void syncOpenViking();
     }
   });
 
   app.whenReady().then(async () => {
+    await ensureSoulFiles(composition.config.paths.soulDir);
     await syncOpenViking();
+    await syncChannels();
     await createMainWindow({
       devServerUrl: composition.config.runtime.devServerUrl
     });
@@ -117,6 +133,7 @@ export const startMainApp = (): void => {
 
   app.on("window-all-closed", () => {
     clearRunningTasks();
+    void composition.channelManager.stopAll();
     void shutdownOpenViking();
 
     if (process.platform !== "darwin") {
@@ -125,6 +142,7 @@ export const startMainApp = (): void => {
   });
 
   app.on("before-quit", () => {
+    void composition.channelManager.stopAll();
     void shutdownOpenViking();
   });
 };
