@@ -182,6 +182,12 @@ export const envToLayer = (env: NodeJS.ProcessEnv): ConfigLayer => {
         baseUrl: toBaseUrlValue(env.TOGETHER_BASE_URL),
         model: toStringValue(env.TOGETHER_MODEL),
         embeddingModel: toStringValue(env.TOGETHER_EMBEDDING_MODEL)
+      },
+      minimax: {
+        apiKey: toStringValue(env.MINIMAX_API_KEY),
+        baseUrl: toBaseUrlValue(env.MINIMAX_BASE_URL),
+        model: toStringValue(env.MINIMAX_MODEL),
+        embeddingModel: toStringValue(env.MINIMAX_EMBEDDING_MODEL)
       }
     }
   };

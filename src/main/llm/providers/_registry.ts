@@ -8,10 +8,11 @@ import { openrouterProvider } from "./openrouter.provider";
 import { qwenProvider } from "./qwen.provider";
 import { siliconflowProvider } from "./siliconflow.provider";
 import { togetherProvider } from "./together.provider";
+import { minimaxProvider } from "./minimax.provider";
 import { volcengineProvider } from "./volcengine.provider";
 
 export const providerRegistry = new Map<string, IProvider>();
 
-[openaiProvider, deepseekProvider, volcengineProvider, openrouterProvider, groqProvider, moonshotProvider, qwenProvider, siliconflowProvider, togetherProvider, anthropicProvider].forEach((provider) => {
+[openaiProvider, deepseekProvider, volcengineProvider, openrouterProvider, groqProvider, moonshotProvider, qwenProvider, siliconflowProvider, togetherProvider, minimaxProvider, anthropicProvider].forEach((provider) => {
   providerRegistry.set(provider.id, provider);
 });

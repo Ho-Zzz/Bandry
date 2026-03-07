@@ -7,7 +7,8 @@ export const MODEL_PROVIDERS = [
   "moonshot",
   "qwen",
   "siliconflow",
-  "together"
+  "together",
+  "minimax"
 ] as const;
 
 export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
@@ -21,7 +22,8 @@ export const MODEL_PROVIDER_NAME_MAP: Record<ModelProvider, string> = {
   moonshot: "Moonshot",
   qwen: "Qwen",
   siliconflow: "SiliconFlow",
-  together: "Together AI"
+  together: "Together AI",
+  minimax: "MiniMax"
 };
 
 export type ModelProviderDefaults = {
@@ -77,6 +79,11 @@ export const MODEL_PROVIDER_DEFAULTS: Record<ModelProvider, ModelProviderDefault
     baseUrl: "https://api.together.xyz/v1",
     model: "meta-llama/Llama-3.1-8B-Instruct-Turbo",
     embeddingModel: ""
+  },
+  minimax: {
+    baseUrl: "https://api.minimax.io/v1",
+    model: "codex-MiniMax-M2.5",
+    embeddingModel: "embo-01"
   }
 };
 
