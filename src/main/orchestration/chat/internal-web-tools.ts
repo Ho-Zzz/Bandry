@@ -33,7 +33,7 @@ export const runGitHubSearch = async (
     throw new Error("github_search requires non-empty query");
   }
 
-  const baseUrl = config.tools.githubSearch.baseUrl.replace(/\/+$/, "");
+  const baseUrl = config.tools.githubSearch.baseUrl.replace(/\/+$/, "").replace(/\/search$/i, "");
   const endpoint = `${baseUrl}/search/${type}?q=${encodeURIComponent(trimmedQuery)}&per_page=${config.tools.githubSearch.maxResults}`;
   const apiKey = config.tools.githubSearch.apiKey.trim();
 

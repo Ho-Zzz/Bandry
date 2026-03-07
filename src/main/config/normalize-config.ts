@@ -164,6 +164,11 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.tools.webFetch.baseUrl = config.tools.webFetch.baseUrl.trim() || "https://r.jina.ai/http://";
   config.tools.webFetch.timeoutMs = Math.max(500, Math.floor(config.tools.webFetch.timeoutMs));
 
+  config.tools.githubSearch.enabled = Boolean(config.tools.githubSearch.enabled);
+  config.tools.githubSearch.baseUrl = config.tools.githubSearch.baseUrl.trim() || "https://api.github.com";
+  config.tools.githubSearch.timeoutMs = Math.max(500, Math.floor(config.tools.githubSearch.timeoutMs));
+  config.tools.githubSearch.maxResults = Math.max(1, Math.min(50, Math.floor(config.tools.githubSearch.maxResults)));
+
   config.channels.channels = config.channels.channels
     .map((ch, index) => ({
       id: ch.id?.trim() || `channel_${index + 1}`,

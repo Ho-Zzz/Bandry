@@ -29,6 +29,7 @@ export const IconButton = ({ tooltip, className, type = "button", children, ...r
 };
 
 const FILE_PATH_REGEX = /(\/[\w./-]+\.\w+)/g;
+const FILE_PATH_DETECT_REGEX = /(\/[\w./-]+\.\w+)/;
 
 const parseTextWithFilePaths = (text: string): Array<{ type: "text" | "file"; content: string }> => {
   const parts: Array<{ type: "text" | "file"; content: string }> = [];
@@ -65,7 +66,7 @@ export const MarkdownText = () => {
   const workspacePath = usePreviewStore((s) => s.workspacePath);
 
   // Check if text contains file paths (e.g., "已保存到文件：/mnt/workspace/output/report.md")
-  const hasFilePaths = FILE_PATH_REGEX.test(text);
+  const hasFilePaths = FILE_PATH_DETECT_REGEX.test(text);
 
   if (hasFilePaths) {
     const parts = parseTextWithFilePaths(text);
