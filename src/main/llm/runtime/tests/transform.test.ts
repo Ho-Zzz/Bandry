@@ -61,6 +61,16 @@ describe("openAiCompatibleTransform", () => {
     ]);
   });
 
+  it("maps reasoning-delta to content_delta", () => {
+    const events = openAiCompatibleTransform.response({
+      type: "reasoning-delta",
+      id: "reasoning_1",
+      text: "thinking...",
+    });
+
+    expect(events).toEqual([{ type: "content_delta", delta: "thinking..." }]);
+  });
+
   it("maps reasoningEffort and whitelisted extraBody to providerOptions.openai", () => {
     const transformed = openAiCompatibleTransform.request({
       model: "gpt-5-mini",

@@ -186,7 +186,7 @@ export const openAiCompatibleTransform: ITransform = {
     };
   },
   response(part) {
-    if (part.type === "text-delta") {
+    if (part.type === "text-delta" || part.type === "reasoning-delta") {
       return [
         {
           type: "content_delta",
