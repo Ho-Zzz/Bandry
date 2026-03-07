@@ -7,6 +7,7 @@ const eventBus: IpcEventBus = {
   broadcastChatUpdate: (u) => console.log("[event:chat]", u.stage, u.message),
   broadcastChatDelta: () => {},
   broadcastChannelStatus: (u) => console.log("[event:channel]", u.channelId, u.status),
+  broadcastCronRunEvent: () => {},
 };
 
 const composition = createCompositionRoot(eventBus);

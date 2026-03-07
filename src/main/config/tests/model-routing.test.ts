@@ -18,6 +18,7 @@ const createConfig = () => {
       traceDir: path.join(workspaceDir, "traces"),
       skillsDir: path.join(workspaceDir, "skills"),
       soulDir: path.join(workspaceDir, "soul"),
+      cronDir: path.join(workspaceDir, "cron"),
       projectConfigPath: path.join(workspaceDir, "config.json"),
       userConfigPath: path.join(workspaceDir, "user-config.json"),
       auditLogPath: path.join(workspaceDir, "model-audit.log"),

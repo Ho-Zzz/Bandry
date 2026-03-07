@@ -197,6 +197,7 @@ const createMockConfig = (): AppConfig => ({
     resourcesDir: "",
     skillsDir: "",
     soulDir: "",
+    cronDir: "",
     dotenvPath: ""
   },
   runtime: {

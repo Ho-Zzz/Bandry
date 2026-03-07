@@ -51,6 +51,7 @@ export const resolvePathPlan = (input: ResolvePathPlanInput): ResolvedPathPlan =
   const traceDir = resolvePathValue(input.env.BANDRY_TRACE_DIR, path.join(bandryHome, "traces"), bandryHome);
   const skillsDir = resolvePathValue(input.env.BANDRY_SKILLS_DIR, path.join(bandryHome, "skills"), bandryHome);
   const soulDir = resolvePathValue(input.env.BANDRY_SOUL_DIR, path.join(bandryHome, "soul"), bandryHome);
+  const cronDir = resolvePathValue(input.env.BANDRY_CRON_DIR, path.join(bandryHome, "cron"), bandryHome);
   const databasePath = resolvePathValue(input.env.BANDRY_DB_PATH, path.join(configDir, "bandry.db"), configDir);
   const auditLogPath = resolvePathValue(input.env.BANDRY_AUDIT_LOG_PATH, path.join(logsDir, "model-audit.log"), logsDir);
   const sandboxAuditLogPath = resolvePathValue(
@@ -82,6 +83,7 @@ export const resolvePathPlan = (input: ResolvePathPlanInput): ResolvedPathPlan =
       traceDir,
       skillsDir,
       soulDir,
+      cronDir,
       projectConfigPath,
       userConfigPath,
       auditLogPath,

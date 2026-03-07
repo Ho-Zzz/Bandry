@@ -100,6 +100,7 @@ export type AppPaths = {
   traceDir: string;
   skillsDir: string;
   soulDir: string;
+  cronDir: string;
   projectConfigPath: string;
   userConfigPath: string;
   auditLogPath: string;
@@ -181,6 +182,7 @@ export type PathsLayerConfig = Partial<
     | "traceDir"
     | "skillsDir"
     | "soulDir"
+    | "cronDir"
     | "auditLogPath"
     | "sandboxAuditLogPath"
     | "databasePath"

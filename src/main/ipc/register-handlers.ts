@@ -16,6 +16,11 @@ import type {
   ChatUpdateEvent,
   ConversationInput,
   ConversationResult,
+  CronCreateInput,
+  CronDeleteInput,
+  CronHistoryInput,
+  CronRunNowInput,
+  CronUpdateInput,
   GlobalSettingsState,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
@@ -59,6 +64,7 @@ import type {
   SoulInterviewSummarizeInput,
   SkillToggleInput
 } from "../../shared/ipc";
+import type { CronService } from "../cron";
 import type { OpenVikingHttpClient } from "../memory/openviking/http-client";
 import type { OpenVikingProcessManager } from "../memory/openviking/process-manager";
 import type { IpcEventBus } from "./event-bus";
@@ -84,6 +90,7 @@ type RegisterIpcHandlersInput = {
   soulService: SoulService;
   skillService: SkillService;
   modelsFactory: ModelsFactory;
+  cronService: CronService;
   onSettingsSaved?: () => void;
 };
 
@@ -549,6 +556,33 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
 
   ipcMain.handle("skills:toggle", async (_event, toggleInput: SkillToggleInput) => {
     return input.skillService.toggle(toggleInput);
+  });
+
+  // Cron API
+  ipcMain.handle("cron:list", async () => {
+    const jobs = await input.cronService.listJobs();
+    return { jobs };
+  });
+
+  ipcMain.handle("cron:create", async (_event, createInput: CronCreateInput) => {
+    return input.cronService.create(createInput);
+  });
+
+  ipcMain.handle("cron:update", async (_event, updateInput: CronUpdateInput) => {
+    return input.cronService.update(updateInput);
+  });
+
+  ipcMain.handle("cron:delete", async (_event, deleteInput: CronDeleteInput) => {
+    return input.cronService.delete(deleteInput.id);
+  });
+
+  ipcMain.handle("cron:run-now", async (_event, runNowInput: CronRunNowInput) => {
+    return input.cronService.runNow(runNowInput.id);
+  });
+
+  ipcMain.handle("cron:history", async (_event, historyInput: CronHistoryInput) => {
+    const records = await input.cronService.getHistory(historyInput.jobId, historyInput.limit);
+    return { records };
   });
 
   return {
