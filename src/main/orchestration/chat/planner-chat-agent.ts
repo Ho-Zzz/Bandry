@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AppConfig, RuntimeRole } from "../../config";
+import type { AppConfig, ModelCapabilities, RuntimeRole } from "../../config";
 import type { GenerateTextResult, ModelsFactory } from "../../llm/runtime";
 import { resolveRuntimeTarget, type RuntimeModelTarget } from "../../llm/runtime/runtime-target";
 import type { MemoryProvider } from "../../memory/contracts/types";
@@ -9,6 +9,7 @@ import type {
   ChatMode,
   ChatSendInput,
   ChatSendResult,
+  ConversationResult,
   ChatUpdatePayload,
   ChatUpdateStage
 } from "../../../shared/ipc";
@@ -23,19 +24,40 @@ import {
   isFileExistsObservation,
   resolvePersistWritePath
 } from "./persist-policy";
-import type { ToolObservation } from "./planner-types";
+import type { PlannerActionTool, ToolObservation } from "./planner-types";
 import { createMiddlewarePipeline } from "./middleware";
 import { buildFinalSystemPrompt, buildPlannerSystemPrompt } from "./prompts";
 import { executePlannerTool } from "./tool-executor";
 import { normalizeSpaces, truncate } from "./text-utils";
 
-const buildStreamResult = (streamed: GenerateTextResult, latencyMs: number, workspacePath?: string): ChatSendResult => {
+type ReasoningEffort = "minimal" | "low" | "medium" | "high";
+
+export type ChatRequestContext = {
+  modelProfileId?: string;
+  modelCapabilities?: ModelCapabilities;
+  thinkingEnabled?: boolean;
+  onConversationUpdated?: (conversation: ConversationResult) => void;
+  apiExtras?: {
+    extraBody?: Record<string, unknown>;
+    reasoningEffort?: ReasoningEffort;
+  };
+  warnings?: string[];
+  memoryProvider?: MemoryProvider;
+};
+
+const buildStreamResult = (
+  streamed: GenerateTextResult,
+  latencyMs: number,
+  workspacePath?: string,
+  accumulatedUsage?: { promptTokens: number; completionTokens: number; totalTokens: number }
+): ChatSendResult => {
   return {
     reply: streamed.text,
     provider: streamed.provider,
     model: streamed.model,
     latencyMs,
-    ...(workspacePath ? { workspacePath } : {})
+    ...(workspacePath ? { workspacePath } : {}),
+    ...(accumulatedUsage ? { usage: accumulatedUsage } : {})
   };
 };
 
@@ -99,6 +121,85 @@ const extractPersistedPath = (output: string): string | undefined => {
   return match?.[1];
 };
 
+const summarizeToolIntent = (tool: string, reason?: string, input?: PlannerActionTool["input"]): string | null => {
+  const normalizedReason = normalizeSpaces(reason ?? "");
+  if (normalizedReason) {
+    return normalizedReason;
+  }
+
+  if (tool === "web_search") {
+    const query = normalizeSpaces(input?.query ?? "");
+    return query ? `我需要搜索和“${truncate(query, 36)}”相关的信息` : "我需要先搜索相关信息";
+  }
+
+  if (tool === "web_fetch") {
+    const url = normalizeSpaces(input?.url ?? "");
+    return url ? `我需要读取这个页面：${truncate(url, 48)}` : "我需要读取相关页面内容";
+  }
+
+  if (tool === "read_file") {
+    const path = normalizeSpaces(input?.path ?? "");
+    return path ? `我需要查看文件内容：${truncate(path, 48)}` : "我需要查看相关文件内容";
+  }
+
+  if (tool === "list_dir") {
+    const path = normalizeSpaces(input?.path ?? "");
+    return path ? `我需要先检查目录：${truncate(path, 48)}` : "我需要先检查相关目录";
+  }
+
+  if (tool === "write_file") {
+    const path = normalizeSpaces(input?.path ?? "");
+    return path ? `我需要先把结果写入文件：${truncate(path, 48)}` : "我需要先把结果写入文件";
+  }
+
+  if (tool === "memory_search") {
+    return "我需要补充检索相关记忆";
+  }
+
+  if (tool === "delegate_sub_tasks") {
+    return "我需要拆分任务并并行处理";
+  }
+
+  return null;
+};
+
+const describeAnswerStage = (params: {
+  observationsCount: number;
+  mode: ChatMode;
+  thinkingEnabled?: boolean;
+  directFromPlanner?: boolean;
+}): string => {
+  if (params.directFromPlanner) {
+    return "准备回答";
+  }
+
+  if (params.observationsCount > 0) {
+    return "整理工具结果并准备回答";
+  }
+
+  if (params.mode === "thinking" || params.thinkingEnabled) {
+    return "整理思路并准备回答";
+  }
+
+  return "准备回答";
+};
+
+const shouldBypassFinalSynthesizer = (params: {
+  mode: ChatMode;
+  thinkingEnabled?: boolean;
+  observations: ToolObservation[];
+  persistRequired: boolean;
+  plannerDraftAnswer?: string;
+}): boolean => {
+  return (
+    params.mode === "default" &&
+    params.thinkingEnabled !== true &&
+    params.observations.length === 0 &&
+    !params.persistRequired &&
+    Boolean(params.plannerDraftAnswer?.trim())
+  );
+};
+
 export class ToolPlanningChatAgent {
   private memoryProvider?: MemoryProvider;
 
@@ -136,6 +237,7 @@ export class ToolPlanningChatAgent {
     userMessage: string;
     plannerTarget: RuntimeModelTarget;
     abortSignal?: AbortSignal;
+    apiExtras?: ChatRequestContext["apiExtras"];
   }): Promise<ChatClarificationOption[]> {
     const fallback = this.buildFallbackClarificationOptions(params.question);
     try {
@@ -159,7 +261,9 @@ export class ToolPlanningChatAgent {
             content: `User request: ${params.userMessage}\nClarification question: ${params.question}`
           }
         ],
-        abortSignal: params.abortSignal
+        abortSignal: params.abortSignal,
+        extraBody: params.apiExtras?.extraBody,
+        reasoningEffort: params.apiExtras?.reasoningEffort
       });
 
       const jsonArray = extractJsonArray(response.text);
@@ -200,14 +304,24 @@ export class ToolPlanningChatAgent {
     input: ChatSendInput,
     onUpdate?: (stage: ChatUpdateStage, message: string, payload?: ChatUpdatePayload) => void,
     onDelta?: (delta: string) => void,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    requestContext?: ChatRequestContext
   ): Promise<ChatSendResult> {
+    const requestStartTime = Date.now();
+    console.log(`[Chat] Request started: "${input.message.slice(0, 50)}${input.message.length > 50 ? '...' : ''}"`);
+
     const message = input.message.trim();
     if (!message) {
       throw new Error("message is required");
     }
 
     const mode: ChatMode = input.mode ?? "default";
+    const activeMemoryProvider = requestContext?.memoryProvider ?? this.memoryProvider;
+    const apiExtras = requestContext?.apiExtras;
+    const overrideModelProfileId =
+      requestContext?.modelProfileId?.trim() ||
+      input.modelProfileId?.trim() ||
+      undefined;
     const persistRequirement = detectPersistRequirement(message);
     const requestedPersistPath = persistRequirement.required ? extractRequestedPath(message) : undefined;
     const defaultPersistTargetPath = defaultPersistPath(message, new Date());
@@ -219,7 +333,7 @@ export class ToolPlanningChatAgent {
         })
       : undefined;
     const userSpecifiedPersistPath = Boolean(requestedPersistPath?.trim());
-    let persistRequired = persistRequirement.required;
+    const persistRequired = persistRequirement.required;
     let persistDone = false;
     let persistPathHint = resolvedPersistPath?.ok ? resolvedPersistPath.path : "";
     let persistedPath: string | undefined;
@@ -230,12 +344,18 @@ export class ToolPlanningChatAgent {
 
     // Log mode for debugging
     emitUpdate("planning", `Mode: ${mode}`);
+    if (requestContext?.thinkingEnabled !== undefined) {
+      emitUpdate("planning", `Thinking enabled: ${requestContext.thinkingEnabled ? "true" : "false"}`);
+    }
+    for (const warning of requestContext?.warnings ?? []) {
+      emitUpdate("planning", `Thinking fallback: ${warning}`);
+    }
 
     let plannerTarget: RuntimeModelTarget;
     let synthTarget: RuntimeModelTarget;
     try {
-      plannerTarget = resolveRuntimeTarget(this.config, "lead.planner");
-      synthTarget = resolveRuntimeTarget(this.config, "lead.synthesizer");
+      plannerTarget = resolveRuntimeTarget(this.config, "lead.planner", overrideModelProfileId);
+      synthTarget = resolveRuntimeTarget(this.config, "lead.synthesizer", overrideModelProfileId);
     } catch (error) {
       const messageWithRole = `LeadAgent 路由配置错误: ${getErrorMessage(error)}`;
       emitUpdate("error", messageWithRole);
@@ -259,8 +379,14 @@ export class ToolPlanningChatAgent {
       modelsFactory: this.modelsFactory,
       sandboxService: this.sandboxService,
       conversationStore: this.conversationStore,
-      memoryProvider: this.memoryProvider,
-      mode
+      memoryProvider: activeMemoryProvider,
+      mode,
+      conversationId: input.conversationId,
+      modelCapabilities: requestContext?.modelCapabilities,
+      requestParams: {
+        thinkingEnabled: requestContext?.thinkingEnabled,
+        isPlanMode: mode === "subagents"
+      }
     });
     let middlewareCtx = await pipeline.runBeforeAgent({
       sessionId: input.requestId?.trim() || randomUUID(),
@@ -272,18 +398,27 @@ export class ToolPlanningChatAgent {
       metadata: {},
       state: "before_agent",
       chatMode: mode,
+      modelCapabilities: requestContext?.modelCapabilities,
+      requestParams: {
+        thinkingEnabled: requestContext?.thinkingEnabled,
+        isPlanMode: mode === "subagents"
+      },
       runtime: {
         config: this.config,
         modelsFactory: this.modelsFactory,
         sandboxService: this.sandboxService,
         conversationStore: this.conversationStore,
         onUpdate: emitUpdate,
+        onConversationUpdated: requestContext?.onConversationUpdated,
         abortSignal
       }
     });
     const observations: ToolObservation[] = [];
     const attemptedToolSignatures = new Set<string>();
     let accumulatedLatency = 0;
+    let accumulatedPromptTokens = 0;
+    let accumulatedCompletionTokens = 0;
+    let accumulatedTotalTokens = 0;
     let plannerDraftAnswer: string | undefined;
     let clarificationFinalReply: string | undefined;
     let failedToolCount = 0;
@@ -328,6 +463,7 @@ export class ToolPlanningChatAgent {
     }
 
     emitUpdate("planning", "正在规划是否需要调用工具...");
+    emitUpdate("planning", mode === "thinking" || requestContext?.thinkingEnabled ? "分析问题并整理思路" : "分析问题");
 
     for (let step = 0; step < MAX_TOOL_STEPS; step += 1) {
       if (clarificationFinalReply) {
@@ -375,7 +511,9 @@ export class ToolPlanningChatAgent {
               temperature: plannerTarget.temperature ?? 0,
               maxTokens: plannerTarget.maxTokens,
               messages: ctx.messages,
-              abortSignal
+              abortSignal,
+              extraBody: apiExtras?.extraBody,
+              reasoningEffort: apiExtras?.reasoningEffort
             });
             return {
               ...ctx,
@@ -385,7 +523,9 @@ export class ToolPlanningChatAgent {
               metadata: {
                 ...ctx.metadata,
                 plannerProvider: result.provider,
-                plannerModel: result.model
+                plannerModel: result.model,
+                plannerLatencyMs: result.latencyMs,
+                plannerUsage: result.usage
               }
             };
           }
@@ -394,7 +534,8 @@ export class ToolPlanningChatAgent {
           provider: plannerCtx.metadata.plannerProvider as GenerateTextResult["provider"],
           model: plannerCtx.metadata.plannerModel as string,
           text: plannerCtx.llmResponse?.content ?? "",
-          latencyMs: 0
+          latencyMs: (plannerCtx.metadata.plannerLatencyMs as number | undefined) ?? 0,
+          usage: plannerCtx.metadata.plannerUsage as GenerateTextResult["usage"]
         };
         middlewareCtx = plannerCtx;
       } catch (error) {
@@ -404,6 +545,14 @@ export class ToolPlanningChatAgent {
       }
 
       accumulatedLatency += planner.latencyMs;
+
+      // Accumulate planner tokens
+      if (planner.usage) {
+        accumulatedPromptTokens += planner.usage.promptTokens ?? 0;
+        accumulatedCompletionTokens += planner.usage.completionTokens ?? 0;
+        accumulatedTotalTokens += planner.usage.totalTokens ?? 0;
+      }
+
       const action = parsePlannerAction(planner.text);
       if (!action) {
         if (!looksLikeJsonAction(planner.text)) {
@@ -419,6 +568,12 @@ export class ToolPlanningChatAgent {
           emitUpdate("planning", "检测到请求要求落盘，继续规划 write_file 步骤");
           continue;
         }
+        emitUpdate("planning", describeAnswerStage({
+          observationsCount: observations.length,
+          mode,
+          thinkingEnabled: requestContext?.thinkingEnabled,
+          directFromPlanner: true
+        }));
         emitUpdate("final", "Planner 返回非结构化输出，进入流式回答阶段");
         break;
       }
@@ -436,6 +591,12 @@ export class ToolPlanningChatAgent {
           continue;
         }
         plannerDraftAnswer = action.answer;
+        emitUpdate("planning", describeAnswerStage({
+          observationsCount: observations.length,
+          mode,
+          thinkingEnabled: requestContext?.thinkingEnabled,
+          directFromPlanner: true
+        }));
         emitUpdate("final", "Planner 选择直接回答，进入流式回答阶段");
         break;
       }
@@ -446,7 +607,8 @@ export class ToolPlanningChatAgent {
           question,
           userMessage: message,
           plannerTarget,
-          abortSignal
+          abortSignal,
+          apiExtras
         });
         clarificationFinalReply = `需要进一步确认：${question}`;
         emitUpdate("clarification", question, {
@@ -473,6 +635,10 @@ export class ToolPlanningChatAgent {
       }
       attemptedToolSignatures.add(toolSignature);
 
+      const toolIntent = summarizeToolIntent(action.tool, action.reason, action.input);
+      if (toolIntent) {
+        emitUpdate("planning", toolIntent);
+      }
       emitUpdate("tool", `执行工具：${action.tool}${action.reason ? `（${normalizeSpaces(action.reason)}）` : ""}`);
       throwIfAborted(abortSignal);
       const observation = await pipeline.executeToolCall(
@@ -486,7 +652,7 @@ export class ToolPlanningChatAgent {
             workspacePath: ctx.workspacePath,
             onDelegationUpdate: (detail) => emitUpdate("tool", detail),
             abortSignal,
-            memoryProvider: this.memoryProvider,
+            memoryProvider: activeMemoryProvider,
             sessionId: middlewareCtx.sessionId
           })
       );
@@ -511,7 +677,8 @@ export class ToolPlanningChatAgent {
           question,
           userMessage: message,
           plannerTarget,
-          abortSignal
+          abortSignal,
+          apiExtras
         });
         clarificationFinalReply = `需要进一步确认：${question}`;
         emitUpdate("clarification", question, {
@@ -547,6 +714,11 @@ export class ToolPlanningChatAgent {
 
     throwIfAborted(abortSignal);
     if (!clarificationFinalReply) {
+      emitUpdate("planning", describeAnswerStage({
+        observationsCount: observations.length,
+        mode,
+        thinkingEnabled: requestContext?.thinkingEnabled
+      }));
       emitUpdate(
         "model",
         observations.length > 0
@@ -561,6 +733,28 @@ export class ToolPlanningChatAgent {
         provider: synthTarget.provider,
         model: synthTarget.model,
         text: clarificationFinalReply,
+        latencyMs: 0
+      };
+      middlewareCtx = await pipeline.runAfterAgent({
+        ...middlewareCtx,
+        finalResponse: finalResponse.text
+      });
+    } else if (
+      shouldBypassFinalSynthesizer({
+        mode,
+        thinkingEnabled: requestContext?.thinkingEnabled,
+        observations,
+        persistRequired,
+        plannerDraftAnswer
+      })
+    ) {
+      const directReply = plannerDraftAnswer?.trim() ?? "";
+      emitUpdate("model", "Planner 已直接产出最终回答，跳过总结模型");
+      onDelta?.(directReply);
+      finalResponse = {
+        provider: plannerTarget.provider,
+        model: plannerTarget.model,
+        text: directReply,
         latencyMs: 0
       };
       middlewareCtx = await pipeline.runAfterAgent({
@@ -606,7 +800,9 @@ export class ToolPlanningChatAgent {
                 temperature: synthTarget.temperature ?? 0.2,
                 maxTokens: synthTarget.maxTokens,
                 messages: ctx.messages,
-                abortSignal
+                abortSignal,
+                extraBody: apiExtras?.extraBody,
+                reasoningEffort: apiExtras?.reasoningEffort
               },
               (delta) => {
                 onDelta?.(delta);
@@ -635,6 +831,13 @@ export class ToolPlanningChatAgent {
           latencyMs: (finalCtx.metadata.synthLatencyMs as number | undefined) ?? 0,
           usage: finalCtx.metadata.synthUsage as GenerateTextResult["usage"]
         };
+
+        // Accumulate synthesizer tokens
+        if (finalResponse.usage) {
+          accumulatedPromptTokens += finalResponse.usage.promptTokens ?? 0;
+          accumulatedCompletionTokens += finalResponse.usage.completionTokens ?? 0;
+          accumulatedTotalTokens += finalResponse.usage.totalTokens ?? 0;
+        }
 
         // Fallback persist write must run BEFORE runAfterAgent, because
         // SandboxBindingMiddleware.afterAgent clears the workspace context.
@@ -706,6 +909,20 @@ export class ToolPlanningChatAgent {
     accumulatedLatency += finalResponse.latencyMs;
     emitUpdate("final", "最终回答已生成");
 
-    return buildStreamResult(finalResponse, accumulatedLatency, middlewareCtx.workspacePath || undefined);
+    const totalDuration = Date.now() - requestStartTime;
+    console.log(`[Chat] Request completed: ${totalDuration}ms (accumulated LLM: ${accumulatedLatency}ms, overhead: ${totalDuration - accumulatedLatency}ms)`);
+
+    return buildStreamResult(
+      finalResponse,
+      accumulatedLatency,
+      middlewareCtx.workspacePath || undefined,
+      accumulatedTotalTokens > 0
+        ? {
+            promptTokens: accumulatedPromptTokens,
+            completionTokens: accumulatedCompletionTokens,
+            totalTokens: accumulatedTotalTokens
+          }
+        : undefined
+    );
   }
 }

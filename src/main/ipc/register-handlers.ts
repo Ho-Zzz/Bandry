@@ -1,12 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
-import { BrowserWindow, dialog, ipcMain } from "electron";
+import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { toPublicConfigSummary, type AppConfig } from "../config";
-import { ToolPlanningChatAgent } from "../orchestration/chat";
+import type { ChatAgentFactory } from "../orchestration/chat/chat-agent-factory";
 import { LocalOrchestrator } from "../orchestration/workflow";
 import { SandboxService } from "../sandbox";
 import { ModelOnboardingService, SettingsService } from "../settings";
 import { ConversationStore } from "../persistence/sqlite";
+import { UserFilesService } from "../user-files";
 import type {
   ChatCancelInput,
   ChatCancelResult,
@@ -16,6 +17,11 @@ import type {
   ChatUpdateEvent,
   ConversationInput,
   ConversationResult,
+  ConversationTokenStatsInput,
+  ConversationTokenStatsResult,
+  GlobalTokenStatsResult,
+  ConfigStorageInfoResult,
+  OpenConfigDirResult,
   GlobalSettingsState,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
@@ -57,7 +63,21 @@ import type {
   SkillUpdateInput,
   SoulInterviewInput,
   SoulInterviewSummarizeInput,
-  SkillToggleInput
+  SkillToggleInput,
+  UserFilesCreateDirInput,
+  UserFilesCreateDirResult,
+  UserFilesSaveInput,
+  UserFilesSaveResult,
+  UserFilesListInput,
+  UserFilesListResult,
+  UserFilesReadInput,
+  UserFilesReadResult,
+  UserFilesDeleteInput,
+  UserFilesDeleteResult,
+  UserFilesRenameInput,
+  UserFilesRenameResult,
+  UserFilesSaveConversationInput,
+  UserFilesSaveConversationResult
 } from "../../shared/ipc";
 import type { OpenVikingHttpClient } from "../memory/openviking/http-client";
 import type { OpenVikingProcessManager } from "../memory/openviking/process-manager";
@@ -70,12 +90,13 @@ import { resolveRuntimeTarget } from "../llm/runtime/runtime-target";
 
 type RegisterIpcHandlersInput = {
   config: AppConfig;
-  toolPlanningChatAgent: ToolPlanningChatAgent;
+  chatAgentFactory: ChatAgentFactory;
   orchestrator: LocalOrchestrator;
   sandboxService: SandboxService;
   settingsService: SettingsService;
   modelOnboardingService: ModelOnboardingService;
   conversationStore: ConversationStore;
+  userFilesService: UserFilesService;
   eventBus: IpcEventBus;
   getOpenViking: () => {
     processManager: OpenVikingProcessManager | null;
@@ -142,7 +163,14 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
     activeChatRequests.set(requestId, controller);
 
     try {
-      return await input.toolPlanningChatAgent.send(
+      const { agent, context } = input.chatAgentFactory.createAgent({
+        conversationId: chatInput.conversationId,
+        modelProfileId: chatInput.modelProfileId,
+        mode: chatInput.mode,
+        thinkingEnabled: chatInput.thinkingEnabled,
+        reasoningEffort: chatInput.reasoningEffort
+      });
+      return await agent.send(
         chatInput,
         (stage, message, payload) => {
           const update: ChatUpdateEvent = {
@@ -162,7 +190,13 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
           };
           input.eventBus.broadcastChatDelta(update);
         },
-        controller.signal
+        controller.signal,
+        {
+          ...context,
+          onConversationUpdated: (conversation) => {
+            input.eventBus.broadcastConversationUpdate(conversation);
+          }
+        }
       );
     } finally {
       activeChatRequests.delete(requestId);
@@ -202,6 +236,25 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
 
   ipcMain.handle("config:get-summary", async () => {
     return toPublicConfigSummary(input.config);
+  });
+
+  ipcMain.handle("config:get-storage-info", async (): Promise<ConfigStorageInfoResult> => {
+    return {
+      userConfigPath: input.config.paths.userConfigPath,
+      configDir: input.config.paths.configDir,
+      notes: "Config source: defaults + project(optional) + userConfig. .env and config env overrides are disabled."
+    };
+  });
+
+  ipcMain.handle("config:open-config-dir", async (): Promise<OpenConfigDirResult> => {
+    const result = await shell.openPath(input.config.paths.configDir);
+    if (result && result.trim().length > 0) {
+      return {
+        ok: false,
+        message: result
+      };
+    }
+    return { ok: true };
   });
 
   ipcMain.handle("config:get-settings-state", async (): Promise<GlobalSettingsState> => {
@@ -550,6 +603,60 @@ export const registerIpcHandlers = (input: RegisterIpcHandlersInput): { clearRun
   ipcMain.handle("skills:toggle", async (_event, toggleInput: SkillToggleInput) => {
     return input.skillService.toggle(toggleInput);
   });
+
+  // User Files handlers
+  ipcMain.handle("userFiles:createDir", async (_event, createDirInput: UserFilesCreateDirInput): Promise<UserFilesCreateDirResult> => {
+    await input.userFilesService.createDirectory(createDirInput.dirPath);
+    return { ok: true };
+  });
+
+  ipcMain.handle("userFiles:save", async (_event, saveInput: UserFilesSaveInput): Promise<UserFilesSaveResult> => {
+    const record = await input.userFilesService.saveFile(saveInput.filePath, saveInput.content);
+    return { record };
+  });
+
+  ipcMain.handle("userFiles:list", async (_event, listInput: UserFilesListInput): Promise<UserFilesListResult> => {
+    const entries = await input.userFilesService.listDirectory(listInput.dirPath);
+    return { entries };
+  });
+
+  ipcMain.handle("userFiles:read", async (_event, readInput: UserFilesReadInput): Promise<UserFilesReadResult> => {
+    const result = await input.userFilesService.readFile(readInput.filePath);
+    return result;
+  });
+
+  ipcMain.handle("userFiles:delete", async (_event, deleteInput: UserFilesDeleteInput): Promise<UserFilesDeleteResult> => {
+    await input.userFilesService.delete(deleteInput.filePath, deleteInput.recursive ?? false);
+    return { ok: true };
+  });
+
+  ipcMain.handle("userFiles:rename", async (_event, renameInput: UserFilesRenameInput): Promise<UserFilesRenameResult> => {
+    await input.userFilesService.rename(renameInput.oldPath, renameInput.newPath);
+    return { ok: true };
+  });
+
+  ipcMain.handle("userFiles:saveConversation", async (_event, saveConvInput: UserFilesSaveConversationInput): Promise<UserFilesSaveConversationResult> => {
+    const record = await input.userFilesService.saveConversationAsMarkdown(
+      saveConvInput.conversationId,
+      saveConvInput.targetPath
+    );
+    return { record };
+  });
+
+  // Token statistics handlers
+  ipcMain.handle(
+    "conversation:getTokenStats",
+    async (_event, statsInput: ConversationTokenStatsInput): Promise<ConversationTokenStatsResult> => {
+      return input.conversationStore.getConversationTokenStats(statsInput.conversationId);
+    }
+  );
+
+  ipcMain.handle(
+    "conversation:getGlobalTokenStats",
+    async (): Promise<GlobalTokenStatsResult> => {
+      return input.conversationStore.getGlobalTokenStats();
+    }
+  );
 
   return {
     clearRunningTasks: (): void => {

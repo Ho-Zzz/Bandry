@@ -38,6 +38,7 @@ export const ModelStudio = () => {
   const [connectPreferredProvider, setConnectPreferredProvider] = useState<ModelProvider | undefined>(undefined);
   const [credentialEditor, setCredentialEditor] = useState<CredentialEditorState | null>(null);
   const [savingCredential, setSavingCredential] = useState(false);
+  const [removingProvider, setRemovingProvider] = useState<ModelProvider | null>(null);
 
   const loadConnected = useCallback(async () => {
     const [connectedResult, settings] = await Promise.all([
@@ -141,6 +142,36 @@ export const ModelStudio = () => {
       await loadConnected();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to remove model profile");
+    }
+  };
+
+  const handleRemoveProvider = async (provider: ModelProvider) => {
+    const models = connectedGroups.get(provider) ?? [];
+    const confirmed = window.confirm(
+      `Delete provider ${providerLabel(provider)}? This will remove ${models.length} connected model profile(s).`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setRemovingProvider(provider);
+      setMessage("");
+
+      for (const model of models) {
+        await window.api.modelsRemove({ profileId: model.profileId });
+      }
+
+      await window.api.modelsUpdateProviderCredential({
+        provider,
+        apiKey: ""
+      });
+
+      await loadConnected();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to delete provider");
+    } finally {
+      setRemovingProvider(null);
     }
   };
 
@@ -273,6 +304,15 @@ export const ModelStudio = () => {
                       >
                         <Cpu size={12} />
                         Add model
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleRemoveProvider(provider)}
+                        disabled={removingProvider === provider}
+                        className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-700 disabled:opacity-60"
+                      >
+                        <Trash2 size={12} />
+                        Delete provider
                       </button>
                     </div>
                   </div>

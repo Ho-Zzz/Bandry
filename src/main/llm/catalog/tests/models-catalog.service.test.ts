@@ -13,7 +13,6 @@ const createConfig = (bandryHome: string) => {
       ...process.env,
       BANDRY_HOME: bandryHome
     },
-    skipDotenv: true
   });
 };
 

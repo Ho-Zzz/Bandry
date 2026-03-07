@@ -18,6 +18,7 @@ import {
 import { clsx } from 'clsx';
 import type { Task } from '../../types/app';
 import { TaskStatus } from '../../types/app';
+import { TokenDashboard } from '../home/token-dashboard';
 
 interface HomeProps {
   /** Active tasks to display in the dashboard */
@@ -227,6 +228,11 @@ export const Home = ({ tasks, onReviewClick }: HomeProps) => {
           onClick={() => {}}
           color="purple"
         />
+      </div>
+
+      {/* Token Dashboard */}
+      <div className="mb-8">
+        <TokenDashboard />
       </div>
 
       {/* Recent Activity Section */}

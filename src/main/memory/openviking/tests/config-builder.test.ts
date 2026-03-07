@@ -15,8 +15,33 @@ const createConfig = async (seed: string) => {
       ...process.env,
       BANDRY_HOME: bandryHome
     },
-    skipDotenv: true
   });
+};
+
+const addProfiles = (config: ReturnType<typeof loadAppConfig>): void => {
+  config.modelProfiles = [
+    {
+      id: "profile_openai_default",
+      name: "OpenAI Default",
+      provider: "openai",
+      model: config.providers.openai.model,
+      enabled: true
+    },
+    {
+      id: "profile_deepseek_default",
+      name: "DeepSeek Default",
+      provider: "deepseek",
+      model: config.providers.deepseek.model,
+      enabled: true
+    },
+    {
+      id: "profile_volcengine_default",
+      name: "Volcengine Default",
+      provider: "volcengine",
+      model: config.providers.volcengine.model,
+      enabled: true
+    }
+  ];
 };
 
 describe("buildOpenVikingConfig", () => {
@@ -39,6 +64,7 @@ describe("buildOpenVikingConfig", () => {
 
   it("fails when profile provider is not openai/volcengine", async () => {
     const config = await createConfig("provider");
+    addProfiles(config);
     config.providers.deepseek.apiKey = "sk-deepseek-valid-key-1234567890";
     config.openviking.vlmProfileId = "profile_deepseek_default";
     config.openviking.embeddingProfileId = "profile_openai_default";
@@ -58,6 +84,7 @@ describe("buildOpenVikingConfig", () => {
 
   it("builds config from bound profiles and sets embedding dimension by provider/model", async () => {
     const config = await createConfig("ok");
+    addProfiles(config);
     config.providers.openai.apiKey = "sk-openai-valid-key-1234567890";
     config.providers.volcengine.apiKey = "ark-valid-key";
     config.openviking.vlmProfileId = "profile_openai_default";

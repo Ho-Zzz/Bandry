@@ -24,7 +24,6 @@ const createConfig = () => {
       auditLogPath: path.join(workspaceDir, "model-audit.log"),
       sandboxAuditLogPath: path.join(workspaceDir, "sandbox-audit.log"),
       databasePath: path.join(workspaceDir, "bandry.db"),
-      dotenvPath: path.join(workspaceDir, ".env")
     },
     runtime: {
       inheritedEnv: {}
@@ -32,6 +31,19 @@ const createConfig = () => {
   });
 
   config.providers.openai.apiKey = "sk-openai-valid-key-1234567890";
+  config.modelProfiles = [
+    {
+      id: "profile_openai_default",
+      name: "OpenAI Default",
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      enabled: true
+    }
+  ];
+  config.routing.assignments["chat.default"] = "profile_openai_default";
+  config.routing.assignments["lead.planner"] = "profile_openai_default";
+  config.routing.assignments["lead.synthesizer"] = "profile_openai_default";
+  config.routing.assignments["memory.fact_extractor"] = "profile_openai_default";
   return config;
 };
 

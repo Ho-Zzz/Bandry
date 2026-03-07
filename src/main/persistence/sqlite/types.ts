@@ -31,6 +31,9 @@ export type MessageRecord = {
   status: MessageStatus;
   trace?: string; // JSON string of trace events
   created_at: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 /**
@@ -57,6 +60,9 @@ export type CreateMessageInput = {
   content: string;
   status?: MessageStatus;
   trace?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 /**
@@ -66,4 +72,7 @@ export type UpdateMessageInput = {
   content?: string;
   status?: MessageStatus;
   trace?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };

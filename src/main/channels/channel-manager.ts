@@ -1,4 +1,4 @@
-import type { ToolPlanningChatAgent } from "../orchestration/chat";
+import type { ChatAgentFactory } from "../orchestration/chat/chat-agent-factory";
 import type { ConversationStore } from "../persistence/sqlite";
 import type { IpcEventBus } from "../ipc/event-bus";
 import type {
@@ -25,7 +25,7 @@ export class ChannelManager {
   private readonly activeRequests = new Map<string, AbortController>();
 
   constructor(
-    private readonly chatAgent: ToolPlanningChatAgent,
+    private readonly chatAgentFactory: ChatAgentFactory,
     private readonly conversationStore: ConversationStore,
     private readonly eventBus: IpcEventBus,
     private channelsConfig: { enabled: boolean },
@@ -142,7 +142,14 @@ export class ChannelManager {
         })),
       ];
 
-      const result = await this.chatAgent.send(
+      const { agent, context } = this.chatAgentFactory.createAgent({
+        conversationId,
+        modelProfileId: command.modelProfileId,
+        mode: command.mode,
+        thinkingEnabled: command.mode === "thinking" ? true : undefined
+      });
+
+      const result = await agent.send(
         {
           requestId,
           conversationId,
@@ -150,6 +157,7 @@ export class ChannelManager {
           history,
           mode: command.mode,
           modelProfileId: command.modelProfileId,
+          thinkingEnabled: command.mode === "thinking" ? true : undefined
         },
         (stage, message, payload) => {
           this.eventBus.broadcastChatUpdate({ requestId, stage, message, timestamp: Date.now(), payload });
@@ -158,6 +166,7 @@ export class ChannelManager {
           this.eventBus.broadcastChatDelta({ requestId, delta, timestamp: Date.now() });
         },
         controller.signal,
+        context
       );
 
       this.conversationStore.createMessage({

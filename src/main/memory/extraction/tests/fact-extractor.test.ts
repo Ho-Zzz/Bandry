@@ -190,7 +190,6 @@ const createMockConfig = (): AppConfig => ({
     resourcesDir: "",
     skillsDir: "",
     soulDir: "",
-    dotenvPath: ""
   },
   runtime: {
     inheritedEnv: {}

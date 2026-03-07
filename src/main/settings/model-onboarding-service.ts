@@ -154,6 +154,25 @@ const buildProfileId = (
   return `${base}_${Date.now()}`;
 };
 
+const mapCatalogCapabilitiesToProfile = (item: CatalogModelItem): {
+  supportsThinking?: boolean;
+  supportsReasoningEffort?: boolean;
+  supportsVision?: boolean;
+  supportsToolCall?: boolean;
+} => {
+  const hasImageInput = item.capabilities.inputModalities.some(
+    (modality) => modality.toLowerCase() === "image"
+  );
+  const supportsReasoning = Boolean(item.capabilities.reasoning);
+
+  return {
+    supportsThinking: supportsReasoning,
+    supportsReasoningEffort: supportsReasoning,
+    supportsVision: hasImageInput,
+    supportsToolCall: Boolean(item.capabilities.toolCall)
+  };
+};
+
 export class ModelOnboardingService {
   constructor(
     private readonly settingsService: SettingsService,
@@ -167,7 +186,7 @@ export class ModelOnboardingService {
 
   listConnected(): ModelsListConnectedResult {
     const state = this.settingsService.getState();
-    const chatDefaultProfileId = state.routing["chat.default"];
+    const chatDefaultProfileId = state.routing["chat.default"].trim() || undefined;
     const models: ConnectedModelResult[] = state.modelProfiles
       .map((profile) => {
         const providerConfigured = hasUsableProviderApiKey(
@@ -240,7 +259,8 @@ export class ModelOnboardingService {
       provider: input.provider,
       model: modelId,
       enabled: true,
-      temperature: 0.2
+      temperature: 0.2,
+      capabilities: mapCatalogCapabilitiesToProfile(catalogModel)
     });
 
     const saveResult = await this.settingsService.saveState({
@@ -302,24 +322,15 @@ export class ModelOnboardingService {
       throw new Error(`Model profile not found: ${profileId}`);
     }
 
-    const boundRoles = RUNTIME_ROLES.filter((role) => next.routing[role] === profileId);
-    if (boundRoles.length > 0) {
-      throw new Error(
-        `Model profile ${profileId} is still bound to roles: ${boundRoles.join(", ")}. Rebind these roles first.`
-      );
-    }
-
     const remaining = next.modelProfiles.filter((profile) => profile.id !== profileId);
-    if (remaining.length === 0) {
-      throw new Error("At least one model profile must remain");
-    }
-
-    const enabledRemaining = remaining.filter((profile) => profile.enabled);
-    if (enabledRemaining.length === 0) {
-      throw new Error("At least one enabled model profile must remain");
-    }
-
     next.modelProfiles = remaining;
+
+    // Auto-unbind runtime roles that still point to the removed profile.
+    for (const role of RUNTIME_ROLES) {
+      if (next.routing[role] === profileId) {
+        next.routing[role] = "";
+      }
+    }
 
     const saveResult = await this.settingsService.saveState({
       state: next

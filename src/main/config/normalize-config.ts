@@ -33,7 +33,6 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.paths.auditLogPath = normalizePath(config.paths.auditLogPath);
   config.paths.sandboxAuditLogPath = normalizePath(config.paths.sandboxAuditLogPath);
   config.paths.databasePath = normalizePath(config.paths.databasePath);
-  config.paths.dotenvPath = normalizePath(config.paths.dotenvPath);
 
   if (config.catalog.source.type !== "http" && config.catalog.source.type !== "file") {
     config.catalog.source.type = "http";

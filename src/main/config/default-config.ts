@@ -29,32 +29,7 @@ export const createDefaultConfig = (
     })
   ) as AppConfig["providers"];
 
-  const defaultProfiles: AppConfig["modelProfiles"] = [
-    {
-      id: "profile_openai_default",
-      name: "OpenAI Default",
-      provider: "openai",
-      model: "gpt-4.1-mini",
-      enabled: true,
-      temperature: 0.2
-    },
-    {
-      id: "profile_deepseek_default",
-      name: "DeepSeek Default",
-      provider: "deepseek",
-      model: "deepseek-chat",
-      enabled: true,
-      temperature: 0.2
-    },
-    {
-      id: "profile_volcengine_default",
-      name: "Volcengine Default",
-      provider: "volcengine",
-      model: "doubao-seed-1-6-250615",
-      enabled: true,
-      temperature: 0.2
-    }
-  ];
+  const defaultProfiles: AppConfig["modelProfiles"] = [];
 
   return {
     llm: {
@@ -115,13 +90,13 @@ export const createDefaultConfig = (
     modelProfiles: defaultProfiles,
     routing: {
       assignments: {
-        "chat.default": "profile_openai_default",
-        "lead.planner": "profile_openai_default",
-        "lead.synthesizer": "profile_openai_default",
-        "sub.researcher": "profile_openai_default",
-        "sub.bash_operator": "profile_openai_default",
-        "sub.writer": "profile_openai_default",
-        "memory.fact_extractor": "profile_openai_default"
+        "chat.default": "",
+        "lead.planner": "",
+        "lead.synthesizer": "",
+        "sub.researcher": "",
+        "sub.bash_operator": "",
+        "sub.writer": "",
+        "memory.fact_extractor": ""
       }
     },
     tools: {

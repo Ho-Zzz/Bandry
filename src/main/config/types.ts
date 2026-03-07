@@ -13,6 +13,24 @@ export type RuntimeRole =
   | "sub.writer"
   | "memory.fact_extractor";
 
+/**
+ * Model capabilities indicate what features a model supports
+ */
+export type ModelCapabilities = {
+  supportsThinking?: boolean;
+  supportsReasoningEffort?: boolean;
+  supportsVision?: boolean;
+  supportsToolCall?: boolean;
+};
+
+/**
+ * Configuration to apply when thinking mode is enabled
+ */
+export type ThinkingConfig = {
+  extraBody?: Record<string, unknown>;
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+};
+
 export type ModelProfile = {
   id: string;
   name: string;
@@ -21,6 +39,8 @@ export type ModelProfile = {
   enabled: boolean;
   temperature?: number;
   maxTokens?: number;
+  capabilities?: ModelCapabilities;
+  whenThinkingEnabled?: ThinkingConfig;
 };
 
 export type ModelProfileLayer = Partial<ModelProfile> & Pick<ModelProfile, "id">;
@@ -105,7 +125,6 @@ export type AppPaths = {
   auditLogPath: string;
   sandboxAuditLogPath: string;
   databasePath: string;
-  dotenvPath: string;
 };
 
 export type RuntimeConfig = {
@@ -327,6 +346,8 @@ export type PublicConfigSummary = {
     provider: LlmProvider;
     model: string;
     enabled: boolean;
+    capabilities?: ModelCapabilities;
+    whenThinkingEnabled?: ThinkingConfig;
   }>;
   routing: Record<RuntimeRole, string>;
   tools: {

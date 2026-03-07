@@ -31,15 +31,20 @@ export class OpenVikingMemoryProvider implements MemoryProvider {
       const chunks: ContextChunk[] = [];
       const seen = new Set<string>();
 
-      for (const targetUri of this.options.targetUris) {
-        const result = await this.client.search({
-          query: trimmedQuery,
-          sessionId: ovSessionId,
+      const searchResults = await Promise.all(
+        this.options.targetUris.map(async (targetUri) => ({
           targetUri,
-          limit: this.options.topK,
-          scoreThreshold: this.options.scoreThreshold
-        });
+          result: await this.client.search({
+            query: trimmedQuery,
+            sessionId: ovSessionId,
+            targetUri,
+            limit: this.options.topK,
+            scoreThreshold: this.options.scoreThreshold
+          })
+        }))
+      );
 
+      for (const { result } of searchResults) {
         const matched = this.collectMatchedContexts(result);
         for (const item of matched) {
           if (!item.uri || seen.has(item.uri)) {
@@ -104,31 +109,39 @@ export class OpenVikingMemoryProvider implements MemoryProvider {
   }
 
   private async persistConversation(conversation: Conversation): Promise<void> {
-    const ovSessionId = await this.ensureSession(conversation.sessionId);
-    const messages = conversation.messages
-      .filter((message) => message.role === "user" || message.role === "assistant")
-      .map((message) => ({
-        role: message.role as "user" | "assistant",
-        content: message.content.trim()
-      }))
-      .filter((message) => message.content.length > 0)
-      .slice(-4);
+    try {
+      const ovSessionId = await this.ensureSession(conversation.sessionId);
+      const messages = conversation.messages
+        .filter((message) => message.role === "user" || message.role === "assistant")
+        .map((message) => ({
+          role: message.role as "user" | "assistant",
+          content: message.content.trim()
+        }))
+        .filter((message) => message.content.length > 0)
+        .slice(-4);
 
-    if (messages.length === 0) {
-      return;
+      if (messages.length === 0) {
+        return;
+      }
+
+      const signature = messages.map((message) => `${message.role}:${message.content}`).join("\n");
+      if (this.lastPersistedSignature.get(conversation.sessionId) === signature) {
+        return;
+      }
+
+      for (const message of messages) {
+        await this.client.addSessionMessage(ovSessionId, message.role, message.content);
+      }
+
+      await this.client.commitSession(ovSessionId);
+      this.lastPersistedSignature.set(conversation.sessionId, signature);
+    } catch (error) {
+      // Silently fail persistence to avoid blocking or logging noise
+      // Memory persistence is best-effort and should not affect chat functionality
+      if (error instanceof Error && !error.message.includes('timeout')) {
+        console.warn("[OpenVikingMemoryProvider] Persist failed:", error.message);
+      }
     }
-
-    const signature = messages.map((message) => `${message.role}:${message.content}`).join("\n");
-    if (this.lastPersistedSignature.get(conversation.sessionId) === signature) {
-      return;
-    }
-
-    for (const message of messages) {
-      await this.client.addSessionMessage(ovSessionId, message.role, message.content);
-    }
-
-    await this.client.commitSession(ovSessionId);
-    this.lastPersistedSignature.set(conversation.sessionId, signature);
   }
 
   private async ensureSession(sessionId: string): Promise<string> {

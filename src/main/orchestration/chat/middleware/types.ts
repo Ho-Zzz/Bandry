@@ -1,9 +1,10 @@
 import type { LlmMessage } from "../../../llm/runtime/types";
 import type { ModelsFactory } from "../../../llm/runtime";
 import type { AppConfig } from "../../../config";
+import type { ModelCapabilities } from "../../../config";
 import type { SandboxService } from "../../../sandbox";
 import type { ConversationStore } from "../../../persistence/sqlite";
-import type { ChatMode, ChatUpdatePayload, ChatUpdateStage } from "../../../../shared/ipc";
+import type { ChatMode, ChatUpdatePayload, ChatUpdateStage, ConversationResult } from "../../../../shared/ipc";
 import type { PlannerActionTool, ToolObservation } from "../planner-types";
 
 /**
@@ -82,6 +83,15 @@ export type MiddlewareContext = {
   /** Chat mode for this request */
   chatMode?: ChatMode;
 
+  /** Capabilities of the selected model profile for this request */
+  modelCapabilities?: ModelCapabilities;
+
+  /** Request-level runtime parameters used to build middleware chain */
+  requestParams?: {
+    thinkingEnabled?: boolean;
+    isPlanMode?: boolean;
+  };
+
   /** Todo list for sub-agents mode (managed by TodoListMiddleware) */
   todos?: TodoItem[];
 
@@ -92,6 +102,7 @@ export type MiddlewareContext = {
     sandboxService: SandboxService;
     conversationStore?: ConversationStore;
     onUpdate?: (stage: ChatUpdateStage, message: string, payload?: ChatUpdatePayload) => void;
+    onConversationUpdated?: (conversation: ConversationResult) => void;
     abortSignal?: AbortSignal;
   };
 };

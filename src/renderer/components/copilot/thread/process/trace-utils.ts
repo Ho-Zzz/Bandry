@@ -1,0 +1,645 @@
+import { parseToolResult } from "../../../../features/copilot/trace-paths";
+import type { ChatMode } from "../../../../../shared/ipc";
+
+type TraceToolArgs = {
+  stage?: string;
+};
+
+type TraceToolResult = {
+  message?: string;
+  timestamp?: number;
+  workspacePath?: string;
+};
+
+export type ProcessKind = "Plan" | "Tool" | "Result";
+
+export type TraceItem = {
+  id: string;
+  kind: ProcessKind;
+  stage: string;
+  message: string;
+  timestamp?: number;
+  source?: string;
+  status?: "success" | "failed";
+  workspacePath?: string;
+};
+
+export type ToolResultSummary = {
+  source: string;
+  status: "success" | "failed" | "loading";
+  output: string;
+  timestamp?: number;
+  workspacePath?: string;
+  sources: SourceItem[];
+};
+
+export type SourceItem = {
+  id: string;
+  url: string;
+  title: string;
+};
+
+export type ProcessSectionType = "planning" | "execution" | "finalizing" | "error";
+
+export type ProcessSection = {
+  id: string;
+  type: ProcessSectionType;
+  title: string;
+  items: TraceItem[];
+};
+
+export type ProcessDisplayState = {
+  isRunning: boolean;
+  mode?: ChatMode;
+  thinkingEnabled?: boolean;
+};
+
+export type ProcessStep = {
+  id: string;
+  label: string;
+  tone: "active" | "pending" | "error";
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null;
+};
+
+const extractTraceState = (
+  toolName: string,
+  args: unknown,
+  result: unknown
+): {
+  stage: string;
+  message?: string;
+  timestamp?: number;
+  workspacePath?: string;
+} => {
+  const typedArgs: TraceToolArgs = isRecord(args)
+    ? {
+        stage: typeof args.stage === "string" ? args.stage : undefined
+      }
+    : {};
+
+  const typedResult: TraceToolResult = isRecord(result)
+    ? {
+        message: typeof result.message === "string" ? result.message : undefined,
+        timestamp: typeof result.timestamp === "number" ? result.timestamp : undefined,
+        workspacePath: typeof result.workspacePath === "string" ? result.workspacePath : undefined
+      }
+    : {};
+
+  return {
+    stage: typedArgs.stage || toolName.replace(/^trace_/, "") || "trace",
+    message: typedResult.message,
+    timestamp: typedResult.timestamp,
+    workspacePath: typedResult.workspacePath
+  };
+};
+
+const parseToolSource = (message: string): string | undefined => {
+  const match = message.match(/^执行工具：([^\s（(]+)/);
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  return match[1];
+};
+
+export const formatDuration = (ms?: number): string | null => {
+  if (!ms || ms < 0) {
+    return null;
+  }
+
+  if (ms < 1000) {
+    return `${ms} ms`;
+  }
+
+  return `${(ms / 1000).toFixed(1)} s`;
+};
+
+export const resolveProcessStatusLabel = ({
+  isRunning,
+  mode,
+  thinkingEnabled
+}: ProcessDisplayState): string => {
+  if (!isRunning) {
+    return "Reasoning";
+  }
+
+  if (mode === "thinking" || thinkingEnabled) {
+    return "Thinking";
+  }
+
+  if (mode === "subagents") {
+    return "Coordinating";
+  }
+
+  return "Generating";
+};
+
+const isTraceNoise = (message: string): boolean => {
+  return (
+    message.startsWith("Mode:") ||
+    message.startsWith("Thinking enabled:") ||
+    message.startsWith("Thinking fallback:") ||
+    message.startsWith("规划步骤 ") ||
+    message.startsWith("summarization ")
+  );
+};
+
+const summarizeToolResultDetail = (source: string, status: "success" | "failed", output: string): string => {
+  if (status === "failed") {
+    if (source === "web_search") {
+      return "搜索失败，改为直接回答";
+    }
+    if (source === "web_fetch") {
+      return "页面读取失败";
+    }
+    if (source === "read_file") {
+      return "文件读取失败";
+    }
+    if (source === "write_file") {
+      return "文件写入失败";
+    }
+    return `${source} 执行失败`;
+  }
+
+  if (source === "web_search") {
+    const urls = extractUrlsFromText(output);
+    return urls.length > 0 ? `已找到 ${urls.length} 条候选来源` : "已完成信息搜索";
+  }
+
+  if (source === "web_fetch") {
+    return "已读取页面内容";
+  }
+
+  if (source === "read_file") {
+    return "已查看文件内容";
+  }
+
+  if (source === "list_dir") {
+    return "已检查目录内容";
+  }
+
+  if (source === "write_file") {
+    return "已写入结果文件";
+  }
+
+  if (source === "memory_search") {
+    return "已补充相关记忆";
+  }
+
+  if (source === "delegate_sub_tasks") {
+    return "已完成并行子任务";
+  }
+
+  return `${source} 已完成`;
+};
+
+const resolveStepLabel = (item: TraceItem, statusLabel: string): string | null => {
+  const message = item.message.trim();
+  if (!message || isTraceNoise(message)) {
+    return null;
+  }
+
+  if (message.includes("回忆")) {
+    return "回忆";
+  }
+
+  if (
+    message.includes("进入直接回答阶段") ||
+    message.includes("进入最终总结阶段") ||
+    message.includes("Planner 已直接产出最终回答") ||
+    message.includes("最终回答已生成")
+  ) {
+    return "回答";
+  }
+
+  if (item.stage === "tool" || item.stage === "subagent") {
+    const toolSource = parseToolResult(message)?.source ?? item.source ?? parseToolSource(message);
+    return toolSource ?? "工具";
+  }
+
+  if (item.stage === "planning" || item.stage === "model") {
+    return statusLabel;
+  }
+
+  if (item.stage === "error") {
+    return "异常";
+  }
+
+  return null;
+};
+
+export const buildProcessSteps = (
+  items: TraceItem[],
+  isRunning: boolean,
+  statusLabel: string
+): ProcessStep[] => {
+  const labels: string[] = [statusLabel];
+
+  for (const item of items) {
+    const label = resolveStepLabel(item, statusLabel);
+    if (!label) {
+      continue;
+    }
+
+    if (labels[labels.length - 1] === label) {
+      continue;
+    }
+
+    labels.push(label);
+  }
+
+  return labels.slice(0, 6).map((label, index, all) => ({
+    id: `${label}-${index}`,
+    label,
+    tone:
+      items.some((item) => item.stage === "error" || item.status === "failed") && index === all.length - 1
+        ? "error"
+        : isRunning && index === all.length - 1
+          ? "active"
+          : "pending"
+  }));
+};
+
+export const resolveLatestProcessDetail = (items: TraceItem[]): string | null => {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const message = items[index]?.message?.trim();
+    if (!message || isTraceNoise(message)) {
+      continue;
+    }
+
+    const parsedResult = parseToolResult(message);
+    if (parsedResult) {
+      return summarizeToolResultDetail(parsedResult.source, parsedResult.status, parsedResult.output);
+    }
+
+    return truncateText(message, 120);
+  }
+
+  return null;
+};
+
+export const formatTime = (timestamp?: number): string | null => {
+  if (!timestamp) {
+    return null;
+  }
+
+  return new Date(timestamp).toLocaleTimeString();
+};
+
+export const truncateText = (value: string, maxLength: number): string => {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength)}...`;
+};
+
+export const tryFormatJson = (value: string): string | null => {
+  const normalized = value.trim();
+  if (!(normalized.startsWith("{") || normalized.startsWith("["))) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(normalized);
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return null;
+  }
+};
+
+export const resolveProcessKind = (stage: string, message: string): ProcessKind => {
+  if (stage === "planning" || stage === "model") {
+    return "Plan";
+  }
+
+  if (stage === "tool" || stage === "subagent") {
+    if (/[->]\s*(success|failed|completed)\s*:/i.test(message)) {
+      return "Result";
+    }
+
+    return "Tool";
+  }
+
+  return "Result";
+};
+
+export const processKindBadgeClass = (kind: ProcessKind): string => {
+  if (kind === "Plan") {
+    return "bg-sky-100 text-sky-700";
+  }
+
+  if (kind === "Tool") {
+    return "bg-amber-100 text-amber-700";
+  }
+
+  return "bg-emerald-100 text-emerald-700";
+};
+
+export const extractTraceItems = (parts: readonly unknown[]): TraceItem[] => {
+  const items: TraceItem[] = [];
+  let messageWorkspacePath: string | undefined;
+
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (!isRecord(part)) {
+      continue;
+    }
+
+    if (part.type !== "tool-call") {
+      continue;
+    }
+
+    const partRecord = part as Record<string, unknown>;
+    const toolName = typeof partRecord.toolName === "string" ? partRecord.toolName : "";
+    const { stage, message, timestamp, workspacePath } = extractTraceState(toolName, partRecord.args, partRecord.result);
+    const normalizedMessage = message?.trim();
+    if (workspacePath) {
+      messageWorkspacePath = workspacePath;
+    }
+
+    if (!normalizedMessage) {
+      continue;
+    }
+
+    const parsedResult = parseToolResult(normalizedMessage);
+    const source = parsedResult?.source ?? parseToolSource(normalizedMessage);
+
+    items.push({
+      id: `trace-${index}-${timestamp ?? index}`,
+      kind: resolveProcessKind(stage, normalizedMessage),
+      stage,
+      message: normalizedMessage,
+      timestamp,
+      source,
+      status: parsedResult?.status,
+      workspacePath
+    });
+  }
+
+  if (!messageWorkspacePath) {
+    return items;
+  }
+
+  return items.map((item) => ({
+    ...item,
+    workspacePath: item.workspacePath ?? messageWorkspacePath
+  }));
+};
+
+export const buildToolSummaries = (traceItems: TraceItem[], isRunning: boolean): ToolResultSummary[] => {
+  const summaries: ToolResultSummary[] = [];
+  const pendingBySource = new Map<string, TraceItem>();
+
+  for (const item of traceItems) {
+    const parsedResult = parseToolResult(item.message);
+    if (parsedResult) {
+      const urls = extractUrlsFromText(parsedResult.output);
+      const sources = isSearchLikeName(parsedResult.source)
+        ? urls.map((url, index) => ({
+            id: `${parsedResult.source}-${index}-${url}-${item.timestamp ?? index}`,
+            url,
+            title: toSourceTitle(url)
+          }))
+        : [];
+
+      summaries.push({
+        source: parsedResult.source,
+        status: parsedResult.status,
+        output: parsedResult.output,
+        timestamp: item.timestamp,
+        workspacePath: item.workspacePath,
+        sources
+      });
+      pendingBySource.delete(parsedResult.source);
+      continue;
+    }
+
+    const source = item.source ?? parseToolSource(item.message);
+    if (!source) {
+      continue;
+    }
+
+    if (item.kind === "Tool") {
+      pendingBySource.set(source, item);
+    }
+  }
+
+  if (isRunning) {
+    pendingBySource.forEach((item, source) => {
+      summaries.push({
+        source,
+        status: "loading",
+        output: item.message,
+        timestamp: item.timestamp,
+        workspacePath: item.workspacePath,
+        sources: []
+      });
+    });
+  }
+
+  return summaries.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+};
+
+export const resolveSectionType = (item: TraceItem): ProcessSectionType => {
+  if (item.stage === "error") {
+    return "error";
+  }
+
+  if (item.stage === "final") {
+    return "finalizing";
+  }
+
+  if (item.kind === "Tool" || item.kind === "Result") {
+    return "execution";
+  }
+
+  return "planning";
+};
+
+export const buildSectionTitle = (type: ProcessSectionType, index: number): string => {
+  if (type === "planning") {
+    return index > 1 ? `规划分析 ${index}` : "规划分析";
+  }
+
+  if (type === "execution") {
+    return index > 1 ? `执行过程 ${index}` : "执行过程";
+  }
+
+  if (type === "finalizing") {
+    return index > 1 ? `结果整理 ${index}` : "结果整理";
+  }
+
+  return index > 1 ? `异常处理 ${index}` : "异常处理";
+};
+
+const normalizeUrl = (value: string): string => {
+  return value.replace(/[),.;!?]+$/g, "");
+};
+
+const extractUrlsFromText = (value: string): string[] => {
+  const urls = new Set<string>();
+  const urlRegex = /https?:\/\/[^\s<>"'`]+/g;
+  const markdownLinkRegex = /\[[^\]]+\]\((https?:\/\/[^)\s]+)\)/g;
+
+  let urlMatch: RegExpExecArray | null;
+  while ((urlMatch = urlRegex.exec(value)) !== null) {
+    const candidate = urlMatch[0];
+    if (!candidate) {
+      continue;
+    }
+    urls.add(normalizeUrl(candidate));
+  }
+
+  let markdownMatch: RegExpExecArray | null;
+  while ((markdownMatch = markdownLinkRegex.exec(value)) !== null) {
+    const candidate = markdownMatch[1];
+    if (!candidate) {
+      continue;
+    }
+    urls.add(normalizeUrl(candidate));
+  }
+
+  return Array.from(urls);
+};
+
+const toSourceTitle = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname === "/" ? "" : parsed.pathname;
+    return `${parsed.hostname}${path}`.slice(0, 80);
+  } catch {
+    return url.slice(0, 80);
+  }
+};
+
+const SEARCH_TOOL_PATTERNS = [
+  "search",
+  "web",
+  "browse",
+  "crawl",
+  "scrape",
+  "source",
+  "duckduckgo",
+  "google"
+];
+
+const isSearchLikeName = (value: string): boolean => {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return SEARCH_TOOL_PATTERNS.some((pattern) => normalized.includes(pattern));
+};
+
+export const hasSearchLikeToolActivity = (parts: readonly unknown[]): boolean => {
+  for (const part of parts) {
+    if (!isRecord(part)) {
+      continue;
+    }
+
+    if (part.type === "source") {
+      return true;
+    }
+
+    if (part.type !== "tool-call") {
+      continue;
+    }
+
+    const toolName = typeof part.toolName === "string" ? part.toolName : "";
+    if (isSearchLikeName(toolName)) {
+      return true;
+    }
+
+    if (!isRecord(part.result)) {
+      continue;
+    }
+
+    const message = typeof part.result.message === "string" ? part.result.message : "";
+    const parsedResult = message ? parseToolResult(message) : null;
+    const source = parsedResult?.source ?? (message ? parseToolSource(message) : undefined);
+    if (source && isSearchLikeName(source)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+export const buildSourcesFromParts = (parts: readonly unknown[]): SourceItem[] => {
+  const seen = new Set<string>();
+  const sources: SourceItem[] = [];
+
+  const collect = (text: string) => {
+    extractUrlsFromText(text).forEach((url) => {
+      if (seen.has(url)) {
+        return;
+      }
+      seen.add(url);
+      sources.push({
+        id: `source-${sources.length}-${url}`,
+        url,
+        title: toSourceTitle(url)
+      });
+    });
+  };
+
+  parts.forEach((part) => {
+    if (!isRecord(part)) {
+      return;
+    }
+
+    if (part.type === "text" && typeof part.text === "string") {
+      collect(part.text);
+      return;
+    }
+
+    if (part.type !== "tool-call") {
+      return;
+    }
+
+    if (!isRecord(part.result)) {
+      return;
+    }
+
+    const message = part.result.message;
+    if (typeof message === "string") {
+      collect(message);
+    }
+  });
+
+  return sources.slice(0, 8);
+};
+
+export const buildProcessSections = (items: TraceItem[]): ProcessSection[] => {
+  const sections: ProcessSection[] = [];
+  let current: ProcessSection | null = null;
+  const sectionCounter: Record<ProcessSectionType, number> = {
+    planning: 0,
+    execution: 0,
+    finalizing: 0,
+    error: 0
+  };
+
+  for (const item of items) {
+    const type = resolveSectionType(item);
+    if (!current || current.type !== type) {
+      sectionCounter[type] += 1;
+      current = {
+        id: `${type}-${sections.length}`,
+        type,
+        title: buildSectionTitle(type, sectionCounter[type]),
+        items: []
+      };
+      sections.push(current);
+    }
+
+    current.items.push(item);
+  }
+
+  return sections;
+};

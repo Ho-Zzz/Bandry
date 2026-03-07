@@ -19,6 +19,15 @@ export type GenerateTextInput = {
   };
   temperature?: number;
   maxTokens?: number;
+  /**
+   * Provider-specific options that should be merged into providerOptions.openai
+   * after whitelist filtering.
+   */
+  extraBody?: Record<string, unknown>;
+  /**
+   * Reasoning effort for reasoning-capable models.
+   */
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
   taskId?: string;
   abortSignal?: AbortSignal;
 };

@@ -40,7 +40,6 @@ const createServices = async (seed: string) => {
       ...process.env,
       BANDRY_HOME: bandryHome
     },
-    skipDotenv: true
   });
   config.catalog.source = {
     type: "file",
@@ -116,7 +115,7 @@ describe("ModelOnboardingService", () => {
     expect(connected.models.some((item) => item.profileId === result.profile.profileId)).toBe(true);
   });
 
-  it("blocks removing a profile that is still bound to runtime roles", async () => {
+  it("removes a bound profile and clears role bindings automatically", async () => {
     const { onboardingService } = await createServices("remove");
 
     const connected = await onboardingService.connect({
@@ -129,22 +128,13 @@ describe("ModelOnboardingService", () => {
     });
     expect(setDefault.ok).toBe(true);
 
-    await expect(
-      onboardingService.remove({
-        profileId: connected.profile.profileId
-      })
-    ).rejects.toThrow(
-      `Model profile ${connected.profile.profileId} is still bound to roles: chat.default. Rebind these roles first.`
-    );
-
-    const revertDefault = await onboardingService.setChatDefault({
-      profileId: "profile_openai_default"
-    });
-    expect(revertDefault.ok).toBe(true);
-
     const removeResult = await onboardingService.remove({
       profileId: connected.profile.profileId
     });
     expect(removeResult.ok).toBe(true);
+
+    const after = onboardingService.listConnected();
+    expect(after.models.some((item) => item.profileId === connected.profile.profileId)).toBe(false);
+    expect(after.chatDefaultProfileId).toBeUndefined();
   });
 });

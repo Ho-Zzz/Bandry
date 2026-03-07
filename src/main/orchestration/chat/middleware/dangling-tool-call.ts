@@ -2,7 +2,6 @@ import type { Middleware, MiddlewareContext } from "./types";
 
 /**
  * Patches inconsistent tool call payloads before model execution.
- * This is a lightweight analogue of deer-flow's dangling tool call middleware.
  */
 export class DanglingToolCallMiddleware implements Middleware {
   name = "dangling_tool_call";
@@ -14,7 +13,11 @@ export class DanglingToolCallMiddleware implements Middleware {
     }
 
     const normalized = toolCalls.filter((call) => {
-      return Boolean(call?.name && typeof call.name === "string" && call.name.trim().length > 0);
+      return Boolean(
+        call?.name &&
+        typeof call.name === "string" &&
+        call.name.trim().length > 0,
+      );
     });
 
     if (normalized.length === toolCalls.length) {
@@ -25,12 +28,14 @@ export class DanglingToolCallMiddleware implements Middleware {
       ...ctx,
       llmResponse: {
         ...ctx.llmResponse!,
-        toolCalls: normalized
+        toolCalls: normalized,
       },
       metadata: {
         ...ctx.metadata,
-        danglingToolCallsPatched: (ctx.metadata.danglingToolCallsPatched as number | undefined ?? 0) + 1
-      }
+        danglingToolCallsPatched:
+          ((ctx.metadata.danglingToolCallsPatched as number | undefined) ?? 0) +
+          1,
+      },
     };
   }
 }

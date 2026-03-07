@@ -163,6 +163,8 @@ export class ModelService {
       tools: request.tools,
       temperature: request.temperature,
       maxTokens: request.maxTokens,
+      extraBody: request.extraBody,
+      reasoningEffort: request.reasoningEffort,
       topP: request.topP,
       topK: request.topK,
       presencePenalty: request.presencePenalty,
