@@ -228,6 +228,7 @@ describe("tool-catalog", () => {
     expect(TOOL_CATALOG.has("web_search")).toBe(true);
     expect(TOOL_CATALOG.has("list_dir")).toBe(true);
     expect(TOOL_CATALOG.has("write_file")).toBe(true);
+    expect(TOOL_CATALOG.has("present_files")).toBe(true);
   });
 
   it("returns tool guidance by name", () => {
@@ -325,8 +326,8 @@ describe("buildPlannerSystemPrompt", () => {
     const promptNoTools = buildPlannerSystemPrompt(configWithoutTools);
     // Check that the enabled tools list doesn't include the disabled tools
     // The tool selection guidance section still mentions them as examples
-    expect(promptNoTools).toContain("Available tools: list_dir, read_file, write_file, exec, ask_clarification, delegate_sub_tasks");
-    expect(promptNoTools).not.toContain("Available tools: list_dir, read_file, write_file, exec, ask_clarification, delegate_sub_tasks, github_search");
+    expect(promptNoTools).toContain("Available tools: list_dir, read_file, write_file, present_files, exec, ask_clarification, delegate_sub_tasks");
+    expect(promptNoTools).not.toContain("Available tools: list_dir, read_file, write_file, present_files, exec, ask_clarification, delegate_sub_tasks, github_search");
   });
 });
 

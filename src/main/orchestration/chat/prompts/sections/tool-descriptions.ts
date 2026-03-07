@@ -30,9 +30,12 @@ export const buildToolSelectionSection = (): string => {
 - list_dir: Explore directory structure, find files
 - read_file: Read file contents for analysis
 - write_file: Write text files inside allowed workspace output path
+- present_files: Explicitly present generated files from /mnt/workspace/output to user
 - exec: Run shell commands (only allowed commands)
 
-**IMPORTANT: When user asks to create a file, note, TODO, or save content, you MUST use write_file tool. Do NOT pretend to write a file in your answer text.**
+**IMPORTANT:**
+- When user asks to create a file, note, TODO, or save content, you MUST use write_file tool. Do NOT pretend to write a file in your answer text.
+- If the file should be visible/clickable by user, call present_files after write_file succeeds.
 
 **When to Answer Directly (NO tools needed):**
 - Greetings, chit-chat, or conceptual Q&A

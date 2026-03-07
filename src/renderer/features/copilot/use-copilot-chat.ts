@@ -14,7 +14,6 @@ import type {
   MessageResult
 } from "../../../shared/ipc";
 import { useConversationStore } from "../../store/use-conversation-store";
-import { parseToolResult } from "./trace-paths";
 
 export type MessageStatus = "pending" | "completed" | "error";
 
@@ -134,50 +133,6 @@ export const mergeAssistantDelta = (
   }
 
   return `${currentContent}${delta}`;
-};
-
-const WRITE_PATH_REGEX = /path=([^\s,]+)/i;
-const OUTPUT_PATH_REGEX = /(\/mnt\/workspace\/output\/[\w./-]+\.\w+)/i;
-const PERSIST_PATH_LINE_REGEX = /^\s*(?:文件路径|保存路径)\s*[:：].*$/gim;
-const PERSISTED_LINE_REGEX = /^\s*已保存到文件\s*[:：].*$/gim;
-
-const extractPersistedPathFromTrace = (trace: ChatUpdateEvent[]): string | undefined => {
-  for (let index = trace.length - 1; index >= 0; index -= 1) {
-    const event = trace[index];
-    if (!event) {
-      continue;
-    }
-    const parsed = parseToolResult(event.message);
-    if (!parsed || parsed.source !== "write_file" || parsed.status !== "success") {
-      continue;
-    }
-    const pathFromMarker = parsed.output.match(WRITE_PATH_REGEX)?.[1];
-    if (pathFromMarker) {
-      return pathFromMarker;
-    }
-    const pathFromOutput = parsed.output.match(OUTPUT_PATH_REGEX)?.[1];
-    if (pathFromOutput) {
-      return pathFromOutput;
-    }
-  }
-  return undefined;
-};
-
-export const normalizePersistSummary = (content: string, trace: ChatUpdateEvent[]): string => {
-  const persistedPath = extractPersistedPathFromTrace(trace);
-  const cleaned = content
-    .replace(PERSIST_PATH_LINE_REGEX, "")
-    .replace(PERSISTED_LINE_REGEX, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
-  if (!persistedPath) {
-    return cleaned;
-  }
-
-  const fileName = persistedPath.split("/").pop() || persistedPath;
-  const persistLine = `已保存到文件：[${fileName}](${persistedPath})`;
-  return `${cleaned ? `${cleaned}\n\n` : ""}${persistLine}`;
 };
 
 const parseModeFromPlanningTrace = (message: string): ChatMode | undefined => {
@@ -700,7 +655,6 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           (item) => item.role === "assistant" && item.requestId === requestId
         )?.content;
         const finalContent = resolveFinalAssistantContent(streamedContent, result.reply);
-        const normalizedFinalContent = normalizePersistSummary(finalContent, finalTrace);
 
         // Update pending message with final response
         setMessages((prev) =>
@@ -708,7 +662,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
             message.role === "assistant" && message.requestId === requestId
               ? {
                   ...message,
-                  content: normalizedFinalContent,
+                  content: finalContent,
                   status: "completed" as MessageStatus,
                   trace: finalTrace,
                   prompt_tokens: result.usage?.promptTokens,
@@ -722,7 +676,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         // Update message in database
         if (savedAssistantMsgId) {
           await window.api.messageUpdate(savedAssistantMsgId, {
-            content: normalizedFinalContent,
+            content: finalContent,
             status: "completed",
             trace: finalTrace.length > 0 ? JSON.stringify(finalTrace) : undefined,
             prompt_tokens: result.usage?.promptTokens,

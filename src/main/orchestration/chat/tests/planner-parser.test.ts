@@ -58,6 +58,7 @@ describe("parsePlannerAction", () => {
       input: {
         path: "output/report.md",
         content: "# Report",
+        filepaths: undefined,
         overwrite: false,
         tasks: undefined,
         command: undefined,
@@ -67,6 +68,38 @@ describe("parsePlannerAction", () => {
         query: undefined,
         url: undefined,
         question: undefined
+      },
+      reason: undefined
+    });
+  });
+
+  it("parses present_files payload", () => {
+    const action = parsePlannerAction(
+      JSON.stringify({
+        action: "tool",
+        tool: "present_files",
+        input: {
+          filepaths: ["/mnt/workspace/output/report.md", "/mnt/workspace/output/notes.md"]
+        }
+      })
+    );
+
+    expect(action).toEqual({
+      action: "tool",
+      tool: "present_files",
+      input: {
+        path: undefined,
+        content: undefined,
+        filepaths: ["/mnt/workspace/output/report.md", "/mnt/workspace/output/notes.md"],
+        overwrite: undefined,
+        command: undefined,
+        args: undefined,
+        cwd: undefined,
+        timeoutMs: undefined,
+        query: undefined,
+        url: undefined,
+        question: undefined,
+        tasks: undefined
       },
       reason: undefined
     });

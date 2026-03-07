@@ -60,6 +60,7 @@ describe("executePlannerTool write_file", () => {
     });
 
     expect(observation.ok).toBe(true);
+    expect(observation.artifacts).toEqual(["/mnt/workspace/output/report.md"]);
     expect(observation.output).toContain("path=/mnt/workspace/output/report.md");
     expect(observation.output).toContain("bytes=");
     expect(sandboxService.writeFile).toHaveBeenCalledWith({
@@ -125,5 +126,62 @@ describe("executePlannerTool write_file", () => {
     expect(observation.ok).toBe(false);
     expect(observation.output).toContain("PATH_NOT_ALLOWED");
     expect(sandboxService.writeFile).not.toHaveBeenCalled();
+  });
+});
+
+describe("executePlannerTool present_files", () => {
+  it("returns normalized artifacts for valid output paths", async () => {
+    const config = createConfig();
+    const action: PlannerActionTool = {
+      action: "tool",
+      tool: "present_files",
+      input: {
+        filepaths: ["output/report.md", "/mnt/workspace/output/notes.md", "output/report.md"]
+      }
+    };
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(),
+      exec: vi.fn()
+    };
+
+    const observation = await executePlannerTool({
+      action,
+      config,
+      sandboxService: sandboxService as never
+    });
+
+    expect(observation.ok).toBe(true);
+    expect(observation.artifacts).toEqual([
+      "/mnt/workspace/output/report.md",
+      "/mnt/workspace/output/notes.md"
+    ]);
+  });
+
+  it("rejects filepaths outside output directory", async () => {
+    const config = createConfig();
+    const action: PlannerActionTool = {
+      action: "tool",
+      tool: "present_files",
+      input: {
+        filepaths: ["/mnt/workspace/staging/report.md"]
+      }
+    };
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(),
+      exec: vi.fn()
+    };
+
+    const observation = await executePlannerTool({
+      action,
+      config,
+      sandboxService: sandboxService as never
+    });
+
+    expect(observation.ok).toBe(false);
+    expect(observation.output).toContain("PATH_NOT_ALLOWED");
   });
 });

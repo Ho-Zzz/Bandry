@@ -9,12 +9,10 @@
  * (i.e. prefixed with the virtual root, e.g. /mnt/workspace/...).
  *
  * Chain under test:
- *   tool-executor observation → trace message → parseToolResult
- *   → extractFilePaths → openPreview → normalizeToVirtualPath → sandboxReadFile
+ *   structured artifacts → openPreview → normalizeToVirtualPath → sandboxReadFile
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { parseToolResult, extractFilePaths } from "../../../features/copilot/trace-paths";
 import { usePreviewStore } from "../../../store/use-preview-store";
 
 // ---------------------------------------------------------------------------
@@ -28,42 +26,11 @@ vi.stubGlobal("window", {
   }
 });
 
-// ---------------------------------------------------------------------------
-// Helpers that mirror the main-process output format
-// ---------------------------------------------------------------------------
-
-/**
- * Build a delegate_sub_tasks observation output identical to tool-executor.ts
- */
-const buildDelegationOutput = (
-  results: Array<{ taskId: string; success: boolean; error?: string }>,
-  artifacts: string[]
-): string => {
-  const successCount = results.filter((r) => r.success).length;
-  const lines = [
-    `Delegation finished: ${successCount}/${results.length} succeeded.`,
-    ...results.map((r) => `${r.taskId}: ${r.success ? "success" : "failed"}${r.error ? ` | error=${r.error}` : ""}`),
-    ...(artifacts.length > 0 ? [`Artifacts: ${artifacts.join(", ")}`] : [])
-  ];
-  return lines.join("\n");
-};
-
-/**
- * Build a trace message identical to planner-chat-agent.ts line 382
- */
-const buildTraceMessage = (tool: string, ok: boolean, output: string): string => {
-  return `${tool} -> ${ok ? "success" : "failed"}: ${output}`;
-};
-
-/**
- * Simulate the full chain: trace message → parseToolResult → extractFilePaths.
- * Returns the paths exactly as the ToolResultLayer component would see them.
- */
-const simulatePathExtraction = (traceMessage: string): { path: string; name: string }[] => {
-  const parsed = parseToolResult(traceMessage);
-  if (!parsed) return [];
-  return extractFilePaths(parsed.output);
-};
+const asFileEntries = (paths: string[]): { path: string; name: string }[] =>
+  paths.map((entryPath) => ({
+    path: entryPath,
+    name: entryPath.split("/").pop() ?? entryPath
+  }));
 
 /**
  * Assert that a given sandboxReadFile call used a path that is a proper
@@ -104,21 +71,10 @@ describe("Workspace document preview — full chain", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Case 1: Planner produces writePath = "/output/report.md"
-  //         (absolute but missing virtual root — the original bug)
+  // Case 1: planner/tool returns a relative artifact-like path without root prefix
   // -------------------------------------------------------------------------
   it("normalizes artifact path with bare absolute prefix (/output/report.md)", async () => {
-    const observation = buildDelegationOutput(
-      [
-        { taskId: "sub_1", success: true },
-        { taskId: "sub_2", success: true }
-      ],
-      ["/output/report.md"]
-    );
-    const trace = buildTraceMessage("delegate_sub_tasks", true, observation);
-
-    // --- extract ---
-    const files = simulatePathExtraction(trace);
+    const files = asFileEntries(["/output/report.md"]);
     expect(files).toHaveLength(1);
     expect(files[0].path).toBe("/output/report.md");
     expect(files[0].name).toBe("report.md");
@@ -135,17 +91,10 @@ describe("Workspace document preview — full chain", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Case 2: Planner produces writePath = "/mnt/workspace/output/report.md"
-  //         (already a correct virtual path — should pass through unchanged)
+  // Case 2: Already normalized virtual path should pass through unchanged.
   // -------------------------------------------------------------------------
   it("passes through path that already has virtual root prefix", async () => {
-    const observation = buildDelegationOutput(
-      [{ taskId: "sub_1", success: true }],
-      ["/mnt/workspace/output/report.md"]
-    );
-    const trace = buildTraceMessage("delegate_sub_tasks", true, observation);
-
-    const files = simulatePathExtraction(trace);
+    const files = asFileEntries(["/mnt/workspace/output/report.md"]);
     expect(files).toHaveLength(1);
     expect(files[0].path).toBe("/mnt/workspace/output/report.md");
 
@@ -161,16 +110,7 @@ describe("Workspace document preview — full chain", () => {
   // Case 3: Multiple artifacts, mixed path formats
   // -------------------------------------------------------------------------
   it("handles multiple artifacts with mixed path formats", async () => {
-    const observation = buildDelegationOutput(
-      [
-        { taskId: "research", success: true },
-        { taskId: "writer", success: true }
-      ],
-      ["/staging/research.md", "/mnt/workspace/output/final-report.md"]
-    );
-    const trace = buildTraceMessage("delegate_sub_tasks", true, observation);
-
-    const files = simulatePathExtraction(trace);
+    const files = asFileEntries(["/staging/research.md", "/mnt/workspace/output/final-report.md"]);
     expect(files).toHaveLength(2);
 
     for (const file of files) {
@@ -192,20 +132,10 @@ describe("Workspace document preview — full chain", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Case 4: Artifacts converted to virtual paths by tool-executor
-  //         tool-executor.ts now converts relative artifact paths like
-  //         "output/report.md" to "/mnt/workspace/output/report.md"
-  //         before they appear in the output, so extractFilePaths captures
-  //         the full correct path.
+  // Case 4: Artifacts already pre-converted to virtual paths by backend.
   // -------------------------------------------------------------------------
   it("handles artifacts pre-converted to virtual paths by tool-executor", async () => {
-    const observation = buildDelegationOutput(
-      [{ taskId: "sub_1", success: true }],
-      ["/mnt/workspace/output/report.md", "/mnt/workspace/staging/research.md"]
-    );
-    const trace = buildTraceMessage("delegate_sub_tasks", true, observation);
-
-    const files = simulatePathExtraction(trace);
+    const files = asFileEntries(["/mnt/workspace/output/report.md", "/mnt/workspace/staging/research.md"]);
     expect(files).toHaveLength(2);
     expect(files[0].path).toBe("/mnt/workspace/output/report.md");
     expect(files[1].path).toBe("/mnt/workspace/staging/research.md");
@@ -230,13 +160,7 @@ describe("Workspace document preview — full chain", () => {
   // Case 5: Deep nested path with bare absolute prefix
   // -------------------------------------------------------------------------
   it("normalizes deep nested artifact path (/output/docs/api/reference.md)", async () => {
-    const observation = buildDelegationOutput(
-      [{ taskId: "sub_1", success: true }],
-      ["/output/docs/api/reference.md"]
-    );
-    const trace = buildTraceMessage("delegate_sub_tasks", true, observation);
-
-    const files = simulatePathExtraction(trace);
+    const files = asFileEntries(["/output/docs/api/reference.md"]);
     expect(files).toHaveLength(1);
 
     await usePreviewStore.getState().openPreview(files[0].path, files[0].name);
@@ -247,38 +171,13 @@ describe("Workspace document preview — full chain", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Case 6: read_file tool output embedding a virtual path in its content
-  //         (e.g. another file references /mnt/workspace/src/index.ts)
-  // -------------------------------------------------------------------------
-  it("extracts and preserves paths already inside virtual root from read_file output", async () => {
-    const fileContent = 'import { foo } from "/mnt/workspace/src/utils.ts";';
-    const trace = buildTraceMessage("read_file", true, fileContent);
-
-    const files = simulatePathExtraction(trace);
-    expect(files).toHaveLength(1);
-    expect(files[0].path).toBe("/mnt/workspace/src/utils.ts");
-
-    await usePreviewStore.getState().openPreview(files[0].path, files[0].name);
-
-    const callArgs = mockSandboxReadFile.mock.calls[0][0] as Record<string, unknown>;
-    assertAbsoluteVirtualPath(callArgs, VIRTUAL_ROOT);
-    expect(callArgs.path).toBe("/mnt/workspace/src/utils.ts");
-  });
-
-  // -------------------------------------------------------------------------
-  // Case 7: Custom virtual root
+  // Case 6: Custom virtual root
   // -------------------------------------------------------------------------
   it("works with a custom virtual root", async () => {
     const customRoot = "/sandbox";
     usePreviewStore.getState().setVirtualRoot(customRoot);
 
-    const observation = buildDelegationOutput(
-      [{ taskId: "sub_1", success: true }],
-      ["/output/report.md"]
-    );
-    const trace = buildTraceMessage("delegate_sub_tasks", true, observation);
-
-    const files = simulatePathExtraction(trace);
+    const files = asFileEntries(["/output/report.md"]);
     expect(files).toHaveLength(1);
 
     await usePreviewStore.getState().openPreview(files[0].path, files[0].name);
@@ -289,18 +188,13 @@ describe("Workspace document preview — full chain", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Case 8: workspacePath not set (e.g. re-opening old conversation)
+  // Case 7: workspacePath not set (e.g. re-opening old conversation)
   //         Path normalization should still work; workspacePath should be absent
   // -------------------------------------------------------------------------
   it("normalizes path even when workspacePath is null", async () => {
     usePreviewStore.setState({ workspacePath: null });
 
-    const observation = buildDelegationOutput(
-      [{ taskId: "sub_1", success: true }],
-      ["/output/summary.md"]
-    );
-    const trace = buildTraceMessage("delegate_sub_tasks", true, observation);
-    const files = simulatePathExtraction(trace);
+    const files = asFileEntries(["/output/summary.md"]);
 
     await usePreviewStore.getState().openPreview(files[0].path, files[0].name);
 
@@ -311,23 +205,4 @@ describe("Workspace document preview — full chain", () => {
     expect(callArgs).not.toHaveProperty("workspacePath");
   });
 
-  // -------------------------------------------------------------------------
-  // Case 9: Failed tool output with error containing a real filesystem path
-  //         Should still normalize to virtual root (defense-in-depth)
-  // -------------------------------------------------------------------------
-  it("normalizes real filesystem paths from error output", async () => {
-    const errorOutput = 'ENOENT: no such file or directory /tmp/bandry-staging/draft.md';
-    const trace = buildTraceMessage("exec", false, errorOutput);
-
-    const files = simulatePathExtraction(trace);
-    expect(files).toHaveLength(1);
-    expect(files[0].path).toBe("/tmp/bandry-staging/draft.md");
-
-    await usePreviewStore.getState().openPreview(files[0].path, files[0].name);
-
-    const callArgs = mockSandboxReadFile.mock.calls[0][0] as Record<string, unknown>;
-    // Even a real path gets normalized into the virtual root
-    assertAbsoluteVirtualPath(callArgs, VIRTUAL_ROOT);
-    expect(callArgs.path).toBe("/mnt/workspace/tmp/bandry-staging/draft.md");
-  });
 });

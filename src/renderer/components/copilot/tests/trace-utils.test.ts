@@ -21,7 +21,13 @@ describe("trace-utils", () => {
         result: {
           message: "exec -> success: wrote /output/report.md",
           timestamp: 1000,
-          workspacePath: "/tmp/ws"
+          workspacePath: "/tmp/ws",
+          toolResult: {
+            source: "exec",
+            status: "success",
+            output: "wrote /output/report.md",
+            artifacts: ["/mnt/workspace/output/report.md"]
+          }
         }
       },
       {
@@ -39,6 +45,7 @@ describe("trace-utils", () => {
     expect(items).toHaveLength(2);
     expect(items[0]?.source).toBe("exec");
     expect(items[0]?.workspacePath).toBe("/tmp/ws");
+    expect(items[0]?.toolResult?.artifacts).toEqual(["/mnt/workspace/output/report.md"]);
     expect(items[1]?.workspacePath).toBe("/tmp/ws");
   });
 
@@ -68,6 +75,7 @@ describe("trace-utils", () => {
     expect(summaries[1]?.status).toBe("failed");
     expect(summaries[1]?.output).toBe("v2");
     expect(summaries[1]?.sources).toEqual([]);
+    expect(summaries[1]?.artifacts).toEqual([]);
   });
 
   it("extracts web sources for search-like tool summaries", () => {
@@ -83,6 +91,7 @@ describe("trace-utils", () => {
 
     expect(summaries).toHaveLength(1);
     expect(summaries[0]?.sources.map((item) => item.url)).toEqual(["https://example.com/a", "https://example.com/b"]);
+    expect(summaries[0]?.artifacts).toEqual([]);
   });
 
   it("adds loading summary while tool is running without result", () => {
@@ -100,6 +109,57 @@ describe("trace-utils", () => {
     expect(summaries).toHaveLength(1);
     expect(summaries[0]?.status).toBe("loading");
     expect(summaries[0]?.source).toBe("web_search");
+    expect(summaries[0]?.artifacts).toEqual([]);
+  });
+
+  it("prefers structured toolResult payload and exposes artifacts", () => {
+    const summaries = buildToolSummaries(
+      [
+        {
+          id: "1",
+          kind: "Result",
+          stage: "tool",
+          message: "tool message",
+          timestamp: 1000,
+          toolResult: {
+            source: "present_files",
+            status: "success",
+            output: "presented files",
+            artifacts: ["/mnt/workspace/output/report.md"]
+          }
+        }
+      ],
+      false
+    );
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]?.source).toBe("present_files");
+    expect(summaries[0]?.status).toBe("success");
+    expect(summaries[0]?.artifacts).toEqual(["/mnt/workspace/output/report.md"]);
+  });
+
+  it("uses structured artifacts even when message matches legacy tool-result format", () => {
+    const summaries = buildToolSummaries(
+      [
+        {
+          id: "1",
+          kind: "Result",
+          stage: "tool",
+          message: "write_file -> success: Wrote file successfully: path=/mnt/workspace/output/a.md, bytes=10",
+          timestamp: 1000,
+          toolResult: {
+            source: "write_file",
+            status: "success",
+            output: "Wrote file successfully: path=/mnt/workspace/output/a.md, bytes=10",
+            artifacts: ["/mnt/workspace/output/a.md"]
+          }
+        }
+      ],
+      false
+    );
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]?.artifacts).toEqual(["/mnt/workspace/output/a.md"]);
   });
 
   it("groups process sections by type in order", () => {

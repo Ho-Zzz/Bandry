@@ -10,6 +10,13 @@ type TraceToolResult = {
   message?: string;
   timestamp?: number;
   workspacePath?: string;
+  toolResult?: {
+    source?: string;
+    status?: "loading" | "success" | "failed";
+    output?: string;
+    artifacts?: string[];
+    workspacePath?: string;
+  };
 };
 
 export type ProcessKind = "Plan" | "Tool" | "Result";
@@ -23,6 +30,7 @@ export type TraceItem = {
   source?: string;
   status?: "success" | "failed";
   workspacePath?: string;
+  toolResult?: TraceToolResult["toolResult"];
 };
 
 export type ToolResultSummary = {
@@ -32,6 +40,7 @@ export type ToolResultSummary = {
   timestamp?: number;
   workspacePath?: string;
   sources: SourceItem[];
+  artifacts: string[];
 };
 
 export type SourceItem = {
@@ -105,6 +114,7 @@ const extractTraceState = (
   message?: string;
   timestamp?: number;
   workspacePath?: string;
+  toolResult?: TraceToolResult["toolResult"];
 } => {
   const typedArgs: TraceToolArgs = isRecord(args)
     ? {
@@ -116,7 +126,23 @@ const extractTraceState = (
     ? {
         message: typeof result.message === "string" ? result.message : undefined,
         timestamp: typeof result.timestamp === "number" ? result.timestamp : undefined,
-        workspacePath: typeof result.workspacePath === "string" ? result.workspacePath : undefined
+        workspacePath: typeof result.workspacePath === "string" ? result.workspacePath : undefined,
+        toolResult: isRecord(result.toolResult)
+          ? {
+              source: typeof result.toolResult.source === "string" ? result.toolResult.source : undefined,
+              status:
+                result.toolResult.status === "loading" ||
+                result.toolResult.status === "success" ||
+                result.toolResult.status === "failed"
+                  ? result.toolResult.status
+                  : undefined,
+              output: typeof result.toolResult.output === "string" ? result.toolResult.output : undefined,
+              artifacts: Array.isArray(result.toolResult.artifacts)
+                ? result.toolResult.artifacts.filter((item): item is string => typeof item === "string")
+                : undefined,
+              workspacePath: typeof result.toolResult.workspacePath === "string" ? result.toolResult.workspacePath : undefined
+            }
+          : undefined
       }
     : {};
 
@@ -124,7 +150,8 @@ const extractTraceState = (
     stage: typedArgs.stage || toolName.replace(/^trace_/, "") || "trace",
     message: typedResult.message,
     timestamp: typedResult.timestamp,
-    workspacePath: typedResult.workspacePath
+    workspacePath: typedResult.workspacePath,
+    toolResult: typedResult.toolResult
   };
 };
 
@@ -609,10 +636,10 @@ export const extractTraceItems = (parts: readonly unknown[]): TraceItem[] => {
 
     const partRecord = part as Record<string, unknown>;
     const toolName = typeof partRecord.toolName === "string" ? partRecord.toolName : "";
-    const { stage, message, timestamp, workspacePath } = extractTraceState(toolName, partRecord.args, partRecord.result);
+    const { stage, message, timestamp, workspacePath, toolResult } = extractTraceState(toolName, partRecord.args, partRecord.result);
     const normalizedMessage = message?.trim();
-    if (workspacePath) {
-      messageWorkspacePath = workspacePath;
+    if (workspacePath || toolResult?.workspacePath) {
+      messageWorkspacePath = workspacePath ?? toolResult?.workspacePath;
     }
 
     if (!normalizedMessage) {
@@ -630,7 +657,8 @@ export const extractTraceItems = (parts: readonly unknown[]): TraceItem[] => {
       timestamp,
       source,
       status: parsedResult?.status,
-      workspacePath
+      workspacePath: workspacePath ?? toolResult?.workspacePath,
+      toolResult
     });
   }
 
@@ -649,6 +677,30 @@ export const buildToolSummaries = (traceItems: TraceItem[], isRunning: boolean):
   const pendingBySource = new Map<string, TraceItem>();
 
   for (const item of traceItems) {
+    if (item.toolResult?.source && item.toolResult.status) {
+      const output = item.toolResult.output ?? item.message;
+      const urls = extractUrlsFromText(output);
+      const sources = isSearchLikeName(item.toolResult.source)
+        ? urls.map((url, index) => ({
+            id: `${item.toolResult?.source}-${index}-${url}-${item.timestamp ?? index}`,
+            url,
+            title: toSourceTitle(url)
+          }))
+        : [];
+
+      summaries.push({
+        source: item.toolResult.source,
+        status: item.toolResult.status,
+        output,
+        timestamp: item.timestamp,
+        workspacePath: item.toolResult.workspacePath ?? item.workspacePath,
+        sources,
+        artifacts: item.toolResult.artifacts ?? []
+      });
+      pendingBySource.delete(item.toolResult.source);
+      continue;
+    }
+
     const parsedResult = parseToolResult(item.message);
     if (parsedResult) {
       const urls = extractUrlsFromText(parsedResult.output);
@@ -666,7 +718,8 @@ export const buildToolSummaries = (traceItems: TraceItem[], isRunning: boolean):
         output: parsedResult.output,
         timestamp: item.timestamp,
         workspacePath: item.workspacePath,
-        sources
+        sources,
+        artifacts: []
       });
       pendingBySource.delete(parsedResult.source);
       continue;
@@ -690,7 +743,8 @@ export const buildToolSummaries = (traceItems: TraceItem[], isRunning: boolean):
         output: item.message,
         timestamp: item.timestamp,
         workspacePath: item.workspacePath,
-        sources: []
+        sources: [],
+        artifacts: []
       });
     });
   }

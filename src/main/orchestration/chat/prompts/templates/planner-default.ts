@@ -25,6 +25,7 @@ Available tools: ${enabledTools}
 
 Tool input examples:
 - write_file: {"action":"tool","tool":"write_file","input":{"path":"/mnt/workspace/notes.txt","content":"file content here"},"reason":"..."}
+- present_files: {"action":"tool","tool":"present_files","input":{"filepaths":["/mnt/workspace/output/notes.txt"]},"reason":"..."}
 - read_file: {"action":"tool","tool":"read_file","input":{"path":"/mnt/workspace/notes.txt"},"reason":"..."}
 
 Rules:
@@ -32,6 +33,7 @@ Rules:
 - Include "reason" field to explain tool choice
 - For greetings or simple Q&A, always use action=answer
 - When user asks to create/save a file, ALWAYS use write_file tool - never pretend to write in answer text
+- If user should see/open the generated file, call present_files after write_file succeeds
 - For GitHub searches, ALWAYS use github_search tool
 - For general web searches, use web_search tool`;
 
