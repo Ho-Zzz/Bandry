@@ -91,7 +91,7 @@ describe("TitleMiddleware", () => {
 
     expect(modelsFactory.generateText).toHaveBeenCalledTimes(1);
     expect(conversationStore.updateConversation).toHaveBeenNthCalledWith(1, "conv-1", {
-      title: "帮我整理 Bandry 桌面端迁移方案和跨端数据同步策略及发布回滚预案"
+      title: "整理 Bandry 桌面端迁移方案和跨端数据同步策略及发布回滚预案"
     });
     expect(conversationStore.updateConversation).toHaveBeenNthCalledWith(2, "conv-1", {
       title: "Bandry Delegation Plan"
@@ -144,11 +144,9 @@ describe("TitleMiddleware", () => {
 
     expect(modelsFactory.generateText).toHaveBeenCalledTimes(1);
     expect(conversationStore.updateConversation).toHaveBeenNthCalledWith(1, "conv-2", {
-      title: "帮我分析最近三个月的数据走势、异常点和渠道波动，并整理成团队月度复盘标题"
+      title: "分析最近三个月的数据走势、异常点和渠道波动，并整理成团队月度复盘标题"
     });
-    expect(conversationStore.updateConversation).toHaveBeenNthCalledWith(2, "conv-2", {
-      title: "分析最近三个月的数据走势、异常点和渠道波动，并整理成团队月度"
-    });
+    expect(conversationStore.updateConversation).toHaveBeenCalledTimes(1);
     expect(onUpdate).not.toHaveBeenCalled();
     expect(result.metadata.titleGenerated).toBeUndefined();
   });

@@ -2,6 +2,9 @@ import { resolveRuntimeTarget } from "../../../llm/runtime/runtime-target";
 import type { Middleware, MiddlewareContext } from "./types";
 
 const MAX_TITLE_LEN = 48;
+const POLITE_PREFIX_PATTERN =
+  /^(?:请你|请帮我|帮我|请问|麻烦你|麻烦|我想让你|我想请你|我想|我需要|请|help me(?:\s+to)?|please|can you|could you)\s*/i;
+const TRAILING_ENDING_PATTERN = /(?:吗|么|嘛|呢|吧|呀|啊|呗)\s*$/;
 
 const truncateTitle = (title: string): string => {
   const normalized = title.replace(/\s+/g, " ").trim();
@@ -13,17 +16,43 @@ const truncateTitle = (title: string): string => {
   return `${unquoted.slice(0, MAX_TITLE_LEN - 1)}…`;
 };
 
-const generateFallbackTitle = (userMessage: string): string => {
-  // Extract key action verbs and nouns for a more meaningful title
-  const message = userMessage.toLowerCase();
-
-  // Common patterns to extract intent
-  if (message.includes("帮我") || message.includes("请")) {
-    // Extract the main action after "帮我" or "请"
-    const match = message.match(/(?:帮我|请)(.{1,30})/);
-    if (match?.[1]) {
-      return truncateTitle(match[1].trim());
+const stripPolitePrefix = (input: string): string => {
+  let candidate = input.trim();
+  for (let i = 0; i < 2; i += 1) {
+    const next = candidate.replace(POLITE_PREFIX_PATTERN, "").trim();
+    if (next === candidate) {
+      break;
     }
+    candidate = next;
+  }
+  return candidate;
+};
+
+const deriveIntentPhrase = (userMessage: string): string => {
+  const normalized = userMessage.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  const firstClause = normalized.split(/[。！？!?]/)[0]?.trim() ?? normalized;
+  const deprefixed = stripPolitePrefix(firstClause);
+  const softened = deprefixed.replace(TRAILING_ENDING_PATTERN, "").trim();
+
+  if (softened.length >= 4) {
+    return softened;
+  }
+
+  if (deprefixed.length >= 4) {
+    return deprefixed;
+  }
+
+  return normalized;
+};
+
+const generateFallbackTitle = (userMessage: string): string => {
+  const intentPhrase = deriveIntentPhrase(userMessage);
+  if (intentPhrase) {
+    return truncateTitle(intentPhrase);
   }
 
   // If message is too long, try to extract the core intent
@@ -39,9 +68,9 @@ const generateFallbackTitle = (userMessage: string): string => {
 };
 
 const extractTemporaryTitle = (userMessage: string): string => {
-  const firstSentence = userMessage.split(/[。！？,.!?]/)[0]?.trim();
-  if (firstSentence) {
-    return truncateTitle(firstSentence);
+  const intentPhrase = deriveIntentPhrase(userMessage);
+  if (intentPhrase) {
+    return truncateTitle(intentPhrase);
   }
   return generateFallbackTitle(userMessage);
 };
@@ -50,7 +79,7 @@ const shouldSkipModelTitleGeneration = (
   userMessage: string,
   assistantReply: string
 ): boolean => {
-  return userMessage.length < 16 && assistantReply.length < 80;
+  return userMessage.length <= 8 && assistantReply.length < 48;
 };
 
 export class TitleMiddleware implements Middleware {
