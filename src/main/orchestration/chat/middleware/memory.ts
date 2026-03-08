@@ -53,8 +53,23 @@ export class MemoryMiddleware implements Middleware {
           durationMs: Date.now() - startedAt,
         });
         ctx.runtime?.onUpdate?.("planning", "未命中相关记忆");
+        const noMemoryGuard = [
+          "# Memory Retrieval Status",
+          "",
+          "No relevant memory was retrieved for this request.",
+          "Do not claim you found or read memory files.",
+          "If asked about stored memory, explicitly say retrieval returned no matching memory."
+        ].join("\n");
+
         return {
           ...ctx,
+          messages: [
+            {
+              role: "system" as const,
+              content: noMemoryGuard,
+            },
+            ...ctx.messages,
+          ],
           metadata: {
             ...ctx.metadata,
             memoryStepStarted: true,

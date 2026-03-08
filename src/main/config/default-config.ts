@@ -77,7 +77,11 @@ export const createDefaultConfig = (
       memoryTopK: 6,
       memoryScoreThreshold: 0.35,
       commitDebounceMs: 30_000,
-      targetUris: ["viking://user/memories", "viking://agent/memories"],
+      targetUris: [
+        "viking://user/memories",
+        "viking://user/default/memories",
+        "viking://agent/memories"
+      ],
     },
     catalog: {
       source: {

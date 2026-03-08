@@ -65,7 +65,9 @@ describe("MemoryMiddleware integration", () => {
     const ctx = createCtx();
     const result = await middleware.beforeLLM!(ctx);
 
-    expect(result.messages).toHaveLength(2);
+    expect(result.messages).toHaveLength(3);
+    expect(result.messages[0].role).toBe("system");
+    expect(result.messages[0].content).toContain("No relevant memory was retrieved");
     expect(result.metadata.memoryChunksInjected).toBeUndefined();
     expect(result.metadata.memoryStepStarted).toBe(true);
     expect(ctx.runtime?.onUpdate).toHaveBeenCalledWith("planning", "回忆相关上下文");
@@ -91,7 +93,8 @@ describe("MemoryMiddleware integration", () => {
     const ctx = createCtx();
     const result = await middleware.beforeLLM!(ctx);
 
-    expect(result.messages).toHaveLength(2);
+    expect(result.messages).toHaveLength(3);
+    expect(result.messages[0].content).toContain("No relevant memory was retrieved");
   });
 
   it("gracefully handles storeConversation errors", async () => {

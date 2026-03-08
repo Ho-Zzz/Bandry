@@ -37,13 +37,16 @@ const syncOpenViking = async (): Promise<void> => {
     });
 
     composition.openViking.processManager = manager;
+    const persistTimeoutMs = Math.max(15_000, composition.config.openviking.startTimeoutMs);
     composition.openViking.memoryProvider = new OpenVikingMemoryProvider(
-      manager.createHttpClient(),
+      manager.createHttpClient(3000),
       {
         targetUris: composition.config.openviking.targetUris,
         topK: composition.config.openviking.memoryTopK,
         scoreThreshold: composition.config.openviking.memoryScoreThreshold,
         commitDebounceMs: composition.config.openviking.commitDebounceMs,
+        persistTimeoutMs,
+        persistClient: manager.createHttpClient(persistTimeoutMs),
       }
     );
   } catch (error) {

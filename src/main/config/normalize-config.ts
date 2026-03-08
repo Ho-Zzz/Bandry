@@ -16,6 +16,21 @@ const RUNTIME_ROLES: Array<keyof AppConfig["routing"]["assignments"]> = [
   "memory.fact_extractor"
 ];
 
+const withOpenVikingTargetUriAliases = (uris: string[]): string[] => {
+  const normalized = Array.from(new Set(uris.map((uri) => uri.trim()).filter(Boolean)));
+  const expanded = new Set(normalized);
+
+  for (const uri of normalized) {
+    if (uri === "viking://user/memories") {
+      expanded.add("viking://user/default/memories");
+    } else if (uri === "viking://user/default/memories") {
+      expanded.add("viking://user/memories");
+    }
+  }
+
+  return Array.from(expanded);
+};
+
 export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.paths.projectRoot = normalizePath(config.paths.projectRoot);
   config.paths.bandryHome = normalizePath(config.paths.bandryHome);
@@ -103,11 +118,12 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.openviking.memoryTopK = Math.max(1, Math.floor(config.openviking.memoryTopK));
   config.openviking.memoryScoreThreshold = Math.max(0, Math.min(1, config.openviking.memoryScoreThreshold));
   config.openviking.commitDebounceMs = Math.max(500, Math.floor(config.openviking.commitDebounceMs));
-  config.openviking.targetUris = Array.from(
-    new Set(config.openviking.targetUris.map((uri) => uri.trim()).filter(Boolean))
-  );
+  config.openviking.targetUris = withOpenVikingTargetUriAliases(config.openviking.targetUris);
   if (config.openviking.targetUris.length === 0) {
-    config.openviking.targetUris = ["viking://user/memories", "viking://agent/memories"];
+    config.openviking.targetUris = withOpenVikingTargetUriAliases([
+      "viking://user/memories",
+      "viking://agent/memories"
+    ]);
   }
 
   for (const provider of Object.values(config.providers)) {
