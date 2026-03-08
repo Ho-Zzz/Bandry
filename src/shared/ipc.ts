@@ -629,6 +629,49 @@ export type ChannelStatusEvent = {
   timestamp: number;
 };
 
+// Cron types
+export type CronJobItem = {
+  id: string;
+  name: string;
+  description?: string;
+  prompt: string;
+  schedule: string;
+  enabled: boolean;
+  modelProfileId?: string;
+  workspacePath?: string;
+  mode?: "default" | "thinking" | "subagents";
+  createdAt: number;
+  updatedAt: number;
+  lastRunAt?: number;
+  nextRunAt?: number;
+};
+
+export type CronCreateInput = Omit<CronJobItem, "id" | "createdAt" | "updatedAt" | "lastRunAt" | "nextRunAt">;
+
+export type CronUpdateInput = Partial<Omit<CronJobItem, "id" | "createdAt" | "updatedAt">> & { id: string };
+
+export type CronDeleteInput = { id: string };
+
+export type CronRunNowInput = { id: string };
+
+export type CronListResult = { jobs: CronJobItem[] };
+
+export type CronRunRecord = {
+  id: string;
+  jobId: string;
+  startedAt: number;
+  completedAt?: number;
+  status: "running" | "completed" | "failed";
+  output?: string;
+  error?: string;
+};
+
+export type CronHistoryInput = { jobId: string; limit?: number };
+
+export type CronHistoryResult = { records: CronRunRecord[] };
+
+export type CronRunEvent = { jobId: string; record: CronRunRecord };
+
 // User Files types
 export type UserFileRecord = {
   id: string;

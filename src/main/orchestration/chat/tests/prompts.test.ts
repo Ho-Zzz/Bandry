@@ -154,6 +154,7 @@ const createMockConfig = (overrides?: Partial<AppConfig>): AppConfig => ({
     traceDir: "/test/traces",
     skillsDir: "/test/skills",
     soulDir: "/test/soul",
+    cronDir: "/test/cron",
     projectConfigPath: "/test/bandry.config.json",
     userConfigPath: "/test/.bandry/config/user.json",
     auditLogPath: "/test/.bandry/logs/audit.log",

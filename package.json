@@ -90,6 +90,7 @@
     "clsx": "^2.1.1",
     "framer-motion": "^12.34.2",
     "lucide-react": "^0.575.0",
+    "node-cron": "^4.2.1",
     "p-queue": "^9.1.0",
     "p-retry": "^7.1.1",
     "pino": "^10.3.1",

@@ -92,6 +92,13 @@ const createMockConfig = (): AppConfig => ({
       baseUrl: "",
       model: "",
       embeddingModel: ""
+    },
+    minimax: {
+      enabled: false,
+      apiKey: "",
+      baseUrl: "",
+      model: "",
+      embeddingModel: ""
     }
   },
   features: {
@@ -190,6 +197,7 @@ const createMockConfig = (): AppConfig => ({
     resourcesDir: "",
     skillsDir: "",
     soulDir: "",
+    cronDir: "",
   },
   runtime: {
     inheritedEnv: {}

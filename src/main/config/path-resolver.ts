@@ -30,6 +30,7 @@ export const resolvePathPlan = (input: ResolvePathPlanInput): ResolvedPathPlan =
   const traceDir = path.join(bandryHome, "traces");
   const skillsDir = path.join(bandryHome, "skills");
   const soulDir = path.join(bandryHome, "soul");
+  const cronDir = path.join(bandryHome, "cron");
   const databasePath = path.join(configDir, "bandry.db");
   const auditLogPath = path.join(logsDir, "model-audit.log");
   const sandboxAuditLogPath = path.join(logsDir, "sandbox-audit.log");
@@ -55,6 +56,7 @@ export const resolvePathPlan = (input: ResolvePathPlanInput): ResolvedPathPlan =
       traceDir,
       skillsDir,
       soulDir,
+      cronDir,
       projectConfigPath,
       userConfigPath,
       auditLogPath,

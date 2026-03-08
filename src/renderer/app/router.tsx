@@ -17,6 +17,7 @@ import { Settings } from '../components/views/settings';
 import { ModelStudio } from '../components/views/model-studio';
 import { Skills } from '../components/views/skills';
 import { MemoryStudio } from '../components/views/memory-studio';
+import { Automations } from '../components/views/automations';
 import { INITIAL_TASK } from '../data/mock';
 import type { NavigationItem } from '../types/app';
 
@@ -91,6 +92,7 @@ export const AppRouter = () => {
           <Route path="model-studio" element={<ModelStudio />} />
           <Route path="memory-studio" element={<MemoryStudio />} />
           <Route path="skills" element={<Skills />} />
+          <Route path="automations" element={<Automations />} />
           <Route path="settings" element={<Settings />} />
 
           {/* Copilot Views */}

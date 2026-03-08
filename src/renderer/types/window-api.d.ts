@@ -7,6 +7,16 @@ import type {
   ChatUpdateEvent,
   ConversationInput,
   ConversationResult,
+  CronCreateInput,
+  CronDeleteInput,
+  CronHistoryInput,
+  CronHistoryResult,
+  CronJobItem,
+  CronListResult,
+  CronRunEvent,
+  CronRunNowInput,
+  CronRunRecord,
+  CronUpdateInput,
   ConversationTokenStatsInput,
   ConversationTokenStatsResult,
   GlobalTokenStatsResult,
@@ -158,6 +168,15 @@ declare global {
       skillsUpdate: (name: string, input: SkillUpdateInput) => Promise<SkillOperationResult>;
       skillsDelete: (name: string) => Promise<SkillOperationResult>;
       skillsToggle: (input: SkillToggleInput) => Promise<SkillOperationResult>;
+
+      // Cron API
+      cronList: () => Promise<CronListResult>;
+      cronCreate: (input: CronCreateInput) => Promise<CronJobItem>;
+      cronUpdate: (input: CronUpdateInput) => Promise<CronJobItem | null>;
+      cronDelete: (input: CronDeleteInput) => Promise<boolean>;
+      cronRunNow: (input: CronRunNowInput) => Promise<CronRunRecord>;
+      cronHistory: (input: CronHistoryInput) => Promise<CronHistoryResult>;
+      onCronRunEvent: (listener: (event: CronRunEvent) => void) => () => void;
 
       // User Files API
       userFilesCreateDir: (input: UserFilesCreateDirInput) => Promise<UserFilesCreateDirResult>;

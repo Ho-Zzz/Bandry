@@ -1,9 +1,9 @@
 import { BrowserWindow } from "electron";
-import type { ChatDeltaEvent, ChatUpdateEvent, ConversationResult, TaskUpdateEvent } from "../../shared/ipc";
+import type { ChatDeltaEvent, ChatUpdateEvent, ConversationResult, CronRunEvent, TaskUpdateEvent } from "../../shared/ipc";
 import type { ChannelStatusEvent } from "../channels/types";
 
 const broadcast = (
-  channel: "task:update" | "chat:update" | "chat:delta" | "channel:status" | "conversation:update",
+  channel: "task:update" | "chat:update" | "chat:delta" | "channel:status" | "conversation:update" | "cron:run-event",
   payload: unknown
 ): void => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -17,6 +17,7 @@ export type IpcEventBus = {
   broadcastChatDelta: (update: ChatDeltaEvent) => void;
   broadcastConversationUpdate: (update: ConversationResult) => void;
   broadcastChannelStatus: (update: ChannelStatusEvent) => void;
+  broadcastCronRunEvent: (event: CronRunEvent) => void;
 };
 
 export const createIpcEventBus = (): IpcEventBus => {
@@ -35,6 +36,9 @@ export const createIpcEventBus = (): IpcEventBus => {
     },
     broadcastChannelStatus: (update) => {
       broadcast("channel:status", update);
+    },
+    broadcastCronRunEvent: (event) => {
+      broadcast("cron:run-event", event);
     }
   };
 };

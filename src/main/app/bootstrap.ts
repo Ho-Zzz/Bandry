@@ -7,6 +7,7 @@ import { createMainWindow } from "./window";
 import { ensureSoulFiles } from "../soul";
 import { SoulService } from "../soul/soul-service";
 import { SkillService } from "../skills/skill-service";
+import { CronStore, CronRunner, CronService } from "../cron";
 
 export const startMainApp = (): void => {
   const eventBus = createIpcEventBus();
@@ -86,6 +87,14 @@ export const startMainApp = (): void => {
     );
   };
 
+  const cronStore = new CronStore(composition.config.paths.cronDir);
+  const cronRunner = new CronRunner(composition.toolPlanningChatAgent);
+  const cronService = new CronService({
+    store: cronStore,
+    runner: cronRunner,
+    broadcastCronRunEvent: eventBus.broadcastCronRunEvent
+  });
+
   const { clearRunningTasks } = registerIpcHandlers({
     config: composition.config,
     chatAgentFactory: composition.chatAgentFactory,
@@ -105,6 +114,7 @@ export const startMainApp = (): void => {
     soulService: new SoulService(composition.config.paths.soulDir),
     skillService: new SkillService(composition.config.paths.skillsDir),
     modelsFactory: composition.modelsFactory,
+    cronService,
     onSettingsSaved: () => {
       void syncChannels();
       void syncOpenViking();
@@ -113,6 +123,7 @@ export const startMainApp = (): void => {
 
   app.whenReady().then(async () => {
     await ensureSoulFiles(composition.config.paths.soulDir);
+    await cronService.start();
     await syncOpenViking();
     await syncChannels();
     await createMainWindow({
@@ -130,6 +141,7 @@ export const startMainApp = (): void => {
 
   app.on("window-all-closed", () => {
     clearRunningTasks();
+    cronService.stop();
     void composition.channelManager.stopAll();
     void shutdownOpenViking();
 

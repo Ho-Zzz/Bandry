@@ -21,7 +21,8 @@ import {
   Plus,
   Settings,
   Blocks,
-  Brain
+  Brain,
+  Clock
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useConversationStore } from "../../store/use-conversation-store";
@@ -236,6 +237,9 @@ export const Sidebar = ({
         case "skills":
           navigate("/skills");
           break;
+        case "automations":
+          navigate("/automations");
+          break;
         case "memory":
           navigate("/memory-studio");
           break;
@@ -270,6 +274,7 @@ export const Sidebar = ({
         directory: "/employees",
         models: "/model-studio",
         skills: "/skills",
+        automations: "/automations",
         memory: "/memory-studio",
         settings: "/settings"
       };
@@ -352,6 +357,13 @@ export const Sidebar = ({
             label="Skills"
             isActive={isNavActive({ type: "view", id: "skills" })}
             onClick={() => handleNavClick({ type: "view", id: "skills" })}
+            isCollapsed={isCollapsed}
+          />
+          <NavItem
+            icon={Clock}
+            label="Automations"
+            isActive={isNavActive({ type: "view", id: "automations" })}
+            onClick={() => handleNavClick({ type: "view", id: "automations" })}
             isCollapsed={isCollapsed}
           />
           <NavItem

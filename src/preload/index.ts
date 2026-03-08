@@ -8,6 +8,16 @@ import type {
   ChatUpdateEvent,
   ConversationInput,
   ConversationResult,
+  CronCreateInput,
+  CronDeleteInput,
+  CronHistoryInput,
+  CronHistoryResult,
+  CronJobItem,
+  CronListResult,
+  CronRunEvent,
+  CronRunNowInput,
+  CronRunRecord,
+  CronUpdateInput,
   ConversationTokenStatsInput,
   ConversationTokenStatsResult,
   GlobalTokenStatsResult,
@@ -221,6 +231,28 @@ const api = {
     ipcRenderer.invoke("skills:delete", name),
   skillsToggle: (input: SkillToggleInput): Promise<SkillOperationResult> =>
     ipcRenderer.invoke("skills:toggle", input),
+  // Cron API
+  cronList: (): Promise<CronListResult> =>
+    ipcRenderer.invoke("cron:list"),
+  cronCreate: (input: CronCreateInput): Promise<CronJobItem> =>
+    ipcRenderer.invoke("cron:create", input),
+  cronUpdate: (input: CronUpdateInput): Promise<CronJobItem | null> =>
+    ipcRenderer.invoke("cron:update", input),
+  cronDelete: (input: CronDeleteInput): Promise<boolean> =>
+    ipcRenderer.invoke("cron:delete", input),
+  cronRunNow: (input: CronRunNowInput): Promise<CronRunRecord> =>
+    ipcRenderer.invoke("cron:run-now", input),
+  cronHistory: (input: CronHistoryInput): Promise<CronHistoryResult> =>
+    ipcRenderer.invoke("cron:history", input),
+  onCronRunEvent: (listener: (event: CronRunEvent) => void): (() => void) => {
+    const wrappedListener = (_event: IpcRendererEvent, event: CronRunEvent): void => {
+      listener(event);
+    };
+    ipcRenderer.on("cron:run-event", wrappedListener);
+    return () => {
+      ipcRenderer.removeListener("cron:run-event", wrappedListener);
+    };
+  },
   // User Files API
   userFilesCreateDir: (input: UserFilesCreateDirInput): Promise<UserFilesCreateDirResult> =>
     ipcRenderer.invoke("userFiles:createDir", input),
