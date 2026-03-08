@@ -2,6 +2,7 @@ import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultConfig } from "../../config/default-config";
 import { registerIpcHandlers } from "../register-handlers";
+import { OpenVikingHttpError } from "../../memory/openviking/http-client";
 import type { ChatSendInput, ChatSendResult } from "../../../shared/ipc";
 
 type IpcHandler = (event: unknown, ...args: unknown[]) => unknown;
@@ -165,5 +166,56 @@ describe("registerIpcHandlers chat:send", () => {
         thinkingEnabled: true
       })
     );
+  });
+});
+
+describe("registerIpcHandlers memory:list-resources", () => {
+  beforeEach(() => {
+    mocked.handlers.clear();
+    mocked.ipcHandle.mockClear();
+  });
+
+  it("returns empty entries when OpenViking reports NOT_FOUND directory", async () => {
+    const httpClient = {
+      ls: vi.fn(async () => {
+        throw new OpenVikingHttpError(
+          "OpenViking HTTP 404: {\"status\":\"error\",\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"Directory not found: viking://resources\"}}",
+          404
+        );
+      })
+    };
+
+    registerIpcHandlers({
+      config: createTestConfig(),
+      chatAgentFactory: {} as never,
+      orchestrator: {} as never,
+      sandboxService: {} as never,
+      settingsService: {} as never,
+      modelOnboardingService: {} as never,
+      conversationStore: {} as never,
+      userFilesService: {} as never,
+      eventBus: {
+        broadcastTaskUpdate: vi.fn(),
+        broadcastChatUpdate: vi.fn(),
+        broadcastChatDelta: vi.fn(),
+        broadcastConversationUpdate: vi.fn(),
+        broadcastChannelStatus: vi.fn()
+      },
+      getOpenViking: () => ({
+        processManager: null,
+        httpClient: httpClient as never
+      }),
+      soulService: {} as never,
+      skillService: {} as never,
+      modelsFactory: {} as never,
+      cronService: {} as never
+    });
+
+    const handler = mocked.handlers.get("memory:list-resources");
+    expect(handler).toBeDefined();
+
+    const result = await handler?.({}, { uri: "viking://resources" });
+    expect(result).toEqual({ entries: [] });
+    expect(httpClient.ls).toHaveBeenCalledWith("viking://resources");
   });
 });

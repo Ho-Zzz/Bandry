@@ -129,11 +129,15 @@ const isMissingVikingDirectory = (error: unknown): boolean => {
   if (!(error instanceof OpenVikingHttpError)) {
     return false;
   }
-  if (error.statusCode !== 500) {
+  if (error.statusCode !== 500 && error.statusCode !== 404) {
     return false;
   }
   const message = error.message.toLowerCase();
-  return message.includes("no such directory");
+  return (
+    message.includes("no such directory") ||
+    message.includes("directory not found") ||
+    message.includes("\"code\":\"not_found\"")
+  );
 };
 
 export const registerIpcHandlers = (
