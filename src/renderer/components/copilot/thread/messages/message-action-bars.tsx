@@ -13,9 +13,7 @@ import {
   CopyIcon,
   DownloadIcon,
   PencilIcon,
-  RefreshCwIcon,
-  ThumbsDownIcon,
-  ThumbsUpIcon
+  RefreshCwIcon
 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -59,17 +57,6 @@ export const AssistantActionBar = () => {
         </IconButton>
       </ActionBarPrimitive.Reload>
 
-      <ActionBarPrimitive.FeedbackPositive asChild>
-        <IconButton tooltip="Good response">
-          <ThumbsUpIcon size={14} />
-        </IconButton>
-      </ActionBarPrimitive.FeedbackPositive>
-
-      <ActionBarPrimitive.FeedbackNegative asChild>
-        <IconButton tooltip="Bad response">
-          <ThumbsDownIcon size={14} />
-        </IconButton>
-      </ActionBarPrimitive.FeedbackNegative>
     </ActionBarPrimitive.Root>
   );
 };

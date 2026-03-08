@@ -7,6 +7,7 @@ import type {
   OpenVikingOverviewResult,
   OpenVikingReadResult
 } from "./types";
+import { runtimeLogger } from "../../logging/runtime-logger";
 
 type OpenVikingApiError = {
   code: string;
@@ -33,6 +34,8 @@ export class OpenVikingHttpError extends Error {
 }
 
 export class OpenVikingHttpClient {
+  private static readonly SLOW_REQUEST_MS = 300;
+
   constructor(
     private baseUrl: string,
     private apiKey: string,
@@ -163,6 +166,7 @@ export class OpenVikingHttpClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     const url = `${this.baseUrl}${path}`;
+    const startedAt = Date.now();
 
     try {
       const response = await fetch(url, {
@@ -179,10 +183,37 @@ export class OpenVikingHttpClient {
       const data = text ? (JSON.parse(text) as T) : ({} as T);
 
       if (!response.ok) {
+        runtimeLogger.warn({
+          module: "openviking",
+          phase: "http_request",
+          msg: "HTTP request returned non-2xx",
+          durationMs: Date.now() - startedAt,
+          extra: {
+            method,
+            path,
+            status: response.status,
+          },
+        });
         throw new OpenVikingHttpError(
           `OpenViking HTTP ${response.status}: ${text || response.statusText}`,
           response.status
         );
+      }
+
+      const duration = Date.now() - startedAt;
+      const logVerbose = process.env.BANDRY_LOG_OPENVIKING_HTTP === "1";
+      if (duration >= OpenVikingHttpClient.SLOW_REQUEST_MS || logVerbose) {
+        runtimeLogger.info({
+          module: "openviking",
+          phase: "http_request",
+          msg: "HTTP request completed",
+          durationMs: duration,
+          extra: {
+            method,
+            path,
+            status: response.status,
+          },
+        });
       }
 
       return data;
@@ -192,8 +223,31 @@ export class OpenVikingHttpClient {
       }
 
       if ((error as Error).name === "AbortError") {
+        runtimeLogger.error({
+          module: "openviking",
+          phase: "http_request",
+          msg: "HTTP request timeout",
+          durationMs: Date.now() - startedAt,
+          extra: {
+            method,
+            path,
+            timeoutMs: this.timeoutMs,
+          },
+        });
         throw new OpenVikingHttpError(`OpenViking request timeout: ${method} ${path}`);
       }
+
+      runtimeLogger.error({
+        module: "openviking",
+        phase: "http_request",
+        msg: "HTTP request failed",
+        durationMs: Date.now() - startedAt,
+        extra: {
+          method,
+          path,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
 
       throw new OpenVikingHttpError(
         `OpenViking request failed: ${method} ${path}: ${

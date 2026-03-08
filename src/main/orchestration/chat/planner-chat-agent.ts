@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import type { AppConfig, ModelCapabilities, RuntimeRole } from "../../config";
 import type { GenerateTextResult, ModelsFactory } from "../../llm/runtime";
 import { resolveRuntimeTarget, type RuntimeModelTarget } from "../../llm/runtime/runtime-target";
@@ -11,7 +12,8 @@ import type {
   ChatSendResult,
   ConversationResult,
   ChatUpdatePayload,
-  ChatUpdateStage
+  ChatUpdateStage,
+  ChatToolResultPayload
 } from "../../../shared/ipc";
 import type { ConversationStore } from "../../persistence/sqlite";
 import { MAX_TOOL_STEPS } from "./chat-constants";
@@ -29,6 +31,7 @@ import { createMiddlewarePipeline } from "./middleware";
 import { buildFinalSystemPrompt, buildPlannerSystemPrompt } from "./prompts";
 import { executePlannerTool } from "./tool-executor";
 import { normalizeSpaces, truncate } from "./text-utils";
+import { runtimeLogger } from "../../logging/runtime-logger";
 
 type ReasoningEffort = "minimal" | "low" | "medium" | "high";
 
@@ -121,6 +124,29 @@ const extractPersistedPath = (output: string): string | undefined => {
   return match?.[1];
 };
 
+const normalizePersistedFinalText = (text: string, persistedPath: string): string => {
+  const fileName = path.posix.basename(persistedPath);
+  const persistLine = `已保存到文件：[${fileName}](${persistedPath})`;
+  const contradictionPatterns = [
+    /^\s*(?:文件路径|保存路径)\s*[:：].*$/gim,
+    /.*无法直接写入文件系统.*$/gim,
+    /.*不能直接写入文件系统.*$/gim,
+    /.*无法写入文件.*$/gim,
+    /.*cannot\s+directly\s+write\s+to\s+file\s+system.*$/gim,
+    /^\s*(?:touch|nano|vim|cat|wc)\b.*$/gim
+  ];
+
+  const cleaned = contradictionPatterns
+    .reduce((current, pattern) => current.replace(pattern, ""), text)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  if (cleaned.includes(persistLine)) {
+    return cleaned;
+  }
+  return `${cleaned ? `${cleaned}\n\n` : ""}${persistLine}`;
+};
+
 const summarizeToolIntent = (tool: string, reason?: string, input?: PlannerActionTool["input"]): string | null => {
   const normalizedReason = normalizeSpaces(reason ?? "");
   if (normalizedReason) {
@@ -150,6 +176,10 @@ const summarizeToolIntent = (tool: string, reason?: string, input?: PlannerActio
   if (tool === "write_file") {
     const path = normalizeSpaces(input?.path ?? "");
     return path ? `我需要先把结果写入文件：${truncate(path, 48)}` : "我需要先把结果写入文件";
+  }
+
+  if (tool === "present_files") {
+    return "我需要把生成的文件标记为可查看";
   }
 
   if (tool === "memory_search") {
@@ -182,22 +212,6 @@ const describeAnswerStage = (params: {
   }
 
   return "准备回答";
-};
-
-const shouldBypassFinalSynthesizer = (params: {
-  mode: ChatMode;
-  thinkingEnabled?: boolean;
-  observations: ToolObservation[];
-  persistRequired: boolean;
-  plannerDraftAnswer?: string;
-}): boolean => {
-  return (
-    params.mode === "default" &&
-    params.thinkingEnabled !== true &&
-    params.observations.length === 0 &&
-    !params.persistRequired &&
-    Boolean(params.plannerDraftAnswer?.trim())
-  );
 };
 
 export class ToolPlanningChatAgent {
@@ -308,7 +322,6 @@ export class ToolPlanningChatAgent {
     requestContext?: ChatRequestContext
   ): Promise<ChatSendResult> {
     const requestStartTime = Date.now();
-    console.log(`[Chat] Request started: "${input.message.slice(0, 50)}${input.message.length > 50 ? '...' : ''}"`);
 
     const message = input.message.trim();
     if (!message) {
@@ -337,9 +350,38 @@ export class ToolPlanningChatAgent {
     let persistDone = false;
     let persistPathHint = resolvedPersistPath?.ok ? resolvedPersistPath.path : "";
     let persistedPath: string | undefined;
+    const requestTraceId = input.requestId?.trim() || randomUUID();
+
+    runtimeLogger.info({
+      module: "chat",
+      phase: "request_start",
+      traceId: requestTraceId,
+      msg: "Request started",
+      extra: {
+        mode,
+        messagePreview: `${message.slice(0, 50)}${message.length > 50 ? "..." : ""}`,
+      },
+    });
 
     const emitUpdate = (stage: ChatUpdateStage, updateMessage: string, payload?: ChatUpdatePayload): void => {
       onUpdate?.(stage, updateMessage, payload);
+    };
+    const emitToolUpdate = (
+      source: string,
+      status: ChatToolResultPayload["status"],
+      message: string,
+      payload?: Omit<ChatToolResultPayload, "source" | "status">
+    ): void => {
+      emitUpdate("tool", message, {
+        ...(payload?.workspacePath ? { workspacePath: payload.workspacePath } : {}),
+        toolResult: {
+          source,
+          status,
+          ...(payload?.output ? { output: payload.output } : {}),
+          ...(payload?.artifacts ? { artifacts: payload.artifacts } : {}),
+          ...(payload?.workspacePath ? { workspacePath: payload.workspacePath } : {})
+        }
+      });
     };
 
     // Log mode for debugging
@@ -389,7 +431,7 @@ export class ToolPlanningChatAgent {
       }
     });
     let middlewareCtx = await pipeline.runBeforeAgent({
-      sessionId: input.requestId?.trim() || randomUUID(),
+      sessionId: requestTraceId,
       taskId: randomUUID(),
       conversationId: input.conversationId,
       workspacePath: "",
@@ -477,6 +519,7 @@ export class ToolPlanningChatAgent {
 
       let planner: GenerateTextResult;
       try {
+        const plannerModelCallId = `planner-${step + 1}-${Date.now().toString(36)}`;
         const plannerMessages = [
           {
             role: "system" as const,
@@ -511,6 +554,9 @@ export class ToolPlanningChatAgent {
               temperature: plannerTarget.temperature ?? 0,
               maxTokens: plannerTarget.maxTokens,
               messages: ctx.messages,
+              traceId: middlewareCtx.sessionId,
+              phase: "planner",
+              modelCallId: plannerModelCallId,
               abortSignal,
               extraBody: apiExtras?.extraBody,
               reasoningEffort: apiExtras?.reasoningEffort
@@ -628,6 +674,11 @@ export class ToolPlanningChatAgent {
         };
       }
 
+      if (persistRequired && persistDone && action.tool === "write_file") {
+        emitUpdate("planning", "检测到已完成落盘，跳过额外写入并进入回答阶段");
+        break;
+      }
+
       const toolSignature = `${action.tool}:${JSON.stringify(action.input ?? {})}`;
       if (attemptedToolSignatures.has(toolSignature)) {
         emitUpdate("final", "检测到重复工具调用，改为直接回答");
@@ -639,7 +690,14 @@ export class ToolPlanningChatAgent {
       if (toolIntent) {
         emitUpdate("planning", toolIntent);
       }
-      emitUpdate("tool", `执行工具：${action.tool}${action.reason ? `（${normalizeSpaces(action.reason)}）` : ""}`);
+      emitToolUpdate(
+        action.tool,
+        "loading",
+        `执行工具：${action.tool}${action.reason ? `（${normalizeSpaces(action.reason)}）` : ""}`,
+        {
+          workspacePath: middlewareCtx.workspacePath || undefined
+        }
+      );
       throwIfAborted(abortSignal);
       const observation = await pipeline.executeToolCall(
         middlewareCtx,
@@ -657,11 +715,24 @@ export class ToolPlanningChatAgent {
           })
       );
       observations.push(observation);
-      emitUpdate("tool", `${action.tool} -> ${observation.ok ? "success" : "failed"}: ${truncate(observation.output, 240)}`);
+      emitToolUpdate(
+        action.tool,
+        observation.ok ? "success" : "failed",
+        `${action.tool} -> ${observation.ok ? "success" : "failed"}: ${truncate(observation.output, 240)}`,
+        {
+          output: observation.output,
+          artifacts: observation.artifacts,
+          workspacePath: middlewareCtx.workspacePath || undefined
+        }
+      );
 
       if (action.tool === "write_file" && observation.ok) {
         persistDone = true;
         persistedPath = extractPersistedPath(observation.output) ?? action.input?.path;
+      }
+
+      if (action.tool === "present_files" && observation.ok && observation.artifacts && observation.artifacts.length > 0) {
+        persistedPath = observation.artifacts[observation.artifacts.length - 1];
       }
 
       if (
@@ -739,30 +810,9 @@ export class ToolPlanningChatAgent {
         ...middlewareCtx,
         finalResponse: finalResponse.text
       });
-    } else if (
-      shouldBypassFinalSynthesizer({
-        mode,
-        thinkingEnabled: requestContext?.thinkingEnabled,
-        observations,
-        persistRequired,
-        plannerDraftAnswer
-      })
-    ) {
-      const directReply = plannerDraftAnswer?.trim() ?? "";
-      emitUpdate("model", "Planner 已直接产出最终回答，跳过总结模型");
-      onDelta?.(directReply);
-      finalResponse = {
-        provider: plannerTarget.provider,
-        model: plannerTarget.model,
-        text: directReply,
-        latencyMs: 0
-      };
-      middlewareCtx = await pipeline.runAfterAgent({
-        ...middlewareCtx,
-        finalResponse: finalResponse.text
-      });
     } else {
       try {
+        const finalModelCallId = `final-${Date.now().toString(36)}`;
         const finalMessages = [
           {
             role: "system" as const,
@@ -777,6 +827,16 @@ export class ToolPlanningChatAgent {
             role: "system" as const,
             content: observations.map((observation, index) => `Observation #${index + 1}: ${JSON.stringify(observation)}`).join("\n")
           },
+          ...(persistRequired
+            ? [
+                {
+                  role: "system" as const,
+                  content: persistDone && persistedPath
+                    ? `Persist status: SUCCESS. File is already written at ${persistedPath}. In final reply, acknowledge successful save and never claim file writing is unavailable.`
+                    : "Persist status: REQUIRED. If no successful write_file observation exists, do not claim the file is saved."
+                }
+              ]
+            : []),
           ...(plannerDraftAnswer
             ? [
                 {
@@ -800,6 +860,9 @@ export class ToolPlanningChatAgent {
                 temperature: synthTarget.temperature ?? 0.2,
                 maxTokens: synthTarget.maxTokens,
                 messages: ctx.messages,
+                traceId: middlewareCtx.sessionId,
+                phase: "final",
+                modelCallId: finalModelCallId,
                 abortSignal,
                 extraBody: apiExtras?.extraBody,
                 reasoningEffort: apiExtras?.reasoningEffort
@@ -844,7 +907,9 @@ export class ToolPlanningChatAgent {
         // Writing after that would resolve /mnt/workspace/output/... to the
         // default workspaceRoot instead of the task-specific directory.
         if (persistRequired && !persistDone) {
-          emitUpdate("tool", "未满足落盘约束，执行后端兜底 write_file...");
+          emitToolUpdate("write_file", "loading", "未满足落盘约束，执行后端兜底 write_file...", {
+            workspacePath: middlewareCtx.workspacePath || undefined
+          });
           const fallbackPath = defaultPersistPath(message, new Date());
           const fallbackResolved = resolvePersistWritePath({
             defaultPath: fallbackPath,
@@ -872,9 +937,18 @@ export class ToolPlanningChatAgent {
                 overwrite: false
               },
               ok: true,
-              output: `Wrote file successfully: path=${writeResult.path}, bytes=${writeResult.bytesWritten}`
+              output: `Wrote file successfully: path=${writeResult.path}, bytes=${writeResult.bytesWritten}`,
+              artifacts: [writeResult.path]
             });
-            emitUpdate("tool", `write_file -> success: path=${writeResult.path}`);
+            emitToolUpdate("write_file", "success", `write_file -> success: path=${writeResult.path}`, {
+              output: `Wrote file successfully: path=${writeResult.path}, bytes=${writeResult.bytesWritten}`,
+              artifacts: [writeResult.path],
+              workspacePath: middlewareCtx.workspacePath || undefined
+            });
+            finalResponse = {
+              ...finalResponse,
+              text: normalizePersistedFinalText(finalResponse.text, writeResult.path)
+            };
           } catch (error) {
             const fallbackError = `PERSIST_FALLBACK_FAILED: ${getErrorMessage(error)}`;
             emitUpdate("error", fallbackError);
@@ -902,7 +976,7 @@ export class ToolPlanningChatAgent {
     if (persistRequired && persistDone && persistedPath && !clarificationFinalReply) {
       finalResponse = {
         ...finalResponse,
-        text: `${finalResponse.text}\n\n已保存到文件：${persistedPath}`
+        text: normalizePersistedFinalText(finalResponse.text, persistedPath)
       };
     }
 
@@ -910,7 +984,20 @@ export class ToolPlanningChatAgent {
     emitUpdate("final", "最终回答已生成");
 
     const totalDuration = Date.now() - requestStartTime;
-    console.log(`[Chat] Request completed: ${totalDuration}ms (accumulated LLM: ${accumulatedLatency}ms, overhead: ${totalDuration - accumulatedLatency}ms)`);
+    runtimeLogger.info({
+      module: "chat",
+      phase: "request_end",
+      traceId: middlewareCtx.sessionId,
+      msg: "Request completed",
+      durationMs: totalDuration,
+      extra: {
+        accumulatedVisibleLlmMs: accumulatedLatency,
+        computedOverheadMs: totalDuration - accumulatedLatency,
+        promptTokens: accumulatedPromptTokens,
+        completionTokens: accumulatedCompletionTokens,
+        totalTokens: accumulatedTotalTokens,
+      },
+    });
 
     return buildStreamResult(
       finalResponse,

@@ -87,10 +87,19 @@ export type SubagentProgressPayload = {
   progress?: string;
 };
 
+export type ChatToolResultPayload = {
+  source: string;
+  status: "loading" | "success" | "failed";
+  output?: string;
+  artifacts?: string[];
+  workspacePath?: string;
+};
+
 export type ChatUpdatePayload = {
   clarification?: ChatClarificationPayload;
   subagent?: SubagentProgressPayload;
   workspacePath?: string;
+  toolResult?: ChatToolResultPayload;
 };
 
 export type ChatUpdateEvent = {

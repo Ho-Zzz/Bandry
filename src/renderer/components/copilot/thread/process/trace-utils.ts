@@ -1,5 +1,6 @@
 import { parseToolResult } from "../../../../features/copilot/trace-paths";
 import type { ChatMode } from "../../../../../shared/ipc";
+import { resolveModeAwareStepCopy } from "./process-step-copy";
 
 type TraceToolArgs = {
   stage?: string;
@@ -9,6 +10,13 @@ type TraceToolResult = {
   message?: string;
   timestamp?: number;
   workspacePath?: string;
+  toolResult?: {
+    source?: string;
+    status?: "loading" | "success" | "failed";
+    output?: string;
+    artifacts?: string[];
+    workspacePath?: string;
+  };
 };
 
 export type ProcessKind = "Plan" | "Tool" | "Result";
@@ -22,6 +30,7 @@ export type TraceItem = {
   source?: string;
   status?: "success" | "failed";
   workspacePath?: string;
+  toolResult?: TraceToolResult["toolResult"];
 };
 
 export type ToolResultSummary = {
@@ -31,6 +40,7 @@ export type ToolResultSummary = {
   timestamp?: number;
   workspacePath?: string;
   sources: SourceItem[];
+  artifacts: string[];
 };
 
 export type SourceItem = {
@@ -60,6 +70,37 @@ export type ProcessStep = {
   tone: "active" | "pending" | "error";
 };
 
+export type ProcessLineIcon =
+  | "memory"
+  | "search"
+  | "web"
+  | "file"
+  | "write"
+  | "tool"
+  | "answer"
+  | "subagent"
+  | "error";
+
+export type ProcessLineStatus = "running" | "success" | "failed";
+
+export type ProcessLineItem = {
+  id: string;
+  status: ProcessLineStatus;
+  icon: ProcessLineIcon;
+  title: string;
+  detail?: string;
+  timestamp?: number;
+};
+
+type BuildProcessLineItemsOptions = {
+  mode?: ChatMode;
+  thinkingEnabled?: boolean;
+};
+
+const hasSameLine = (lines: ProcessLineItem[], candidate: ProcessLineItem): boolean => {
+  return lines.some((line) => line.icon === candidate.icon && line.title === candidate.title && line.status === candidate.status);
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
 };
@@ -73,6 +114,7 @@ const extractTraceState = (
   message?: string;
   timestamp?: number;
   workspacePath?: string;
+  toolResult?: TraceToolResult["toolResult"];
 } => {
   const typedArgs: TraceToolArgs = isRecord(args)
     ? {
@@ -84,7 +126,23 @@ const extractTraceState = (
     ? {
         message: typeof result.message === "string" ? result.message : undefined,
         timestamp: typeof result.timestamp === "number" ? result.timestamp : undefined,
-        workspacePath: typeof result.workspacePath === "string" ? result.workspacePath : undefined
+        workspacePath: typeof result.workspacePath === "string" ? result.workspacePath : undefined,
+        toolResult: isRecord(result.toolResult)
+          ? {
+              source: typeof result.toolResult.source === "string" ? result.toolResult.source : undefined,
+              status:
+                result.toolResult.status === "loading" ||
+                result.toolResult.status === "success" ||
+                result.toolResult.status === "failed"
+                  ? result.toolResult.status
+                  : undefined,
+              output: typeof result.toolResult.output === "string" ? result.toolResult.output : undefined,
+              artifacts: Array.isArray(result.toolResult.artifacts)
+                ? result.toolResult.artifacts.filter((item): item is string => typeof item === "string")
+                : undefined,
+              workspacePath: typeof result.toolResult.workspacePath === "string" ? result.toolResult.workspacePath : undefined
+            }
+          : undefined
       }
     : {};
 
@@ -92,7 +150,8 @@ const extractTraceState = (
     stage: typedArgs.stage || toolName.replace(/^trace_/, "") || "trace",
     message: typedResult.message,
     timestamp: typedResult.timestamp,
-    workspacePath: typedResult.workspacePath
+    workspacePath: typedResult.workspacePath,
+    toolResult: typedResult.toolResult
   };
 };
 
@@ -194,6 +253,228 @@ const summarizeToolResultDetail = (source: string, status: "success" | "failed",
   }
 
   return `${source} 已完成`;
+};
+
+const resolveToolIcon = (source: string): ProcessLineIcon => {
+  const normalized = source.trim().toLowerCase();
+  if (normalized.includes("memory")) {
+    return "memory";
+  }
+  if (normalized.includes("search")) {
+    return "search";
+  }
+  if (normalized.includes("fetch") || normalized.includes("browse")) {
+    return "web";
+  }
+  if (normalized.includes("read_file") || normalized.includes("list_dir")) {
+    return "file";
+  }
+  if (normalized.includes("write_file")) {
+    return "write";
+  }
+  if (normalized.includes("sub") || normalized.includes("delegate")) {
+    return "subagent";
+  }
+  return "tool";
+};
+
+const buildToolStartDetail = (message: string): string | undefined => {
+  const reasonMatch = message.match(/[（(]([^()（）]+)[）)]\s*$/);
+  const reason = reasonMatch?.[1]?.trim();
+  if (!reason) {
+    return undefined;
+  }
+  return truncateText(reason, 120);
+};
+
+const isAnswerPreparationMessage = (message: string): boolean => {
+  return (
+    message.includes("进入直接回答阶段") ||
+    message.includes("进入最终总结阶段") ||
+    message.includes("整理工具结果并准备回答") ||
+    message.includes("整理思路并准备回答") ||
+    message.includes("准备回答")
+  );
+};
+
+const toCompletedTitle = (title: string): string => {
+  return /中$/.test(title) ? `${title.replace(/中$/, "")}完成` : title;
+};
+
+const normalizePlanningLine = (
+  item: TraceItem,
+  options?: BuildProcessLineItemsOptions
+): { icon: ProcessLineIcon; title: string; detail?: string; status: ProcessLineStatus } | null => {
+  const message = item.message.trim();
+  if (!message || isTraceNoise(message)) {
+    return null;
+  }
+
+  if (message.includes("回忆")) {
+    return {
+      icon: "memory",
+      title: "回忆中",
+      status: "running"
+    };
+  }
+
+  if (isAnswerPreparationMessage(message)) {
+    return null;
+  }
+
+  const thinkingMode = options?.mode === "thinking" || options?.thinkingEnabled === true;
+  if (thinkingMode && (message.includes("分析问题") || message.includes("整理思路") || message.includes("思考"))) {
+    return {
+      icon: "memory",
+      title: "思考中",
+      status: "running"
+    };
+  }
+
+  return null;
+};
+
+export const buildProcessLineItems = (
+  items: TraceItem[],
+  isRunning: boolean,
+  options?: BuildProcessLineItemsOptions
+): ProcessLineItem[] => {
+  const lines: ProcessLineItem[] = [];
+  const runningToolIndex = new Map<string, number>();
+  const thinkingMode = options?.mode === "thinking" || options?.thinkingEnabled === true;
+  const finalizeRunningLines = (): void => {
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (!line || line.status !== "running") {
+        continue;
+      }
+      lines[index] = {
+        ...line,
+        status: "success",
+        title: toCompletedTitle(line.title)
+      };
+    }
+  };
+
+  for (const item of items) {
+    const message = item.message.trim();
+    if (!message || isTraceNoise(message)) {
+      continue;
+    }
+
+    if (item.stage === "error") {
+      const errorLine: ProcessLineItem = {
+        id: `${item.id}-error`,
+        icon: "error",
+        title: "执行失败",
+        detail: truncateText(message, 140),
+        status: "failed",
+        timestamp: item.timestamp
+      };
+      if (!hasSameLine(lines, errorLine)) {
+        lines.push(errorLine);
+      }
+      continue;
+    }
+
+    if (item.stage === "final" && message.includes("最终回答已生成")) {
+      finalizeRunningLines();
+      continue;
+    }
+
+    const parsedResult = parseToolResult(message);
+    if (parsedResult) {
+      const existingIndex = runningToolIndex.get(parsedResult.source);
+      const copy = resolveModeAwareStepCopy(parsedResult.source, { thinkingMode });
+      const nextLine: ProcessLineItem = {
+        id: `${item.id}-${parsedResult.source}-result`,
+        icon: resolveToolIcon(parsedResult.source),
+        title: parsedResult.status === "failed" ? (copy.failed ?? "执行失败") : copy.success,
+        detail: summarizeToolResultDetail(parsedResult.source, parsedResult.status, parsedResult.output),
+        status: parsedResult.status === "failed" ? "failed" : "success",
+        timestamp: item.timestamp
+      };
+
+      if (existingIndex !== undefined) {
+        lines[existingIndex] = nextLine;
+      } else {
+        if (!hasSameLine(lines, nextLine)) {
+          lines.push(nextLine);
+        }
+      }
+      runningToolIndex.delete(parsedResult.source);
+      continue;
+    }
+
+    if (item.stage === "tool" || item.stage === "subagent") {
+      const source = item.source ?? parseToolSource(message);
+      if (!source) {
+        continue;
+      }
+      const copy = resolveModeAwareStepCopy(source, { thinkingMode });
+      finalizeRunningLines();
+      const nextLine: ProcessLineItem = {
+        id: `${item.id}-${source}-start`,
+        icon: resolveToolIcon(source),
+        title: copy.running,
+        status: "running",
+        timestamp: item.timestamp
+      };
+      const reasonDetail = buildToolStartDetail(message);
+      if (reasonDetail) {
+        nextLine.detail = reasonDetail;
+      }
+      runningToolIndex.set(source, lines.length);
+      if (!hasSameLine(lines, nextLine)) {
+        lines.push(nextLine);
+      }
+      continue;
+    }
+
+    if (item.stage === "planning" || item.stage === "model") {
+      if (isAnswerPreparationMessage(message)) {
+        finalizeRunningLines();
+        continue;
+      }
+      const normalized = normalizePlanningLine(item, options);
+      if (!normalized) {
+        continue;
+      }
+      if (normalized.title === "思考中" && lines.some((line) => line.title === "思考中")) {
+        continue;
+      }
+      const nextPlanningLine: ProcessLineItem = {
+        id: `${item.id}-planning`,
+        ...normalized,
+        timestamp: item.timestamp
+      };
+      if (!hasSameLine(lines, nextPlanningLine)) {
+        lines.push(nextPlanningLine);
+      }
+    }
+  }
+
+  if (!isRunning && lines.length > 0) {
+    return lines.map((line) => {
+      if (line.status !== "running") {
+        return line;
+      }
+      const isToolLike = line.icon === "memory" || line.icon === "search" || line.icon === "web" || line.icon === "file" || line.icon === "write" || line.icon === "tool" || line.icon === "subagent";
+      if (isToolLike && /中$/.test(line.title)) {
+        return {
+          ...line,
+          title: `${line.title.replace(/中$/, "")}完成`,
+          status: "success"
+        };
+      }
+      return {
+        ...line,
+        status: "success"
+      };
+    });
+  }
+
+  return lines;
 };
 
 const resolveStepLabel = (item: TraceItem, statusLabel: string): string | null => {
@@ -355,10 +636,10 @@ export const extractTraceItems = (parts: readonly unknown[]): TraceItem[] => {
 
     const partRecord = part as Record<string, unknown>;
     const toolName = typeof partRecord.toolName === "string" ? partRecord.toolName : "";
-    const { stage, message, timestamp, workspacePath } = extractTraceState(toolName, partRecord.args, partRecord.result);
+    const { stage, message, timestamp, workspacePath, toolResult } = extractTraceState(toolName, partRecord.args, partRecord.result);
     const normalizedMessage = message?.trim();
-    if (workspacePath) {
-      messageWorkspacePath = workspacePath;
+    if (workspacePath || toolResult?.workspacePath) {
+      messageWorkspacePath = workspacePath ?? toolResult?.workspacePath;
     }
 
     if (!normalizedMessage) {
@@ -376,7 +657,8 @@ export const extractTraceItems = (parts: readonly unknown[]): TraceItem[] => {
       timestamp,
       source,
       status: parsedResult?.status,
-      workspacePath
+      workspacePath: workspacePath ?? toolResult?.workspacePath,
+      toolResult
     });
   }
 
@@ -395,6 +677,30 @@ export const buildToolSummaries = (traceItems: TraceItem[], isRunning: boolean):
   const pendingBySource = new Map<string, TraceItem>();
 
   for (const item of traceItems) {
+    if (item.toolResult?.source && item.toolResult.status) {
+      const output = item.toolResult.output ?? item.message;
+      const urls = extractUrlsFromText(output);
+      const sources = isSearchLikeName(item.toolResult.source)
+        ? urls.map((url, index) => ({
+            id: `${item.toolResult?.source}-${index}-${url}-${item.timestamp ?? index}`,
+            url,
+            title: toSourceTitle(url)
+          }))
+        : [];
+
+      summaries.push({
+        source: item.toolResult.source,
+        status: item.toolResult.status,
+        output,
+        timestamp: item.timestamp,
+        workspacePath: item.toolResult.workspacePath ?? item.workspacePath,
+        sources,
+        artifacts: item.toolResult.artifacts ?? []
+      });
+      pendingBySource.delete(item.toolResult.source);
+      continue;
+    }
+
     const parsedResult = parseToolResult(item.message);
     if (parsedResult) {
       const urls = extractUrlsFromText(parsedResult.output);
@@ -412,7 +718,8 @@ export const buildToolSummaries = (traceItems: TraceItem[], isRunning: boolean):
         output: parsedResult.output,
         timestamp: item.timestamp,
         workspacePath: item.workspacePath,
-        sources
+        sources,
+        artifacts: []
       });
       pendingBySource.delete(parsedResult.source);
       continue;
@@ -436,7 +743,8 @@ export const buildToolSummaries = (traceItems: TraceItem[], isRunning: boolean):
         output: item.message,
         timestamp: item.timestamp,
         workspacePath: item.workspacePath,
-        sources: []
+        sources: [],
+        artifacts: []
       });
     });
   }

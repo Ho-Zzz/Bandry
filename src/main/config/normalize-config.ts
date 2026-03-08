@@ -16,6 +16,21 @@ const RUNTIME_ROLES: Array<keyof AppConfig["routing"]["assignments"]> = [
   "memory.fact_extractor"
 ];
 
+const withOpenVikingTargetUriAliases = (uris: string[]): string[] => {
+  const normalized = Array.from(new Set(uris.map((uri) => uri.trim()).filter(Boolean)));
+  const expanded = new Set(normalized);
+
+  for (const uri of normalized) {
+    if (uri === "viking://user/memories") {
+      expanded.add("viking://user/default/memories");
+    } else if (uri === "viking://user/default/memories") {
+      expanded.add("viking://user/memories");
+    }
+  }
+
+  return Array.from(expanded);
+};
+
 export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.paths.projectRoot = normalizePath(config.paths.projectRoot);
   config.paths.bandryHome = normalizePath(config.paths.bandryHome);
@@ -103,11 +118,12 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.openviking.memoryTopK = Math.max(1, Math.floor(config.openviking.memoryTopK));
   config.openviking.memoryScoreThreshold = Math.max(0, Math.min(1, config.openviking.memoryScoreThreshold));
   config.openviking.commitDebounceMs = Math.max(500, Math.floor(config.openviking.commitDebounceMs));
-  config.openviking.targetUris = Array.from(
-    new Set(config.openviking.targetUris.map((uri) => uri.trim()).filter(Boolean))
-  );
+  config.openviking.targetUris = withOpenVikingTargetUriAliases(config.openviking.targetUris);
   if (config.openviking.targetUris.length === 0) {
-    config.openviking.targetUris = ["viking://user/memories", "viking://agent/memories"];
+    config.openviking.targetUris = withOpenVikingTargetUriAliases([
+      "viking://user/memories",
+      "viking://agent/memories"
+    ]);
   }
 
   for (const provider of Object.values(config.providers)) {
@@ -163,6 +179,11 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.tools.webFetch.provider = "jina";
   config.tools.webFetch.baseUrl = config.tools.webFetch.baseUrl.trim() || "https://r.jina.ai/http://";
   config.tools.webFetch.timeoutMs = Math.max(500, Math.floor(config.tools.webFetch.timeoutMs));
+
+  config.tools.githubSearch.enabled = Boolean(config.tools.githubSearch.enabled);
+  config.tools.githubSearch.baseUrl = config.tools.githubSearch.baseUrl.trim() || "https://api.github.com";
+  config.tools.githubSearch.timeoutMs = Math.max(500, Math.floor(config.tools.githubSearch.timeoutMs));
+  config.tools.githubSearch.maxResults = Math.max(1, Math.min(50, Math.floor(config.tools.githubSearch.maxResults)));
 
   config.channels.channels = config.channels.channels
     .map((ch, index) => ({

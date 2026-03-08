@@ -1,6 +1,5 @@
 import { GlobeIcon, LinkIcon, WrenchIcon } from "lucide-react";
 
-import { extractFilePaths } from "../../../../features/copilot/trace-paths";
 import { usePreviewStore } from "../../../../store/use-preview-store";
 import { type ToolResultSummary } from "./trace-utils";
 
@@ -60,7 +59,10 @@ export const ToolResultLayer = ({ summaries }: ToolResultLayerProps) => {
   return (
     <div className="mt-2 space-y-1.5">
       {summaries.map((summary, index) => {
-        const filePaths = extractFilePaths(summary.output);
+        const filePaths = summary.artifacts.map((artifactPath) => ({
+          path: artifactPath,
+          name: artifactPath.split("/").pop() || artifactPath
+        }));
         const searchLike = isSearchTool(summary.source);
 
         if (searchLike && summary.sources.length > 0) {

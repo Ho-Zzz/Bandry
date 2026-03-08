@@ -92,7 +92,7 @@ describe("TitleMiddleware", () => {
 
     expect(modelsFactory.generateText).toHaveBeenCalledTimes(1);
     expect(conversationStore.updateConversation).toHaveBeenNthCalledWith(1, "conv-1", {
-      title: "帮我整理 Bandry 桌面端迁移方案和跨端数据同步策略及发布回滚预案"
+      title: "整理 Bandry 桌面端迁移方案和跨端数据同步策略及发布回滚预案"
     });
     expect(conversationStore.updateConversation).toHaveBeenNthCalledWith(2, "conv-1", {
       title: "Bandry Delegation Plan"
@@ -145,11 +145,9 @@ describe("TitleMiddleware", () => {
 
     expect(modelsFactory.generateText).toHaveBeenCalledTimes(1);
     expect(conversationStore.updateConversation).toHaveBeenNthCalledWith(1, "conv-2", {
-      title: "帮我分析最近三个月的数据走势、异常点和渠道波动，并整理成团队月度复盘标题"
+      title: "分析最近三个月的数据走势、异常点和渠道波动，并整理成团队月度复盘标题"
     });
-    expect(conversationStore.updateConversation).toHaveBeenNthCalledWith(2, "conv-2", {
-      title: "分析最近三个月的数据走势、异常点和渠道波动，并整理成团队月度"
-    });
+    expect(conversationStore.updateConversation).toHaveBeenCalledTimes(1);
     expect(onUpdate).not.toHaveBeenCalled();
     expect(result.metadata.titleGenerated).toBeUndefined();
   });
@@ -193,5 +191,119 @@ describe("TitleMiddleware", () => {
     expect(conversationStore.updateConversation).toHaveBeenCalledWith("conv-3", {
       title: "今天天气怎么样"
     });
+  });
+
+  it("prefers non-reasoner routing target for title generation", async () => {
+    const middleware = new TitleMiddleware();
+    const config = createConfig();
+
+    config.modelProfiles.push({
+      id: "profile_deepseek_reasoner",
+      name: "DeepSeek Reasoner",
+      provider: "deepseek",
+      model: "deepseek-reasoner",
+      enabled: true
+    });
+    config.routing.assignments["chat.default"] = "profile_openai_default";
+    config.routing.assignments["lead.planner"] = "profile_openai_default";
+    config.routing.assignments["lead.synthesizer"] = "profile_deepseek_reasoner";
+
+    const modelsFactory = {
+      generateText: vi.fn(async () => ({
+        provider: "openai" as const,
+        model: "gpt-4.1-mini",
+        text: "Monthly Data Trend Review",
+        latencyMs: 10
+      }))
+    };
+
+    const conversationStore = {
+      getConversation: vi.fn(() => ({ id: "conv-4", title: undefined })),
+      updateConversation: vi.fn()
+    };
+
+    const ctx: MiddlewareContext = {
+      sessionId: "s4",
+      taskId: "t4",
+      conversationId: "conv-4",
+      workspacePath: "/tmp/workspace",
+      messages: [{ role: "user", content: "帮我总结最近三个月的核心指标变化并给个复盘标题" }],
+      tools: [],
+      metadata: {},
+      state: "after_agent",
+      finalResponse:
+        "好的，我整理了最近三个月指标变化、关键拐点、异常渠道和后续行动建议，并给出适合团队复盘的标题候选。".repeat(2),
+      runtime: {
+        config,
+        modelsFactory: modelsFactory as never,
+        sandboxService: {} as never,
+        conversationStore: conversationStore as never,
+        onUpdate: vi.fn()
+      }
+    };
+
+    await middleware.afterAgent!(ctx);
+    await Promise.resolve();
+
+    expect(modelsFactory.generateText).toHaveBeenCalledTimes(1);
+    expect(modelsFactory.generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-4.1-mini"
+      })
+    );
+  });
+
+  it("skips model title generation when only reasoner routes are available", async () => {
+    const middleware = new TitleMiddleware();
+    const config = createConfig();
+
+    config.modelProfiles = [
+      {
+        id: "profile_deepseek_reasoner",
+        name: "DeepSeek Reasoner",
+        provider: "deepseek",
+        model: "deepseek-reasoner",
+        enabled: true
+      }
+    ];
+    config.providers.deepseek.apiKey = "sk-deepseek-valid-key-1234567890";
+    config.routing.assignments["chat.default"] = "profile_deepseek_reasoner";
+    config.routing.assignments["lead.planner"] = "profile_deepseek_reasoner";
+    config.routing.assignments["lead.synthesizer"] = "profile_deepseek_reasoner";
+    config.routing.assignments["memory.fact_extractor"] = "profile_deepseek_reasoner";
+
+    const modelsFactory = {
+      generateText: vi.fn()
+    };
+
+    const conversationStore = {
+      getConversation: vi.fn(() => ({ id: "conv-5", title: undefined })),
+      updateConversation: vi.fn()
+    };
+
+    const ctx: MiddlewareContext = {
+      sessionId: "s5",
+      taskId: "t5",
+      conversationId: "conv-5",
+      workspacePath: "/tmp/workspace",
+      messages: [{ role: "user", content: "请帮我总结这次发布的风险和回滚策略" }],
+      tools: [],
+      metadata: {},
+      state: "after_agent",
+      finalResponse: "已总结主要风险、监控点和回滚步骤。",
+      runtime: {
+        config,
+        modelsFactory: modelsFactory as never,
+        sandboxService: {} as never,
+        conversationStore: conversationStore as never,
+        onUpdate: vi.fn()
+      }
+    };
+
+    await middleware.afterAgent!(ctx);
+    await Promise.resolve();
+
+    expect(modelsFactory.generateText).not.toHaveBeenCalled();
+    expect(conversationStore.updateConversation).toHaveBeenCalledTimes(1);
   });
 });

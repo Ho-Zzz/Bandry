@@ -434,7 +434,7 @@ describe("ToolPlanningChatAgent", () => {
     );
   });
 
-  it("skips final synthesizer for default direct answers without tools", async () => {
+  it("uses final synthesizer streaming for default direct answers without tools", async () => {
     const config = createConfig();
     const modelsFactory = {
       isProviderConfigured: vi.fn(() => true),
@@ -444,7 +444,16 @@ describe("ToolPlanningChatAgent", () => {
         text: '{"action":"answer","answer":"直接返回 planner 的回答"}',
         latencyMs: 30
       })),
-      generateTextStream: vi.fn()
+      generateTextStream: vi.fn(async (_input, onDelta: (delta: string) => void) => {
+        onDelta("直接");
+        onDelta("返回 planner 的回答");
+        return {
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: "直接返回 planner 的回答",
+          latencyMs: 40
+        };
+      })
     };
 
     const sandboxService = {
@@ -464,7 +473,7 @@ describe("ToolPlanningChatAgent", () => {
     });
 
     expect(result.reply).toBe("直接返回 planner 的回答");
-    expect(modelsFactory.generateTextStream).not.toHaveBeenCalled();
+    expect(modelsFactory.generateTextStream).toHaveBeenCalledTimes(1);
   });
 
   it("emits clarification payload and stops execution when planner asks clarification", async () => {
@@ -611,7 +620,7 @@ describe("ToolPlanningChatAgent", () => {
     });
 
     expect(sandboxService.writeFile).toHaveBeenCalledTimes(1);
-    expect(result.reply).toContain("已保存到文件：/mnt/workspace/output/report.md");
+    expect(result.reply).toContain("已保存到文件：[report.md](/mnt/workspace/output/report.md)");
   });
 
   it("asks clarification when explicit write target already exists", async () => {
@@ -697,6 +706,55 @@ describe("ToolPlanningChatAgent", () => {
     });
 
     expect(sandboxService.writeFile).toHaveBeenCalledTimes(1);
-    expect(result.reply).toContain("已保存到文件：/mnt/workspace/output/");
+    expect(result.reply).toContain("已保存到文件：[");
+    expect(result.reply).toContain("](/mnt/workspace/output/");
+  });
+
+  it("stops redundant write_file calls after first persist success and removes duplicated path block", async () => {
+    const config = createConfig();
+    const modelsFactory = {
+      isProviderConfigured: vi.fn(() => true),
+      generateText: vi
+        .fn()
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"tool","tool":"write_file","input":{"path":"output/conversation.md","content":"# 记录"}}',
+          latencyMs: 20
+        })
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"tool","tool":"write_file","input":{"path":"output/conversation.md","content":"# 记录2"}}',
+          latencyMs: 20
+        }),
+      generateTextStream: vi.fn(async () => ({
+        provider: "deepseek",
+        model: "deepseek-chat",
+        text: "文件路径: [conversation.md](/mnt/workspace/output/conversation.md)\n\n正文内容。",
+        latencyMs: 20
+      }))
+    };
+
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(async (payload: { path: string; content: string }) => ({
+        path: payload.path,
+        bytesWritten: Buffer.byteLength(payload.content, "utf8")
+      })),
+      exec: vi.fn()
+    };
+
+    const agent = new ToolPlanningChatAgent(config, modelsFactory as never, sandboxService as never);
+    const result = await agent.send({
+      message: "请把这段对话导出成 md 并保存到文件",
+      history: []
+    });
+
+    expect(sandboxService.writeFile).toHaveBeenCalledTimes(1);
+    expect(result.reply).toContain("正文内容。");
+    expect(result.reply).not.toContain("文件路径:");
+    expect(result.reply).toContain("已保存到文件：[conversation.md](/mnt/workspace/output/conversation.md)");
   });
 });

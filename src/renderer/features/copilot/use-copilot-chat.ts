@@ -97,6 +97,44 @@ export const resolvePendingClarificationFromUpdate = (
 
 export const normalizeClarificationInput = (value: string): string => value.trim();
 
+export const resolveFinalAssistantContent = (
+  streamedContent: string | undefined,
+  resultReply: string
+): string => {
+  if (resultReply.trim().length > 0) {
+    return resultReply;
+  }
+  return streamedContent ?? "";
+};
+
+export const mergeAssistantDelta = (
+  currentContent: string,
+  delta: string
+): string => {
+  if (!delta) {
+    return currentContent;
+  }
+  if (!currentContent) {
+    return delta;
+  }
+  if (currentContent.endsWith(delta)) {
+    return currentContent;
+  }
+
+  // Deduplicate retransmitted prefixes by finding the largest overlap
+  // between current tail and new delta head.
+  const maxOverlap = Math.min(currentContent.length, delta.length);
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    const currentSuffix = currentContent.slice(-overlap);
+    const deltaPrefix = delta.slice(0, overlap);
+    if (currentSuffix === deltaPrefix) {
+      return `${currentContent}${delta.slice(overlap)}`;
+    }
+  }
+
+  return `${currentContent}${delta}`;
+};
+
 const parseModeFromPlanningTrace = (message: string): ChatMode | undefined => {
   const normalized = message.trim().toLowerCase();
   if (!normalized.startsWith("mode:")) {
@@ -180,6 +218,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
   const loadVersionRef = useRef(0);
   const messagesRef = useRef<Message[]>([]);
   const conversationIdRef = useRef<string | undefined>(options.conversationId);
+  const activeRequestByConversationRef = useRef<Record<string, string>>({});
   const { upsertConversation } = useConversationStore();
 
   const isLoading = useMemo(() => {
@@ -193,6 +232,10 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
   useEffect(() => {
     conversationIdRef.current = conversationId;
   }, [conversationId]);
+
+  useEffect(() => {
+    activeRequestByConversationRef.current = activeRequestByConversation;
+  }, [activeRequestByConversation]);
 
   const setConversationActiveRequest = useCallback((convId: string, requestId: string | null) => {
     setActiveRequestByConversation((previous) => {
@@ -349,7 +392,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           const cleaned = prev.map((msg) => {
             if (msg.role === "assistant" && msg.status === "pending" && msg.requestId) {
               // Check if this request is actually active
-              const isActive = activeRequestByConversation[options.conversationId!] === msg.requestId;
+              const isActive = activeRequestByConversationRef.current[options.conversationId!] === msg.requestId;
               if (!isActive) {
                 hasOrphanedPending = true;
                 // Mark as completed with whatever content we have
@@ -392,7 +435,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         setActiveModelProfileId(profileId);
       });
     }
-  }, [activeRequestByConversation, getDefaultModelProfileId, loadMessages, options.conversationId]);
+  }, [getDefaultModelProfileId, loadMessages, options.conversationId]);
 
   // Subscribe to chat updates
   useEffect(() => {
@@ -455,7 +498,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
 
           return {
             ...message,
-            content: `${message.content}${update.delta}`
+            content: mergeAssistantDelta(message.content, update.delta)
           };
         })
       );
@@ -608,13 +651,18 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
 
         const finalTrace = traceByRequestIdRef.current[requestId] || [];
 
+        const streamedContent = messagesRef.current.find(
+          (item) => item.role === "assistant" && item.requestId === requestId
+        )?.content;
+        const finalContent = resolveFinalAssistantContent(streamedContent, result.reply);
+
         // Update pending message with final response
         setMessages((prev) =>
           prev.map((message) =>
             message.role === "assistant" && message.requestId === requestId
               ? {
                   ...message,
-                  content: result.reply,
+                  content: finalContent,
                   status: "completed" as MessageStatus,
                   trace: finalTrace,
                   prompt_tokens: result.usage?.promptTokens,
@@ -628,7 +676,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         // Update message in database
         if (savedAssistantMsgId) {
           await window.api.messageUpdate(savedAssistantMsgId, {
-            content: result.reply,
+            content: finalContent,
             status: "completed",
             trace: finalTrace.length > 0 ? JSON.stringify(finalTrace) : undefined,
             prompt_tokens: result.usage?.promptTokens,

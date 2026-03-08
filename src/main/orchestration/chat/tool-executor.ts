@@ -45,6 +45,27 @@ export const executePlannerTool = async ({
   sessionId
 }: ExecutePlannerToolOptions): Promise<ToolObservation & { updatedTodos?: TodoItem[] }> => {
   const fallbackPath = config.sandbox.virtualRoot;
+  const virtualRoot = config.sandbox.virtualRoot.replace(/\/+$/, "");
+  const normalizeArtifactPath = (artifactPath: string): string => {
+    if (artifactPath.startsWith(`${virtualRoot}/`)) {
+      return artifactPath;
+    }
+    const relative = artifactPath.startsWith("/") ? artifactPath.slice(1) : artifactPath;
+    return `${virtualRoot}/${relative}`;
+  };
+  const isSupportedArtifactPath = (artifactPath: string): boolean => {
+    const normalized = artifactPath.trim();
+    if (!normalized) {
+      return false;
+    }
+
+    if (normalized.startsWith(`${virtualRoot}/output/`)) {
+      return true;
+    }
+
+    const relative = normalized.startsWith("/") ? normalized.slice(1) : normalized;
+    return relative.startsWith("output/");
+  };
 
   try {
     if (action.tool === "list_dir") {
@@ -123,7 +144,41 @@ export const executePlannerTool = async ({
         tool: "write_file",
         input: { path: writePathResult.path, overwrite: false },
         ok: true,
-        output: `Wrote file successfully: path=${result.path}, bytes=${result.bytesWritten}`
+        output: `Wrote file successfully: path=${result.path}, bytes=${result.bytesWritten}`,
+        artifacts: [normalizeArtifactPath(result.path)]
+      };
+    }
+
+    if (action.tool === "present_files") {
+      const filepaths = action.input?.filepaths;
+      if (!Array.isArray(filepaths) || filepaths.length === 0) {
+        return {
+          tool: "present_files",
+          input: action.input ?? {},
+          ok: false,
+          output: "Missing required field: input.filepaths"
+        };
+      }
+
+      const invalidPath = filepaths.find((value) => typeof value !== "string" || !isSupportedArtifactPath(value));
+      if (invalidPath) {
+        return {
+          tool: "present_files",
+          input: action.input ?? {},
+          ok: false,
+          output: `PATH_NOT_ALLOWED: Only files under ${virtualRoot}/output are allowed for present_files. Invalid path: ${String(invalidPath)}`
+        };
+      }
+
+      const artifacts = filepaths
+        .map((value) => normalizeArtifactPath(value))
+        .filter((value, index, list) => list.indexOf(value) === index);
+      return {
+        tool: "present_files",
+        input: { filepaths: artifacts },
+        ok: true,
+        output: artifacts.length > 0 ? `Presented files: ${artifacts.join(", ")}` : "No files presented",
+        artifacts
       };
     }
 
@@ -255,15 +310,10 @@ export const executePlannerTool = async ({
       const failedText = failed
         .map(([taskId, result]) => `${taskId}: ${result.error ?? "unknown error"}`)
         .join("; ");
-      const virtualRoot = config.sandbox.virtualRoot.replace(/\/+$/, "");
       const artifacts = entries
         .flatMap(([, result]) => result.artifacts ?? [])
         .filter((value, index, list) => list.indexOf(value) === index)
-        .map((artifact) => {
-          if (artifact.startsWith(`${virtualRoot}/`)) return artifact;
-          const relative = artifact.startsWith("/") ? artifact.slice(1) : artifact;
-          return `${virtualRoot}/${relative}`;
-        });
+        .map((artifact) => normalizeArtifactPath(artifact));
 
       const renderResult = (taskId: string, result: AgentResult): string => {
         const suffix = result.error ? ` | error=${result.error}` : "";
@@ -277,9 +327,9 @@ export const executePlannerTool = async ({
         output: [
           `Delegation finished: ${successCount}/${entries.length} succeeded.`,
           ...entries.map(([taskId, result]) => renderResult(taskId, result)),
-          ...(artifacts.length > 0 ? [`Artifacts: ${artifacts.join(", ")}`] : []),
           ...(failedText ? [`Failures: ${failedText}`] : [])
-        ].join("\n")
+        ].join("\n"),
+        artifacts
       };
     }
 

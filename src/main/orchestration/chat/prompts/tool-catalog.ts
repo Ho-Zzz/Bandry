@@ -120,6 +120,25 @@ export const TOOL_CATALOG: Map<string, ToolGuidance> = new Map([
   ],
 
   [
+    "present_files",
+    {
+      name: "present_files",
+      description: "Mark generated output files as user-visible artifacts",
+      whenToUse: [
+        "After write_file succeeds and the file should be visible/clickable in UI",
+        "After delegate_sub_tasks produces output files that user should review",
+        "Need to present one or more output files to user explicitly"
+      ],
+      whenNotToUse: [
+        "File is temporary intermediate and should not be shown to user",
+        "Path is outside /mnt/workspace/output",
+        "File has not been written yet"
+      ],
+      priority: 4
+    }
+  ],
+
+  [
     "exec",
     {
       name: "exec",

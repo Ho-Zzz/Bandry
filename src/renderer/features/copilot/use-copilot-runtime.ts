@@ -28,6 +28,7 @@ type TraceToolResult = {
   message: string;
   timestamp: number;
   workspacePath?: string;
+  toolResult?: NonNullable<ChatUpdateEvent["payload"]>["toolResult"];
 };
 
 const toAssistantStatus = (status?: Message["status"]): AssistantMessageStatus | undefined => {
@@ -78,7 +79,8 @@ const buildTraceToolPart = (
     result: {
       message: event.message,
       timestamp: event.timestamp,
-      ...(event.payload?.workspacePath ? { workspacePath: event.payload.workspacePath } : {})
+      ...(event.payload?.workspacePath ? { workspacePath: event.payload.workspacePath } : {}),
+      ...(event.payload?.toolResult ? { toolResult: event.payload.toolResult } : {})
     },
     isError: event.stage === "error"
   };

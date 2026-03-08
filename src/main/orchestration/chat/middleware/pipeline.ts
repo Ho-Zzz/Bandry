@@ -5,6 +5,7 @@ import type {
   ToolCallHandler
 } from "./types";
 import type { PlannerActionTool, ToolObservation } from "../planner-types";
+import { runtimeLogger } from "../../../logging/runtime-logger";
 
 /**
  * Middleware pipeline orchestrator
@@ -79,11 +80,26 @@ export class MiddlewarePipeline {
           currentCtx = await hook.call(middleware, currentCtx);
           const duration = Date.now() - startTime;
           if (duration > 10) { // Only log if > 10ms
-            console.log(`[Middleware] ${middleware.name}.${hookName} took ${duration}ms`);
+            runtimeLogger.info({
+              module: "middleware",
+              phase: String(hookName),
+              traceId: currentCtx.sessionId,
+              msg: `${middleware.name}.${hookName}`,
+              durationMs: duration,
+            });
           }
         } catch (error) {
           const duration = Date.now() - startTime;
-          console.error(`[MiddlewarePipeline] Error in ${middleware.name}.${hookName} after ${duration}ms:`, error);
+          runtimeLogger.error({
+            module: "middleware",
+            phase: String(hookName),
+            traceId: currentCtx.sessionId,
+            msg: `Error in ${middleware.name}.${hookName}`,
+            durationMs: duration,
+            extra: {
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
           throw new Error(
             `Middleware ${middleware.name} failed at ${hookName}: ${
               error instanceof Error ? error.message : String(error)
@@ -104,7 +120,13 @@ export class MiddlewarePipeline {
     next.state = "request";
     next = await this.runHooks(next, "onRequest");
     const duration = Date.now() - startTime;
-    console.log(`[Pipeline] runBeforeAgent total: ${duration}ms`);
+    runtimeLogger.info({
+      module: "pipeline",
+      phase: "before_agent",
+      traceId: next.sessionId,
+      msg: "runBeforeAgent total",
+      durationMs: duration,
+    });
     return next;
   }
 
@@ -116,7 +138,13 @@ export class MiddlewarePipeline {
     next.state = "before_llm";
     next = await this.runHooks(next, "beforeLLM");
     const duration = Date.now() - startTime;
-    console.log(`[Pipeline] runBeforeModel total: ${duration}ms`);
+    runtimeLogger.info({
+      module: "pipeline",
+      phase: "before_model",
+      traceId: next.sessionId,
+      msg: "runBeforeModel total",
+      durationMs: duration,
+    });
     return next;
   }
 
@@ -128,7 +156,13 @@ export class MiddlewarePipeline {
     next.state = "after_llm";
     next = await this.runHooks(next, "afterLLM");
     const duration = Date.now() - startTime;
-    console.log(`[Pipeline] runAfterModel total: ${duration}ms`);
+    runtimeLogger.info({
+      module: "pipeline",
+      phase: "after_model",
+      traceId: next.sessionId,
+      msg: "runAfterModel total",
+      durationMs: duration,
+    });
     return next;
   }
 
@@ -140,7 +174,13 @@ export class MiddlewarePipeline {
     next.state = "response";
     next = await this.runHooks(next, "onResponse");
     const duration = Date.now() - startTime;
-    console.log(`[Pipeline] runAfterAgent total: ${duration}ms`);
+    runtimeLogger.info({
+      module: "pipeline",
+      phase: "after_agent",
+      traceId: next.sessionId,
+      msg: "runAfterAgent total",
+      durationMs: duration,
+    });
     return next;
   }
 
@@ -155,11 +195,28 @@ export class MiddlewarePipeline {
     const llmStartTime = Date.now();
     ctx = await llmExecutor(ctx);
     const llmDuration = Date.now() - llmStartTime;
-    console.log(`[Pipeline] LLM execution: ${llmDuration}ms`);
+    runtimeLogger.info({
+      module: "pipeline",
+      phase: "llm_execution",
+      traceId: ctx.sessionId,
+      msg: "LLM execution",
+      durationMs: llmDuration,
+    });
 
     ctx = await this.runAfterModel(ctx);
     const totalDuration = Date.now() - startTime;
-    console.log(`[Pipeline] executeModel total: ${totalDuration}ms (before: ${beforeDuration}ms, llm: ${llmDuration}ms, after: ${totalDuration - beforeDuration - llmDuration}ms)`);
+    runtimeLogger.info({
+      module: "pipeline",
+      phase: "execute_model",
+      traceId: ctx.sessionId,
+      msg: "executeModel total",
+      durationMs: totalDuration,
+      extra: {
+        beforeMs: beforeDuration,
+        llmMs: llmDuration,
+        afterMs: totalDuration - beforeDuration - llmDuration,
+      },
+    });
     return ctx;
   }
 

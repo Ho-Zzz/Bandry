@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ChatUpdateEvent } from "../../../../shared/ipc";
 import {
+  mergeAssistantDelta,
   isConversationLoading,
   normalizeClarificationInput,
   resolveRequestSettingsFromTrace,
-  resolvePendingClarificationFromUpdate
+  resolvePendingClarificationFromUpdate,
+  resolveFinalAssistantContent
 } from "../use-copilot-chat";
 
 describe("use-copilot-chat helpers", () => {
@@ -67,4 +69,18 @@ describe("use-copilot-chat helpers", () => {
       thinkingEnabled: false
     });
   });
+
+  it("prefers final reply and falls back to streamed content", () => {
+    expect(resolveFinalAssistantContent("streaming text", "full reply")).toBe("full reply");
+    expect(resolveFinalAssistantContent("   ", "full reply")).toBe("full reply");
+    expect(resolveFinalAssistantContent("stream only", "   ")).toBe("stream only");
+  });
+
+  it("deduplicates overlapped stream deltas", () => {
+    expect(mergeAssistantDelta("", "你好")).toBe("你好");
+    expect(mergeAssistantDelta("你好世界", "世界和平")).toBe("你好世界和平");
+    expect(mergeAssistantDelta("abc", "abc")).toBe("abc");
+    expect(mergeAssistantDelta("Hello", " world")).toBe("Hello world");
+  });
+
 });

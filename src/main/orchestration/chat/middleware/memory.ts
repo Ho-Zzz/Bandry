@@ -1,5 +1,6 @@
 import type { Middleware, MiddlewareContext } from "./types";
 import type { MemoryProvider } from "../../../memory/contracts/types";
+import { runtimeLogger } from "../../../logging/runtime-logger";
 
 /**
  * Memory middleware
@@ -14,14 +15,19 @@ export class MemoryMiddleware implements Middleware {
    * Inject memory context before LLM call
    */
   async beforeLLM(ctx: MiddlewareContext): Promise<MiddlewareContext> {
+    const startedAt = Date.now();
     try {
       // Read memory layers (L0/L1 by default)
       const query = this.getLatestUserQuery(ctx);
       const memoryStepStarted = ctx.metadata.memoryStepStarted === true;
 
-      if (!memoryStepStarted) {
-        ctx.runtime?.onUpdate?.("planning", "回忆相关上下文");
+      // Run memory retrieval at most once per request lifecycle.
+      // Planner/final model stages share middleware context via metadata.
+      if (memoryStepStarted) {
+        return ctx;
       }
+
+      ctx.runtime?.onUpdate?.("planning", "回忆相关上下文");
 
       // Add timeout protection to prevent blocking
       const timeoutMs = 3000; // 3 second timeout
@@ -43,9 +49,31 @@ export class MemoryMiddleware implements Middleware {
       });
 
       if (chunks.length === 0) {
+        runtimeLogger.info({
+          module: "memory",
+          phase: "before_llm",
+          traceId: ctx.sessionId,
+          msg: "No memory matched",
+          durationMs: Date.now() - startedAt,
+        });
         ctx.runtime?.onUpdate?.("planning", "未命中相关记忆");
+        const noMemoryGuard = [
+          "# Memory Retrieval Status",
+          "",
+          "No relevant memory was retrieved for this request.",
+          "Do not claim you found or read memory files.",
+          "If asked about stored memory, explicitly say retrieval returned no matching memory."
+        ].join("\n");
+
         return {
           ...ctx,
+          messages: [
+            {
+              role: "system" as const,
+              content: noMemoryGuard,
+            },
+            ...ctx.messages,
+          ],
           metadata: {
             ...ctx.metadata,
             memoryStepStarted: true,
@@ -54,6 +82,16 @@ export class MemoryMiddleware implements Middleware {
       }
 
       ctx.runtime?.onUpdate?.("planning", `已回忆 ${chunks.length} 条相关记忆`);
+      runtimeLogger.info({
+        module: "memory",
+        phase: "before_llm",
+        traceId: ctx.sessionId,
+        msg: "Memory injected",
+        durationMs: Date.now() - startedAt,
+        extra: {
+          chunks: chunks.length,
+        },
+      });
 
       // Format memory context as system message
       const memoryContent = this.formatMemoryContext(chunks);
@@ -77,7 +115,16 @@ export class MemoryMiddleware implements Middleware {
         },
       };
     } catch (error) {
-      console.error("[MemoryMiddleware] Failed to inject context:", error);
+      runtimeLogger.error({
+        module: "memory",
+        phase: "before_llm",
+        traceId: ctx.sessionId,
+        msg: "Failed to inject context",
+        durationMs: Date.now() - startedAt,
+        extra: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       return ctx;
     }
   }
@@ -112,7 +159,15 @@ export class MemoryMiddleware implements Middleware {
         },
       };
     } catch (error) {
-      console.error("[MemoryMiddleware] Failed to queue storage:", error);
+      runtimeLogger.error({
+        module: "memory",
+        phase: "on_response",
+        traceId: ctx.sessionId,
+        msg: "Failed to queue storage",
+        extra: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       return ctx;
     }
   }

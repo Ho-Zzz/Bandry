@@ -4,13 +4,8 @@ import { BotIcon } from "lucide-react";
 
 import type { ChatMode } from "../../../../../shared/ipc";
 import { ProcessLayer } from "../process/process-layer";
-import { ToolResultLayer } from "../process/tool-result-layer";
-import {
-  buildToolSummaries,
-  extractTraceItems,
-  resolveProcessStatusLabel
-} from "../process/trace-utils";
-import { AssistantActionBar, BranchPicker, MessageError } from "./message-action-bars";
+import { extractTraceItems } from "../process/trace-utils";
+import { AssistantActionBar, MessageError } from "./message-action-bars";
 import { AssistantTextPart, HiddenTraceGroup, HiddenTracePart } from "./message-parts";
 import { TokenBadge } from "../../token-badge";
 
@@ -22,7 +17,6 @@ export const AssistantMessage = () => {
   const isRunning = statusType === "running";
 
   const traceItems = useMemo(() => extractTraceItems(parts), [parts]);
-  const toolSummaries = useMemo(() => buildToolSummaries(traceItems, isRunning), [isRunning, traceItems]);
 
   // Extract token data from metadata
   const tokenData = useMemo(() => {
@@ -41,16 +35,6 @@ export const AssistantMessage = () => {
     };
   }, [metadata]);
 
-  const processStatusLabel = useMemo(
-    () =>
-      resolveProcessStatusLabel({
-        isRunning,
-        mode: tokenData.mode,
-        thinkingEnabled: tokenData.thinkingEnabled
-      }),
-    [isRunning, tokenData.mode, tokenData.thinkingEnabled]
-  );
-
   return (
     <MessagePrimitive.Root className="relative mx-auto w-full max-w-[var(--thread-max-width)] py-3" data-role="assistant">
       <div className="flex items-start gap-3">
@@ -59,8 +43,12 @@ export const AssistantMessage = () => {
         </div>
 
         <div className="min-w-0 flex-1 space-y-2 break-words px-1 leading-relaxed text-zinc-900">
-          <ProcessLayer items={traceItems} isRunning={isRunning} statusLabel={processStatusLabel} />
-          <ToolResultLayer summaries={toolSummaries} />
+          <ProcessLayer
+            items={traceItems}
+            isRunning={isRunning}
+            mode={tokenData.mode}
+            thinkingEnabled={tokenData.thinkingEnabled}
+          />
           <MessagePrimitive.Parts
             components={{
               Text: AssistantTextPart,
@@ -80,7 +68,6 @@ export const AssistantMessage = () => {
           />
 
           <div className="mt-1 ml-1 flex min-h-6 items-center">
-            <BranchPicker />
             <AssistantActionBar />
           </div>
         </div>

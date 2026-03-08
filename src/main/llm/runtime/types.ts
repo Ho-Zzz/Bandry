@@ -29,6 +29,9 @@ export type GenerateTextInput = {
    */
   reasoningEffort?: "minimal" | "low" | "medium" | "high";
   taskId?: string;
+  traceId?: string;
+  phase?: string;
+  modelCallId?: string;
   abortSignal?: AbortSignal;
 };
 

@@ -7,6 +7,7 @@ import { createMainWindow } from "./window";
 import { ensureSoulFiles } from "../soul";
 import { SoulService } from "../soul/soul-service";
 import { SkillService } from "../skills/skill-service";
+import { runtimeLogger } from "../logging/runtime-logger";
 import { CronStore, CronRunner, CronService } from "../cron";
 
 export const startMainApp = (): void => {
@@ -26,7 +27,11 @@ export const startMainApp = (): void => {
 
     if (!shouldRun) {
       if (composition.openViking.processManager) {
-        console.log("[OpenViking] Memory disabled, shutting down...");
+        runtimeLogger.info({
+          module: "openviking",
+          phase: "lifecycle",
+          msg: "Memory disabled, shutting down",
+        });
         await shutdownOpenViking();
       }
       return;
@@ -43,12 +48,14 @@ export const startMainApp = (): void => {
 
     const rebindMemoryProvider = (): void => {
       try {
-        // Use shorter timeout (3s) for memory operations to avoid blocking chat responses
+        const persistTimeoutMs = Math.max(15_000, composition.config.openviking.startTimeoutMs);
         composition.openViking.memoryProvider = new OpenVikingMemoryProvider(manager.createHttpClient(3000), {
           targetUris: composition.config.openviking.targetUris,
           topK: composition.config.openviking.memoryTopK,
           scoreThreshold: composition.config.openviking.memoryScoreThreshold,
-          commitDebounceMs: composition.config.openviking.commitDebounceMs
+          commitDebounceMs: composition.config.openviking.commitDebounceMs,
+          persistTimeoutMs,
+          persistClient: manager.createHttpClient(persistTimeoutMs)
         });
       } catch {
         composition.openViking.memoryProvider = null;
@@ -57,10 +64,18 @@ export const startMainApp = (): void => {
 
     manager.onCrash(({ willRestart }) => {
       if (willRestart) {
-        console.log("[OpenViking] Rebinding memory provider after auto-restart");
+        runtimeLogger.info({
+          module: "openviking",
+          phase: "restart",
+          msg: "Rebinding memory provider after auto-restart",
+        });
         rebindMemoryProvider();
       } else {
-        console.error("[OpenViking] Process crashed and could not be restarted");
+        runtimeLogger.error({
+          module: "openviking",
+          phase: "restart",
+          msg: "Process crashed and could not be restarted",
+        });
         composition.openViking.processManager = null;
         composition.openViking.memoryProvider = null;
       }
@@ -68,12 +83,26 @@ export const startMainApp = (): void => {
 
     try {
       const { runtime } = await manager.start();
-      console.log(`[OpenViking] started at ${runtime.url}`);
+      runtimeLogger.info({
+        module: "openviking",
+        phase: "startup",
+        msg: "Started",
+        extra: {
+          url: runtime.url,
+        },
+      });
 
       composition.openViking.processManager = manager;
       rebindMemoryProvider();
     } catch (error) {
-      console.error("[OpenViking] failed to start, memory integration disabled:", error);
+      runtimeLogger.error({
+        module: "openviking",
+        phase: "startup",
+        msg: "Failed to start, memory integration disabled",
+        extra: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       await manager.stop();
       composition.openViking.processManager = null;
       composition.openViking.memoryProvider = null;

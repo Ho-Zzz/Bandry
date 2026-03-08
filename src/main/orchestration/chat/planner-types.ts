@@ -28,6 +28,7 @@ export type BasePlannerToolName =
   | "list_dir"
   | "read_file"
   | "write_file"
+  | "present_files"
   | "exec"
   | "web_search"
   | "web_fetch"
@@ -58,6 +59,7 @@ export type PlannerActionTool = {
     // Base tool inputs
     path?: string;
     content?: string;
+    filepaths?: string[];
     overwrite?: boolean;
     command?: string;
     args?: string[];
@@ -85,4 +87,5 @@ export type ToolObservation = {
   input: Record<string, unknown>;
   ok: boolean;
   output: string;
+  artifacts?: string[];
 };
