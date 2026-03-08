@@ -6,6 +6,7 @@ const eventBus: IpcEventBus = {
   broadcastTaskUpdate: (u) => console.log("[event:task]", u.status),
   broadcastChatUpdate: (u) => console.log("[event:chat]", u.stage, u.message),
   broadcastChatDelta: () => {},
+  broadcastConversationUpdate: (u) => console.log("[event:conversation]", u.id, u.title),
   broadcastChannelStatus: (u) => console.log("[event:channel]", u.channelId, u.status),
   broadcastCronRunEvent: () => {},
 };
@@ -17,7 +18,6 @@ const shutdownOpenViking = async (): Promise<void> => {
   await composition.openViking.processManager?.stop();
   composition.openViking.processManager = null;
   composition.openViking.memoryProvider = null;
-  composition.toolPlanningChatAgent.setMemoryProvider(null);
 };
 
 const syncOpenViking = async (): Promise<void> => {
@@ -41,15 +41,11 @@ const syncOpenViking = async (): Promise<void> => {
         commitDebounceMs: composition.config.openviking.commitDebounceMs,
       }
     );
-    composition.toolPlanningChatAgent.setMemoryProvider(
-      composition.openViking.memoryProvider
-    );
   } catch (error) {
     console.error("[Gateway] OpenViking failed to start, memory disabled:", error);
     await manager.stop();
     composition.openViking.processManager = null;
     composition.openViking.memoryProvider = null;
-    composition.toolPlanningChatAgent.setMemoryProvider(null);
   }
 };
 

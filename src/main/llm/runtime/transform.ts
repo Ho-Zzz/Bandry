@@ -1,4 +1,4 @@
-import type { ModelMessage as AiModelMessage, TextStreamPart, ToolSet } from "ai";
+import type { JSONValue, ModelMessage as AiModelMessage, TextStreamPart, ToolSet } from "ai";
 import type { ModelRequest, StreamEvent, StreamUsage } from "./schema";
 
 export type ProviderRequest = {
@@ -12,7 +12,7 @@ export type ProviderRequest = {
   presencePenalty?: number;
   frequencyPenalty?: number;
   stopSequences?: string[];
-  providerOptions?: Record<string, Record<string, string | number | boolean | null>>;
+  providerOptions?: Record<string, Record<string, JSONValue>>;
 };
 
 export type ProviderTransformInput = Omit<ModelRequest, "modelId"> & {
@@ -23,6 +23,64 @@ export interface ITransform {
   request(input: ProviderTransformInput): ProviderRequest;
   response(part: TextStreamPart<ToolSet>): StreamEvent[];
 }
+
+const OPENAI_EXTRA_BODY_WHITELIST = new Set([
+  "logitBias",
+  "logprobs",
+  "parallelToolCalls",
+  "user",
+  "reasoningEffort",
+  "maxCompletionTokens",
+  "store",
+  "metadata",
+  "prediction",
+  "serviceTier",
+  "strictJsonSchema",
+  "textVerbosity",
+  "promptCacheKey",
+  "promptCacheRetention",
+  "safetyIdentifier",
+  "systemMessageMode",
+  "forceReasoning"
+]);
+
+const isJsonValue = (value: unknown): value is JSONValue => {
+  if (value === null) {
+    return true;
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.every(isJsonValue);
+  }
+
+  if (typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).every(isJsonValue);
+  }
+
+  return false;
+};
+
+const mapOpenAiExtraBody = (
+  extraBody: Record<string, unknown> | undefined
+): Record<string, JSONValue> => {
+  if (!extraBody) {
+    return {};
+  }
+
+  const result: Record<string, JSONValue> = {};
+  for (const [rawKey, value] of Object.entries(extraBody)) {
+    const normalizedKey = rawKey === "reasoning_effort" ? "reasoningEffort" : rawKey;
+    if (OPENAI_EXTRA_BODY_WHITELIST.has(normalizedKey) && isJsonValue(value)) {
+      result[normalizedKey] = value;
+    }
+  }
+
+  return result;
+};
 
 const toUsage = (usage: {
   inputTokens: number | undefined;
@@ -101,12 +159,9 @@ export const openAiCompatibleTransform: ITransform = {
       .map(mapMessage)
       .filter((message): message is AiModelMessage => message !== null);
 
-    const openaiOptions: Record<string, string | number | boolean | null> = {};
-    if (input.frequencyPenalty !== undefined) {
-      openaiOptions.frequencyPenalty = input.frequencyPenalty;
-    }
-    if (input.presencePenalty !== undefined) {
-      openaiOptions.presencePenalty = input.presencePenalty;
+    const openaiOptions = mapOpenAiExtraBody(input.extraBody);
+    if (input.reasoningEffort !== undefined) {
+      openaiOptions.reasoningEffort = input.reasoningEffort;
     }
 
     const providerOptions =

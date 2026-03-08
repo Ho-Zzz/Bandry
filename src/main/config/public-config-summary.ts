@@ -30,7 +30,9 @@ export const toPublicConfigSummary = (config: AppConfig): PublicConfigSummary =>
       name: profile.name,
       provider: profile.provider,
       model: profile.model,
-      enabled: profile.enabled
+      enabled: profile.enabled,
+      capabilities: profile.capabilities,
+      whenThinkingEnabled: profile.whenThinkingEnabled
     })),
     routing: { ...config.routing.assignments },
     tools: {

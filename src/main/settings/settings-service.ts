@@ -90,7 +90,9 @@ const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
       model: profile.model,
       enabled: profile.enabled,
       temperature: profile.temperature,
-      maxTokens: profile.maxTokens
+      maxTokens: profile.maxTokens,
+      capabilities: profile.capabilities,
+      whenThinkingEnabled: profile.whenThinkingEnabled
     })),
     routing: { ...config.routing.assignments },
     memory: {
@@ -143,10 +145,6 @@ const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
 
 const validateState = (state: GlobalSettingsState): string[] => {
   const errors: string[] = [];
-
-  if (state.modelProfiles.length === 0) {
-    errors.push("至少需要一个模型档案");
-  }
 
   const profileIds = new Set(state.modelProfiles.map((profile) => profile.id));
   for (const role of Object.keys(state.routing)) {

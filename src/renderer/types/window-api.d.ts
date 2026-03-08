@@ -17,6 +17,9 @@ import type {
   CronRunNowInput,
   CronRunRecord,
   CronUpdateInput,
+  ConversationTokenStatsInput,
+  ConversationTokenStatsResult,
+  GlobalTokenStatsResult,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
   MemoryDeleteResourceInput,
@@ -45,6 +48,8 @@ import type {
   MessageUpdateInput,
   PingResult,
   RuntimeConfigSummary,
+  ConfigStorageInfoResult,
+  OpenConfigDirResult,
   SaveSettingsInput,
   SaveSettingsResult,
   SandboxExecInput,
@@ -69,7 +74,21 @@ import type {
   SkillCreateInput,
   SkillUpdateInput,
   SkillOperationResult,
-  SkillToggleInput
+  SkillToggleInput,
+  UserFilesCreateDirInput,
+  UserFilesCreateDirResult,
+  UserFilesSaveInput,
+  UserFilesSaveResult,
+  UserFilesListInput,
+  UserFilesListResult,
+  UserFilesReadInput,
+  UserFilesReadResult,
+  UserFilesDeleteInput,
+  UserFilesDeleteResult,
+  UserFilesRenameInput,
+  UserFilesRenameResult,
+  UserFilesSaveConversationInput,
+  UserFilesSaveConversationResult
 } from "../../shared/ipc";
 
 declare global {
@@ -78,6 +97,8 @@ declare global {
       // Core
       ping: () => Promise<PingResult>;
       getConfigSummary: () => Promise<RuntimeConfigSummary>;
+      getConfigStorageInfo: () => Promise<ConfigStorageInfoResult>;
+      openConfigDir: () => Promise<OpenConfigDirResult>;
       getSettingsState: () => Promise<GlobalSettingsState>;
       saveSettingsState: (input: SaveSettingsInput) => Promise<SaveSettingsResult>;
       modelsCatalogList: (input?: ModelsCatalogListInput) => Promise<ModelsCatalogListResult>;
@@ -106,6 +127,8 @@ declare global {
       conversationGet: (id: string) => Promise<ConversationResult | null>;
       conversationUpdate: (id: string, input: Partial<ConversationInput>) => Promise<ConversationResult | null>;
       conversationDelete: (id: string) => Promise<boolean>;
+      conversationGetTokenStats: (input: ConversationTokenStatsInput) => Promise<ConversationTokenStatsResult>;
+      conversationGetGlobalTokenStats: () => Promise<GlobalTokenStatsResult>;
 
       // Message Management
       messageCreate: (input: MessageInput) => Promise<MessageResult>;
@@ -129,6 +152,7 @@ declare global {
       // Event Listeners
       onChatUpdate: (listener: (update: ChatUpdateEvent) => void) => () => void;
       onChatDelta: (listener: (update: ChatDeltaEvent) => void) => () => void;
+      onConversationUpdate: (listener: (update: ConversationResult) => void) => () => void;
       onTaskUpdate: (listener: (update: TaskUpdateEvent) => void) => () => void;
 
       // Soul API
@@ -153,6 +177,15 @@ declare global {
       cronRunNow: (input: CronRunNowInput) => Promise<CronRunRecord>;
       cronHistory: (input: CronHistoryInput) => Promise<CronHistoryResult>;
       onCronRunEvent: (listener: (event: CronRunEvent) => void) => () => void;
+
+      // User Files API
+      userFilesCreateDir: (input: UserFilesCreateDirInput) => Promise<UserFilesCreateDirResult>;
+      userFilesSave: (input: UserFilesSaveInput) => Promise<UserFilesSaveResult>;
+      userFilesList: (input: UserFilesListInput) => Promise<UserFilesListResult>;
+      userFilesRead: (input: UserFilesReadInput) => Promise<UserFilesReadResult>;
+      userFilesDelete: (input: UserFilesDeleteInput) => Promise<UserFilesDeleteResult>;
+      userFilesRename: (input: UserFilesRenameInput) => Promise<UserFilesRenameResult>;
+      userFilesSaveConversation: (input: UserFilesSaveConversationInput) => Promise<UserFilesSaveConversationResult>;
     };
   }
 }

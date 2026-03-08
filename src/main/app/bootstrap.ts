@@ -18,7 +18,6 @@ export const startMainApp = (): void => {
     await composition.openViking.processManager?.stop();
     composition.openViking.processManager = null;
     composition.openViking.memoryProvider = null;
-    composition.toolPlanningChatAgent.setMemoryProvider(null);
   };
 
   const syncOpenViking = async (): Promise<void> => {
@@ -44,16 +43,15 @@ export const startMainApp = (): void => {
 
     const rebindMemoryProvider = (): void => {
       try {
-        composition.openViking.memoryProvider = new OpenVikingMemoryProvider(manager.createHttpClient(), {
+        // Use shorter timeout (3s) for memory operations to avoid blocking chat responses
+        composition.openViking.memoryProvider = new OpenVikingMemoryProvider(manager.createHttpClient(3000), {
           targetUris: composition.config.openviking.targetUris,
           topK: composition.config.openviking.memoryTopK,
           scoreThreshold: composition.config.openviking.memoryScoreThreshold,
           commitDebounceMs: composition.config.openviking.commitDebounceMs
         });
-        composition.toolPlanningChatAgent.setMemoryProvider(composition.openViking.memoryProvider);
       } catch {
         composition.openViking.memoryProvider = null;
-        composition.toolPlanningChatAgent.setMemoryProvider(null);
       }
     };
 
@@ -65,7 +63,6 @@ export const startMainApp = (): void => {
         console.error("[OpenViking] Process crashed and could not be restarted");
         composition.openViking.processManager = null;
         composition.openViking.memoryProvider = null;
-        composition.toolPlanningChatAgent.setMemoryProvider(null);
       }
     });
 
@@ -80,7 +77,6 @@ export const startMainApp = (): void => {
       await manager.stop();
       composition.openViking.processManager = null;
       composition.openViking.memoryProvider = null;
-      composition.toolPlanningChatAgent.setMemoryProvider(null);
     }
   };
 
@@ -101,12 +97,13 @@ export const startMainApp = (): void => {
 
   const { clearRunningTasks } = registerIpcHandlers({
     config: composition.config,
-    toolPlanningChatAgent: composition.toolPlanningChatAgent,
+    chatAgentFactory: composition.chatAgentFactory,
     orchestrator: composition.orchestrator,
     sandboxService: composition.sandboxService,
     settingsService: composition.settingsService,
     modelOnboardingService: composition.modelOnboardingService,
     conversationStore: composition.conversationStore,
+    userFilesService: composition.userFilesService,
     eventBus,
     getOpenViking: () => ({
       processManager: composition.openViking.processManager,

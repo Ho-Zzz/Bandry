@@ -111,7 +111,45 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
           model: toStringValue(item.model),
           enabled: toBooleanValue(item.enabled),
           temperature: toNumberValue(item.temperature),
-          maxTokens: toNumberValue(item.maxTokens)
+          maxTokens: toNumberValue(item.maxTokens),
+          capabilities: (() => {
+            if (item.capabilities === undefined) {
+              return undefined;
+            }
+            const raw = asObject(item.capabilities);
+            const parsed = {
+              supportsThinking: toBooleanValue(raw.supportsThinking),
+              supportsReasoningEffort: toBooleanValue(raw.supportsReasoningEffort),
+              supportsVision: toBooleanValue(raw.supportsVision),
+              supportsToolCall: toBooleanValue(raw.supportsToolCall)
+            };
+            if (Object.values(parsed).every((value) => value === undefined)) {
+              return undefined;
+            }
+            return parsed;
+          })(),
+          whenThinkingEnabled: (() => {
+            if (item.whenThinkingEnabled === undefined) {
+              return undefined;
+            }
+            const raw = asObject(item.whenThinkingEnabled);
+            const rawExtraBody = raw.extraBody;
+            const extraBody = (
+              typeof rawExtraBody === "object" &&
+              rawExtraBody !== null &&
+              !Array.isArray(rawExtraBody)
+            )
+              ? rawExtraBody as Record<string, unknown>
+              : undefined;
+            const reasoningEffort = toStringValue(raw.reasoningEffort) as "minimal" | "low" | "medium" | "high" | undefined;
+            if (extraBody === undefined && reasoningEffort === undefined) {
+              return undefined;
+            }
+            return {
+              extraBody,
+              reasoningEffort
+            };
+          })()
         }))
         .filter((item) => item.id.trim().length > 0)
     : undefined;

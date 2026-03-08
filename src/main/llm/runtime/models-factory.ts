@@ -43,12 +43,16 @@ export class ModelsFactory {
     const promptChars = messages.reduce((sum, message) => sum + message.content.length, 0);
     const startedAt = Date.now();
 
+    console.log(`[LLM] Starting request: ${resolved.provider}/${model} (${promptChars} chars, ${messages.length} messages)`);
+
     try {
       const stream = this.modelService.chat({
         modelId: `${resolved.provider}:${model}`,
         messages,
         temperature: input.temperature ?? 0.2,
         maxTokens: input.maxTokens,
+        extraBody: input.extraBody,
+        reasoningEffort: input.reasoningEffort,
         runtimeConfig: {
           provider: resolved.provider,
           baseUrl: resolved.baseUrl,
@@ -60,9 +64,15 @@ export class ModelsFactory {
 
       let text = "";
       let usage: GenerateTextResult["usage"];
+      let firstTokenAt: number | undefined;
 
       for await (const event of stream) {
         if (event.type === "content_delta") {
+          if (!firstTokenAt) {
+            firstTokenAt = Date.now();
+            const ttft = firstTokenAt - startedAt;
+            console.log(`[LLM] First token received: ${resolved.provider}/${model} (TTFT: ${ttft}ms)`);
+          }
           text += event.delta;
           onDelta?.(event.delta);
           continue;
@@ -100,6 +110,8 @@ export class ModelsFactory {
         usage
       };
 
+      console.log(`[LLM] Completed: ${resolved.provider}/${model} (${completed.latencyMs}ms, ${text.length} chars${usage ? `, ${usage.totalTokens} tokens` : ''})`);
+
       await this.writeAuditRecord({
         timestamp: new Date().toISOString(),
         provider: resolved.provider,
@@ -115,8 +127,11 @@ export class ModelsFactory {
 
       return completed;
     } catch (error) {
+      const duration = Date.now() - startedAt;
       const normalized = error instanceof Error ? error : new Error("Model request failed");
       const status = normalized instanceof ModelRequestError ? normalized.status : undefined;
+
+      console.error(`[LLM] Failed: ${resolved.provider}/${model} (${duration}ms) - ${normalized.message}`);
 
       await this.writeAuditRecord({
         timestamp: new Date().toISOString(),

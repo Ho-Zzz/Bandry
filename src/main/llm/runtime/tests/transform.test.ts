@@ -60,4 +60,24 @@ describe("openAiCompatibleTransform", () => {
       }
     ]);
   });
+
+  it("maps reasoningEffort and whitelisted extraBody to providerOptions.openai", () => {
+    const transformed = openAiCompatibleTransform.request({
+      model: "gpt-5-mini",
+      messages: [{ role: "user", content: "hello" }],
+      reasoningEffort: "high",
+      extraBody: {
+        reasoning_effort: "low",
+        serviceTier: "auto",
+        unknownKey: "drop-me"
+      }
+    });
+
+    expect(transformed.providerOptions).toEqual({
+      openai: {
+        reasoningEffort: "high",
+        serviceTier: "auto"
+      }
+    });
+  });
 });

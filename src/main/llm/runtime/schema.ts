@@ -12,6 +12,8 @@ export const ModelRequestSchema = z.object({
   tools: z.array(z.unknown()).optional(),
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().int().positive().optional(),
+  extraBody: z.record(z.string(), z.unknown()).optional(),
+  reasoningEffort: z.enum(["minimal", "low", "medium", "high"]).optional(),
   topP: z.number().min(0).max(1).optional(),
   topK: z.number().int().positive().optional(),
   presencePenalty: z.number().min(-2).max(2).optional(),

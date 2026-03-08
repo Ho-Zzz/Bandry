@@ -25,7 +25,6 @@ const createConfig = () => {
       auditLogPath: path.join(workspaceDir, "model-audit.log"),
       sandboxAuditLogPath: path.join(workspaceDir, "sandbox-audit.log"),
       databasePath: path.join(workspaceDir, "bandry.db"),
-      dotenvPath: path.join(workspaceDir, ".env")
     },
     runtime: {
       inheritedEnv: {}
@@ -50,13 +49,10 @@ describe("middleware loader order", () => {
       "soul",
       "skill",
       "local_resource",
-      "resource_injection",
       "sandbox_binding",
       "dangling_tool_call",
       "summarization",
-      "title",
       "memory",
-      "resource_curation",
       "clarification"
     ]);
     expect(middlewares[middlewares.length - 1]?.name).toBe("clarification");
@@ -79,17 +75,34 @@ describe("middleware loader order", () => {
       "soul",
       "skill",
       "local_resource",
-      "resource_injection",
       "sandbox_binding",
       "dangling_tool_call",
       "summarization",
-      "title",
       "memory",
-      "resource_curation",
       "todolist",
       "subagent_limit",
       "clarification"
     ]);
+    expect(middlewares[middlewares.length - 1]?.name).toBe("clarification");
+  });
+
+  it("includes todolist and subagent_limit when requestParams.isPlanMode is true", () => {
+    const config = createConfig();
+    const sandboxService = new SandboxService(config);
+
+    const middlewares = buildMiddlewares({
+      config,
+      modelsFactory: {} as never,
+      sandboxService,
+      conversationStore: undefined,
+      mode: "default",
+      requestParams: {
+        isPlanMode: true
+      }
+    });
+
+    expect(middlewares.map((item) => item.name)).toContain("todolist");
+    expect(middlewares.map((item) => item.name)).toContain("subagent_limit");
     expect(middlewares[middlewares.length - 1]?.name).toBe("clarification");
   });
 

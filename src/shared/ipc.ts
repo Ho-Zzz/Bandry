@@ -16,6 +16,18 @@ export type ChatHistoryMessage = {
  */
 export type ChatMode = "default" | "thinking" | "subagents";
 
+export type ModelCapabilities = {
+  supportsThinking?: boolean;
+  supportsReasoningEffort?: boolean;
+  supportsVision?: boolean;
+  supportsToolCall?: boolean;
+};
+
+export type ThinkingConfig = {
+  extraBody?: Record<string, unknown>;
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+};
+
 export type ChatSendInput = {
   requestId?: string;
   conversationId?: string;
@@ -24,6 +36,10 @@ export type ChatSendInput = {
   modelProfileId?: string;
   /** Chat mode - defaults to 'default' if not specified */
   mode?: ChatMode;
+  /** Enable thinking mode for models that support it */
+  thinkingEnabled?: boolean;
+  /** Reasoning effort level */
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
 };
 
 export type ChatSendResult = {
@@ -32,6 +48,11 @@ export type ChatSendResult = {
   model: string;
   latencyMs: number;
   workspacePath?: string;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
 };
 
 export type ChatCancelInput = {
@@ -140,6 +161,8 @@ export type RuntimeConfigSummary = {
     provider: ModelProvider;
     model: string;
     enabled: boolean;
+    capabilities?: ModelCapabilities;
+    whenThinkingEnabled?: ThinkingConfig;
   }>;
   routing: Record<string, string>;
   tools: {
@@ -250,6 +273,8 @@ export type SettingsModelProfile = {
   enabled: boolean;
   temperature?: number;
   maxTokens?: number;
+  capabilities?: ModelCapabilities;
+  whenThinkingEnabled?: ThinkingConfig;
 };
 
 export type SettingsChannelType = "feishu";
@@ -335,6 +360,17 @@ export type SaveSettingsResult = {
   message: string;
 };
 
+export type ConfigStorageInfoResult = {
+  userConfigPath: string;
+  configDir: string;
+  notes: string;
+};
+
+export type OpenConfigDirResult = {
+  ok: boolean;
+  message?: string;
+};
+
 export type SandboxEntry = {
   name: string;
   virtualPath: string;
@@ -414,6 +450,9 @@ export type MessageInput = {
   content: string;
   status?: "pending" | "completed" | "error";
   trace?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 export type MessageResult = {
@@ -424,12 +463,18 @@ export type MessageResult = {
   status: "pending" | "completed" | "error";
   trace?: string;
   created_at: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 export type MessageUpdateInput = {
   content?: string;
   status?: "pending" | "completed" | "error";
   trace?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 // Memory types
@@ -626,3 +671,112 @@ export type CronHistoryInput = { jobId: string; limit?: number };
 export type CronHistoryResult = { records: CronRunRecord[] };
 
 export type CronRunEvent = { jobId: string; record: CronRunRecord };
+
+// User Files types
+export type UserFileRecord = {
+  id: string;
+  file_path: string;
+  size_bytes: number;
+  mime_type: string | null;
+  viking_uri: string | null;
+  viking_synced_at: number | null;
+  created_at: number;
+  updated_at: number;
+};
+
+export type FileEntry = {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  size?: number;
+  mimeType?: string;
+  createdAt?: number;
+  updatedAt?: number;
+};
+
+export type UserFilesCreateDirInput = {
+  dirPath: string;
+};
+
+export type UserFilesCreateDirResult = {
+  ok: boolean;
+};
+
+export type UserFilesSaveInput = {
+  filePath: string;
+  content: string;
+};
+
+export type UserFilesSaveResult = {
+  record: UserFileRecord;
+};
+
+export type UserFilesListInput = {
+  dirPath?: string;
+};
+
+export type UserFilesListResult = {
+  entries: FileEntry[];
+};
+
+export type UserFilesReadInput = {
+  filePath: string;
+};
+
+export type UserFilesReadResult = {
+  content: string;
+  mimeType: string;
+};
+
+export type UserFilesDeleteInput = {
+  filePath: string;
+  recursive?: boolean;
+};
+
+export type UserFilesDeleteResult = {
+  ok: boolean;
+};
+
+export type UserFilesRenameInput = {
+  oldPath: string;
+  newPath: string;
+};
+
+export type UserFilesRenameResult = {
+  ok: boolean;
+};
+
+export type UserFilesSaveConversationInput = {
+  conversationId: string;
+  targetPath: string;
+};
+
+export type UserFilesSaveConversationResult = {
+  record: UserFileRecord;
+};
+
+// Token statistics types
+export type ConversationTokenStatsInput = {
+  conversationId: string;
+};
+
+export type ConversationTokenStatsResult = {
+  conversationId: string;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  messageCount: number;
+};
+
+export type GlobalTokenStatsResult = {
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  conversationCount: number;
+  messageCount: number;
+  topConversations: Array<{
+    conversationId: string;
+    title?: string;
+    totalTokens: number;
+  }>;
+};

@@ -3,6 +3,7 @@ import type { ChatUpdateEvent } from "../../../../shared/ipc";
 import {
   isConversationLoading,
   normalizeClarificationInput,
+  resolveRequestSettingsFromTrace,
   resolvePendingClarificationFromUpdate
 } from "../use-copilot-chat";
 
@@ -43,5 +44,27 @@ describe("use-copilot-chat helpers", () => {
   it("normalizes clarification input before submission", () => {
     expect(normalizeClarificationInput("  继续执行  ")).toBe("继续执行");
     expect(normalizeClarificationInput("   ")).toBe("");
+  });
+
+  it("extracts request mode and thinking state from planning trace", () => {
+    const trace: ChatUpdateEvent[] = [
+      {
+        requestId: "req_2",
+        stage: "planning",
+        message: "Mode: default",
+        timestamp: 1
+      },
+      {
+        requestId: "req_2",
+        stage: "planning",
+        message: "Thinking enabled: false",
+        timestamp: 2
+      }
+    ];
+
+    expect(resolveRequestSettingsFromTrace(trace)).toEqual({
+      mode: "default",
+      thinkingEnabled: false
+    });
   });
 });

@@ -18,6 +18,9 @@ import type {
   CronRunNowInput,
   CronRunRecord,
   CronUpdateInput,
+  ConversationTokenStatsInput,
+  ConversationTokenStatsResult,
+  GlobalTokenStatsResult,
   MemoryAddResourceInput,
   MemoryAddResourceResult,
   MemoryDeleteResourceInput,
@@ -46,6 +49,8 @@ import type {
   ModelsSetDefaultInput,
   ModelsUpdateCredentialInput,
   RuntimeConfigSummary,
+  ConfigStorageInfoResult,
+  OpenConfigDirResult,
   SaveSettingsInput,
   SaveSettingsResult,
   SandboxExecInput,
@@ -70,7 +75,21 @@ import type {
   SkillCreateInput,
   SkillUpdateInput,
   SkillOperationResult,
-  SkillToggleInput
+  SkillToggleInput,
+  UserFilesCreateDirInput,
+  UserFilesCreateDirResult,
+  UserFilesSaveInput,
+  UserFilesSaveResult,
+  UserFilesListInput,
+  UserFilesListResult,
+  UserFilesReadInput,
+  UserFilesReadResult,
+  UserFilesDeleteInput,
+  UserFilesDeleteResult,
+  UserFilesRenameInput,
+  UserFilesRenameResult,
+  UserFilesSaveConversationInput,
+  UserFilesSaveConversationResult
 } from "../shared/ipc";
 
 const api = {
@@ -79,6 +98,8 @@ const api = {
   chatCancel: (input: ChatCancelInput): Promise<ChatCancelResult> => ipcRenderer.invoke("chat:cancel", input),
   startTask: (input: TaskStartInput): Promise<TaskStartResult> => ipcRenderer.invoke("task:start", input),
   getConfigSummary: (): Promise<RuntimeConfigSummary> => ipcRenderer.invoke("config:get-summary"),
+  getConfigStorageInfo: (): Promise<ConfigStorageInfoResult> => ipcRenderer.invoke("config:get-storage-info"),
+  openConfigDir: (): Promise<OpenConfigDirResult> => ipcRenderer.invoke("config:open-config-dir"),
   getSettingsState: (): Promise<GlobalSettingsState> => ipcRenderer.invoke("config:get-settings-state"),
   saveSettingsState: (input: SaveSettingsInput): Promise<SaveSettingsResult> =>
     ipcRenderer.invoke("config:save-settings-state", input),
@@ -123,6 +144,17 @@ const api = {
       ipcRenderer.removeListener("chat:delta", wrappedListener);
     };
   },
+  onConversationUpdate: (listener: (update: ConversationResult) => void): (() => void) => {
+    const wrappedListener = (_event: IpcRendererEvent, update: ConversationResult): void => {
+      listener(update);
+    };
+
+    ipcRenderer.on("conversation:update", wrappedListener);
+
+    return () => {
+      ipcRenderer.removeListener("conversation:update", wrappedListener);
+    };
+  },
   onTaskUpdate: (listener: (update: TaskUpdateEvent) => void): (() => void) => {
     const wrappedListener = (_event: IpcRendererEvent, update: TaskUpdateEvent): void => {
       listener(update);
@@ -164,6 +196,10 @@ const api = {
     ipcRenderer.invoke("conversation:update", id, input),
   conversationDelete: (id: string): Promise<boolean> =>
     ipcRenderer.invoke("conversation:delete", id),
+  conversationGetTokenStats: (input: ConversationTokenStatsInput): Promise<ConversationTokenStatsResult> =>
+    ipcRenderer.invoke("conversation:getTokenStats", input),
+  conversationGetGlobalTokenStats: (): Promise<GlobalTokenStatsResult> =>
+    ipcRenderer.invoke("conversation:getGlobalTokenStats"),
   // Message API
   messageCreate: (input: MessageInput): Promise<MessageResult> =>
     ipcRenderer.invoke("message:create", input),
@@ -216,7 +252,22 @@ const api = {
     return () => {
       ipcRenderer.removeListener("cron:run-event", wrappedListener);
     };
-  }
+  },
+  // User Files API
+  userFilesCreateDir: (input: UserFilesCreateDirInput): Promise<UserFilesCreateDirResult> =>
+    ipcRenderer.invoke("userFiles:createDir", input),
+  userFilesSave: (input: UserFilesSaveInput): Promise<UserFilesSaveResult> =>
+    ipcRenderer.invoke("userFiles:save", input),
+  userFilesList: (input: UserFilesListInput): Promise<UserFilesListResult> =>
+    ipcRenderer.invoke("userFiles:list", input),
+  userFilesRead: (input: UserFilesReadInput): Promise<UserFilesReadResult> =>
+    ipcRenderer.invoke("userFiles:read", input),
+  userFilesDelete: (input: UserFilesDeleteInput): Promise<UserFilesDeleteResult> =>
+    ipcRenderer.invoke("userFiles:delete", input),
+  userFilesRename: (input: UserFilesRenameInput): Promise<UserFilesRenameResult> =>
+    ipcRenderer.invoke("userFiles:rename", input),
+  userFilesSaveConversation: (input: UserFilesSaveConversationInput): Promise<UserFilesSaveConversationResult> =>
+    ipcRenderer.invoke("userFiles:saveConversation", input)
 };
 
 contextBridge.exposeInMainWorld("api", api);

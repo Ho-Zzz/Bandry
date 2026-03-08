@@ -213,7 +213,31 @@ export const applyLayer = (target: AppConfig, layer: ConfigLayer): void => {
         ...(profileLayer.model !== undefined ? { model: profileLayer.model } : {}),
         ...(profileLayer.enabled !== undefined ? { enabled: profileLayer.enabled } : {}),
         ...(profileLayer.temperature !== undefined ? { temperature: profileLayer.temperature } : {}),
-        ...(profileLayer.maxTokens !== undefined ? { maxTokens: profileLayer.maxTokens } : {})
+        ...(profileLayer.maxTokens !== undefined ? { maxTokens: profileLayer.maxTokens } : {}),
+        ...(profileLayer.capabilities !== undefined
+          ? {
+              capabilities: {
+                ...(existing.capabilities ?? {}),
+                ...profileLayer.capabilities
+              }
+            }
+          : {}),
+        ...(profileLayer.whenThinkingEnabled !== undefined
+          ? {
+              whenThinkingEnabled: {
+                ...(existing.whenThinkingEnabled ?? {}),
+                ...profileLayer.whenThinkingEnabled,
+                ...(profileLayer.whenThinkingEnabled?.extraBody !== undefined
+                  ? {
+                      extraBody: {
+                        ...(existing.whenThinkingEnabled?.extraBody ?? {}),
+                        ...profileLayer.whenThinkingEnabled.extraBody
+                      }
+                    }
+                  : {})
+              }
+            }
+          : {})
       });
     }
     target.modelProfiles = Array.from(mergedById.values());
