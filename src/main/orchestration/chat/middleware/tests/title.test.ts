@@ -191,4 +191,118 @@ describe("TitleMiddleware", () => {
       title: "今天天气怎么样"
     });
   });
+
+  it("prefers non-reasoner routing target for title generation", async () => {
+    const middleware = new TitleMiddleware();
+    const config = createConfig();
+
+    config.modelProfiles.push({
+      id: "profile_deepseek_reasoner",
+      name: "DeepSeek Reasoner",
+      provider: "deepseek",
+      model: "deepseek-reasoner",
+      enabled: true
+    });
+    config.routing.assignments["chat.default"] = "profile_openai_default";
+    config.routing.assignments["lead.planner"] = "profile_openai_default";
+    config.routing.assignments["lead.synthesizer"] = "profile_deepseek_reasoner";
+
+    const modelsFactory = {
+      generateText: vi.fn(async () => ({
+        provider: "openai" as const,
+        model: "gpt-4.1-mini",
+        text: "Monthly Data Trend Review",
+        latencyMs: 10
+      }))
+    };
+
+    const conversationStore = {
+      getConversation: vi.fn(() => ({ id: "conv-4", title: undefined })),
+      updateConversation: vi.fn()
+    };
+
+    const ctx: MiddlewareContext = {
+      sessionId: "s4",
+      taskId: "t4",
+      conversationId: "conv-4",
+      workspacePath: "/tmp/workspace",
+      messages: [{ role: "user", content: "帮我总结最近三个月的核心指标变化并给个复盘标题" }],
+      tools: [],
+      metadata: {},
+      state: "after_agent",
+      finalResponse:
+        "好的，我整理了最近三个月指标变化、关键拐点、异常渠道和后续行动建议，并给出适合团队复盘的标题候选。".repeat(2),
+      runtime: {
+        config,
+        modelsFactory: modelsFactory as never,
+        sandboxService: {} as never,
+        conversationStore: conversationStore as never,
+        onUpdate: vi.fn()
+      }
+    };
+
+    await middleware.afterAgent!(ctx);
+    await Promise.resolve();
+
+    expect(modelsFactory.generateText).toHaveBeenCalledTimes(1);
+    expect(modelsFactory.generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-4.1-mini"
+      })
+    );
+  });
+
+  it("skips model title generation when only reasoner routes are available", async () => {
+    const middleware = new TitleMiddleware();
+    const config = createConfig();
+
+    config.modelProfiles = [
+      {
+        id: "profile_deepseek_reasoner",
+        name: "DeepSeek Reasoner",
+        provider: "deepseek",
+        model: "deepseek-reasoner",
+        enabled: true
+      }
+    ];
+    config.providers.deepseek.apiKey = "sk-deepseek-valid-key-1234567890";
+    config.routing.assignments["chat.default"] = "profile_deepseek_reasoner";
+    config.routing.assignments["lead.planner"] = "profile_deepseek_reasoner";
+    config.routing.assignments["lead.synthesizer"] = "profile_deepseek_reasoner";
+    config.routing.assignments["memory.fact_extractor"] = "profile_deepseek_reasoner";
+
+    const modelsFactory = {
+      generateText: vi.fn()
+    };
+
+    const conversationStore = {
+      getConversation: vi.fn(() => ({ id: "conv-5", title: undefined })),
+      updateConversation: vi.fn()
+    };
+
+    const ctx: MiddlewareContext = {
+      sessionId: "s5",
+      taskId: "t5",
+      conversationId: "conv-5",
+      workspacePath: "/tmp/workspace",
+      messages: [{ role: "user", content: "请帮我总结这次发布的风险和回滚策略" }],
+      tools: [],
+      metadata: {},
+      state: "after_agent",
+      finalResponse: "已总结主要风险、监控点和回滚步骤。",
+      runtime: {
+        config,
+        modelsFactory: modelsFactory as never,
+        sandboxService: {} as never,
+        conversationStore: conversationStore as never,
+        onUpdate: vi.fn()
+      }
+    };
+
+    await middleware.afterAgent!(ctx);
+    await Promise.resolve();
+
+    expect(modelsFactory.generateText).not.toHaveBeenCalled();
+    expect(conversationStore.updateConversation).toHaveBeenCalledTimes(1);
+  });
 });

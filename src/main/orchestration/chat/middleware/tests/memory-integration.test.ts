@@ -86,6 +86,35 @@ describe("MemoryMiddleware integration", () => {
     expect(stored.messages).toHaveLength(2);
   });
 
+  it("skips duplicate retrieval when memoryStepStarted is already set", async () => {
+    const provider = createMockProvider([
+      {
+        source: "viking://user/memories/pref.md",
+        content: "User prefers TypeScript",
+        layer: "L1",
+        relevance: 0.9
+      }
+    ]);
+    const middleware = new MemoryMiddleware(provider);
+    const onUpdate = vi.fn();
+    const ctx = createCtx({
+      metadata: {
+        memoryStepStarted: true
+      },
+      runtime: {
+        config: {} as AppConfig,
+        modelsFactory: {} as ModelsFactory,
+        sandboxService: {} as SandboxService,
+        onUpdate
+      }
+    });
+
+    const result = await middleware.beforeLLM!(ctx);
+    expect(result).toBe(ctx);
+    expect(provider.injectContext).not.toHaveBeenCalled();
+    expect(onUpdate).not.toHaveBeenCalledWith("planning", "回忆相关上下文");
+  });
+
   it("gracefully handles injectContext errors", async () => {
     const provider = createMockProvider();
     provider.injectContext.mockRejectedValueOnce(new Error("network down"));

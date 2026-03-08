@@ -82,6 +82,30 @@ const shouldSkipModelTitleGeneration = (
   return userMessage.length <= 8 && assistantReply.length < 48;
 };
 
+const REASONER_MODEL_PATTERN = /(reasoner|reasoning|r1)/i;
+
+const isReasonerModel = (model: string): boolean => REASONER_MODEL_PATTERN.test(model);
+
+const resolveTitleTarget = (runtime: NonNullable<MiddlewareContext["runtime"]>) => {
+  const roleCandidates = ["chat.default", "lead.planner", "lead.synthesizer"] as const;
+  const resolvedTargets: ReturnType<typeof resolveRuntimeTarget>[] = [];
+
+  for (const role of roleCandidates) {
+    try {
+      resolvedTargets.push(resolveRuntimeTarget(runtime.config, role));
+    } catch {
+      // Ignore invalid role binding and continue fallback chain.
+    }
+  }
+
+  if (resolvedTargets.length === 0) {
+    return null;
+  }
+
+  const nonReasoner = resolvedTargets.find((target) => !isReasonerModel(target.model));
+  return nonReasoner ?? null;
+};
+
 export class TitleMiddleware implements Middleware {
   name = "title";
 
@@ -153,7 +177,10 @@ export class TitleMiddleware implements Middleware {
     }
     let title = "";
     try {
-      const target = resolveRuntimeTarget(runtime.config, "lead.synthesizer");
+      const target = resolveTitleTarget(runtime);
+      if (!target) {
+        return;
+      }
 
       // Create a new AbortController for title generation
       // This ensures title generation won't be affected by the main request's abort signal
@@ -164,8 +191,9 @@ export class TitleMiddleware implements Middleware {
         const result = await runtime.modelsFactory.generateText({
           runtimeConfig: target.runtimeConfig,
           model: target.model,
-          temperature: 0.3,
-          maxTokens: 60,
+          temperature: 0,
+          maxTokens: 120,
+          phase: "title",
           messages: [
             {
               role: "system",

@@ -338,5 +338,7 @@ describe("buildFinalSystemPrompt", () => {
     expect(prompt).toContain("Bandry");
     expect(prompt).toContain("concise");
     expect(prompt).toContain("observations");
+    expect(prompt).toContain("Only reference files/URIs");
+    expect(prompt).toContain("Do not fabricate conversation summaries");
   });
 });

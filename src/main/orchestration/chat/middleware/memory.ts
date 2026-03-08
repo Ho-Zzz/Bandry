@@ -21,9 +21,13 @@ export class MemoryMiddleware implements Middleware {
       const query = this.getLatestUserQuery(ctx);
       const memoryStepStarted = ctx.metadata.memoryStepStarted === true;
 
-      if (!memoryStepStarted) {
-        ctx.runtime?.onUpdate?.("planning", "回忆相关上下文");
+      // Run memory retrieval at most once per request lifecycle.
+      // Planner/final model stages share middleware context via metadata.
+      if (memoryStepStarted) {
+        return ctx;
       }
+
+      ctx.runtime?.onUpdate?.("planning", "回忆相关上下文");
 
       // Add timeout protection to prevent blocking
       const timeoutMs = 3000; // 3 second timeout
