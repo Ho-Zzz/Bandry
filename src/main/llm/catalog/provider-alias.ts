@@ -43,6 +43,10 @@ const ALIASES: Array<{
   {
     canonical: "together",
     aliases: ["together", "togetherai"]
+  },
+  {
+    canonical: "minimax",
+    aliases: ["minimax", "hailuo"]
   }
 ];
 
