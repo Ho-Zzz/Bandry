@@ -38,6 +38,7 @@ export const ModelStudio = () => {
   const [connectPreferredProvider, setConnectPreferredProvider] = useState<ModelProvider | undefined>(undefined);
   const [credentialEditor, setCredentialEditor] = useState<CredentialEditorState | null>(null);
   const [savingCredential, setSavingCredential] = useState(false);
+  const [removingProvider, setRemovingProvider] = useState<ModelProvider | null>(null);
 
   const loadConnected = useCallback(async () => {
     const [connectedResult, settings] = await Promise.all([
@@ -91,6 +92,16 @@ export const ModelStudio = () => {
     });
   }, [connectedGroups]);
 
+  const catalogByProviderModel = useMemo(() => {
+    const map = new Map<string, NonNullable<ModelsCatalogListResult["providers"]>[number]["models"][number]>();
+    for (const provider of catalog?.providers ?? []) {
+      for (const model of provider.models) {
+        map.set(`${provider.id}:${model.id}`, model);
+      }
+    }
+    return map;
+  }, [catalog]);
+
   const providerCredentials = useMemo(() => {
     if (!settingsState) {
       return undefined;
@@ -131,6 +142,36 @@ export const ModelStudio = () => {
       await loadConnected();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to remove model profile");
+    }
+  };
+
+  const handleRemoveProvider = async (provider: ModelProvider) => {
+    const models = connectedGroups.get(provider) ?? [];
+    const confirmed = window.confirm(
+      `Delete provider ${providerLabel(provider)}? This will remove ${models.length} connected model profile(s).`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setRemovingProvider(provider);
+      setMessage("");
+
+      for (const model of models) {
+        await window.api.modelsRemove({ profileId: model.profileId });
+      }
+
+      await window.api.modelsUpdateProviderCredential({
+        provider,
+        apiKey: ""
+      });
+
+      await loadConnected();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to delete provider");
+    } finally {
+      setRemovingProvider(null);
     }
   };
 
@@ -264,6 +305,15 @@ export const ModelStudio = () => {
                         <Cpu size={12} />
                         Add model
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleRemoveProvider(provider)}
+                        disabled={removingProvider === provider}
+                        className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-700 disabled:opacity-60"
+                      >
+                        <Trash2 size={12} />
+                        Delete provider
+                      </button>
                     </div>
                   </div>
 
@@ -273,35 +323,48 @@ export const ModelStudio = () => {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                      {models.map((item) => (
-                        <div key={item.profileId} className="rounded-lg border border-slate-200 bg-white px-3 py-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="text-sm font-medium text-slate-900">{item.profileName}</div>
-                              <div className="text-xs text-slate-500">
-                                {item.providerName} · {item.provider}/{item.model}
+                      {models.map((item) => {
+                        const catalogModel = catalogByProviderModel.get(`${item.provider}:${item.model}`);
+                        return (
+                          <div key={item.profileId} className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-medium text-slate-900">{item.profileName}</div>
+                                <div className="text-xs text-slate-500">
+                                  {item.providerName} · {item.provider}/{item.model}
+                                </div>
+                                <div className="mt-1 text-[11px] text-slate-500">
+                                  {catalogModel
+                                    ? `input: ${catalogModel.capabilities.inputModalities.join(", ")} · output: ${catalogModel.capabilities.outputModalities.join(", ")}`
+                                    : "capabilities unknown"}
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap justify-end gap-1">
+                                {!item.providerConfigured ? (
+                                  <span className="rounded bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                                    no key
+                                  </span>
+                                ) : null}
+                                {catalogModel?.capabilities.isEmbeddingModel ? (
+                                  <span className="rounded bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                                    embedding
+                                  </span>
+                                ) : null}
                               </div>
                             </div>
-                            <div className="flex flex-wrap justify-end gap-1">
-                              {!item.providerConfigured ? (
-                                <span className="rounded bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
-                                  no key
-                                </span>
-                              ) : null}
+                            <div className="mt-3 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleRemove(item.profileId)}
+                                className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-2.5 py-1 text-xs text-rose-700"
+                              >
+                                <Trash2 size={12} />
+                                Remove
+                              </button>
                             </div>
                           </div>
-                          <div className="mt-3 flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleRemove(item.profileId)}
-                              className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-2.5 py-1 text-xs text-rose-700"
-                            >
-                              <Trash2 size={12} />
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

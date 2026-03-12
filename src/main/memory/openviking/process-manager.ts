@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import type { AppConfig } from "../../config";
+import { runtimeLogger } from "../../logging/runtime-logger";
 import { writeOpenVikingConfig } from "./config-builder";
 import { OpenVikingHttpClient } from "./http-client";
+import { resolveOpenVikingCommand } from "./python-resolver";
 import type { OpenVikingLaunchResult, OpenVikingRuntime } from "./types";
 
 const sleep = async (ms: number): Promise<void> => {
@@ -14,13 +17,29 @@ const sleep = async (ms: number): Promise<void> => {
   });
 };
 
+export type CrashEvent = {
+  exitCode: number | null;
+  signal: string | null;
+  willRestart: boolean;
+};
+
 export class OpenVikingProcessManager {
   private child?: ChildProcessWithoutNullStreams;
   private runtime?: OpenVikingRuntime;
   private startPromise: Promise<OpenVikingLaunchResult> | null = null;
   private stderrBuffer: string[] = [];
+  private restartAttempts = 0;
+  private onCrashCallback?: (event: CrashEvent) => void;
+
+  private static readonly MAX_RESTART_ATTEMPTS = 3;
+  private static readonly RESTART_DELAY_MS = 2_000;
+  private static readonly RESTART_ATTEMPTS_RESET_MS = 120_000;
 
   constructor(private config: AppConfig) {}
+
+  onCrash(callback: (event: CrashEvent) => void): void {
+    this.onCrashCallback = callback;
+  }
 
   getRuntime(): OpenVikingRuntime | undefined {
     return this.runtime;
@@ -73,7 +92,143 @@ export class OpenVikingProcessManager {
     }
   }
 
+  private findSitePackagesDir(): string | null {
+    const searchRoots = [
+      path.join(this.config.paths.projectRoot, "python-env", "venv", "lib"),
+      path.join(this.config.paths.resourcesDir, "python-env", "venv", "lib")
+    ];
+
+    for (const libDir of searchRoots) {
+      try {
+        const entries = fsSync.readdirSync(libDir);
+        const pythonDir = entries.find((e) => e.startsWith("python3"));
+        if (!pythonDir) continue;
+
+        const sitePackages = path.join(libDir, pythonDir, "site-packages");
+        if (fsSync.existsSync(path.join(sitePackages, "openviking"))) {
+          return sitePackages;
+        }
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  private patchAgfsTimeout(sitePackages: string): void {
+    const agfsManagerPath = path.join(sitePackages, "openviking", "agfs_manager.py");
+    try {
+      let content = fsSync.readFileSync(agfsManagerPath, "utf8");
+      const original = "def _wait_for_ready(self, timeout: float = 5.0)";
+      const patched  = "def _wait_for_ready(self, timeout: float = 30.0)";
+
+      if (content.includes(patched)) {
+        return;
+      }
+
+      if (content.includes(original)) {
+        content = content.replace(original, patched);
+        fsSync.writeFileSync(agfsManagerPath, content, "utf8");
+        runtimeLogger.info({
+          module: "openviking",
+          phase: "prepare_env",
+          msg: "Patched AGFS timeout",
+          extra: { from: "5s", to: "30s" },
+        });
+      }
+    } catch (error) {
+      runtimeLogger.warn({
+        module: "openviking",
+        phase: "prepare_env",
+        msg: "Could not patch AGFS timeout",
+        extra: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private warmUpAgfsBinary(sitePackages: string): void {
+    const agfsBinary = path.join(sitePackages, "openviking", "bin", "agfs-server");
+    try {
+      fsSync.accessSync(agfsBinary, fsSync.constants.X_OK);
+    } catch {
+      return;
+    }
+
+    runtimeLogger.info({
+      module: "openviking",
+      phase: "prepare_env",
+      msg: "Warming up AGFS binary (macOS Gatekeeper may take a moment)",
+    });
+    try {
+      execFileSync(agfsBinary, ["--help"], { stdio: "pipe", timeout: 60_000 });
+      runtimeLogger.info({
+        module: "openviking",
+        phase: "prepare_env",
+        msg: "AGFS binary warm-up done",
+      });
+    } catch {
+      runtimeLogger.warn({
+        module: "openviking",
+        phase: "prepare_env",
+        msg: "AGFS binary warm-up failed (non-fatal)",
+      });
+    }
+  }
+
+  private prepareEnvironment(): void {
+    const sitePackages = this.findSitePackagesDir();
+    if (!sitePackages) {
+      return;
+    }
+
+    this.patchAgfsTimeout(sitePackages);
+    this.warmUpAgfsBinary(sitePackages);
+  }
+
+  /**
+   * Remove stale LevelDB LOCK files left behind by a previous OpenViking
+   * process that exited without cleanup. Safe to call because we only start
+   * one OpenViking child at a time and `this.child` is already confirmed dead
+   * or absent before reaching here.
+   */
+  private removeStaleLockFiles(dataDir: string): void {
+    const vectordbDir = path.join(dataDir, "vectordb");
+    try {
+      if (!fsSync.existsSync(vectordbDir)) return;
+
+      const collections = fsSync.readdirSync(vectordbDir);
+      for (const collection of collections) {
+        const lockPath = path.join(vectordbDir, collection, "store", "LOCK");
+        try {
+          if (!fsSync.existsSync(lockPath)) continue;
+          fsSync.unlinkSync(lockPath);
+          runtimeLogger.info({
+            module: "openviking",
+            phase: "prepare_env",
+            msg: "Removed stale lock",
+            extra: { lockPath },
+          });
+        } catch {
+          // Best-effort: if we can't remove it, let OpenViking report the error
+        }
+      }
+    } catch (error) {
+      runtimeLogger.warn({
+        module: "openviking",
+        phase: "prepare_env",
+        msg: "Could not clean stale locks",
+        extra: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
   private async doStart(): Promise<OpenVikingLaunchResult> {
+    this.prepareEnvironment();
+
     const host = this.config.openviking.host;
     const port = await this.findAvailablePort(this.config.openviking.port, host);
     const agfsPort = await this.findAvailablePort(Math.max(1_025, port - 100), host);
@@ -82,6 +237,8 @@ export class OpenVikingProcessManager {
     const runtimeRoot = path.join(this.config.paths.resourcesDir, "openviking");
     const dataDir = path.join(runtimeRoot, "data");
     const configPath = path.join(runtimeRoot, "ov.conf");
+
+    this.removeStaleLockFiles(dataDir);
 
     await fs.mkdir(dataDir, { recursive: true });
     await writeOpenVikingConfig(configPath, {
@@ -93,8 +250,15 @@ export class OpenVikingProcessManager {
       dataDir
     });
 
+    const resolved = resolveOpenVikingCommand(
+      this.config.paths.projectRoot,
+      this.config.paths.resourcesDir,
+      this.config.openviking.serverCommand,
+      this.config.openviking.serverArgs
+    );
+
     const args = [
-      ...this.config.openviking.serverArgs,
+      ...resolved.args,
       "--config",
       configPath,
       "--host",
@@ -103,19 +267,30 @@ export class OpenVikingProcessManager {
       String(port)
     ];
 
-    const child = spawn(this.config.openviking.serverCommand, args, {
+    const spawnEnv: Record<string, string> = {
+      ...this.config.runtime.inheritedEnv,
+      OPENVIKING_CONFIG_FILE: configPath,
+      NO_PROXY: "localhost,127.0.0.1,::1",
+      no_proxy: "localhost,127.0.0.1,::1"
+    };
+    for (const key of ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"]) {
+      delete spawnEnv[key];
+    }
+
+    const child = spawn(resolved.command, args, {
       cwd: runtimeRoot,
       stdio: ["pipe", "pipe", "pipe"],
-      env: {
-        ...this.config.runtime.inheritedEnv,
-        OPENVIKING_CONFIG_FILE: configPath
-      }
+      env: spawnEnv
     });
 
     child.stdout.on("data", (chunk: Buffer) => {
       const line = chunk.toString("utf8").trim();
       if (line) {
-        console.log(`[OpenViking] ${line}`);
+        runtimeLogger.info({
+          module: "openviking",
+          phase: "child_stdout",
+          msg: line,
+        });
       }
     });
 
@@ -129,7 +304,11 @@ export class OpenVikingProcessManager {
       if (this.stderrBuffer.length > 60) {
         this.stderrBuffer.shift();
       }
-      console.warn(`[OpenViking] ${line}`);
+      runtimeLogger.warn({
+        module: "openviking",
+        phase: "child_stderr",
+        msg: line,
+      });
     });
 
     this.child = child;
@@ -157,7 +336,81 @@ export class OpenVikingProcessManager {
         });
       })
     ]);
+
+    this.restartAttempts = 0;
+    this.attachCrashWatcher(child);
     return { runtime: this.runtime, child };
+  }
+
+  private attachCrashWatcher(child: ChildProcessWithoutNullStreams): void {
+    const startedAt = Date.now();
+
+    child.once("exit", (code, signal) => {
+      if (this.child !== child) return;
+
+      this.child = undefined;
+      this.runtime = undefined;
+
+      if (Date.now() - startedAt > OpenVikingProcessManager.RESTART_ATTEMPTS_RESET_MS) {
+        this.restartAttempts = 0;
+      }
+
+      const canRestart = this.restartAttempts < OpenVikingProcessManager.MAX_RESTART_ATTEMPTS;
+      this.restartAttempts += 1;
+
+      runtimeLogger.warn({
+        module: "openviking",
+        phase: "crash",
+        msg: "Process exited unexpectedly",
+        extra: {
+          exitCode: code,
+          signal: signal?.toString() ?? null,
+          restartAttempt: this.restartAttempts,
+          maxRestartAttempts: OpenVikingProcessManager.MAX_RESTART_ATTEMPTS,
+        },
+      });
+
+      if (!canRestart) {
+        runtimeLogger.error({
+          module: "openviking",
+          phase: "crash",
+          msg: "Max restart attempts exhausted",
+        });
+        this.onCrashCallback?.({ exitCode: code, signal: signal?.toString() ?? null, willRestart: false });
+        return;
+      }
+
+      const delay = OpenVikingProcessManager.RESTART_DELAY_MS * this.restartAttempts;
+      runtimeLogger.info({
+        module: "openviking",
+        phase: "restart",
+        msg: "Scheduling restart",
+        extra: { delayMs: delay },
+      });
+
+      setTimeout(() => {
+        void this.start()
+          .then(() => {
+            runtimeLogger.info({
+              module: "openviking",
+              phase: "restart",
+              msg: "Auto-restart succeeded",
+            });
+            this.onCrashCallback?.({ exitCode: code, signal: signal?.toString() ?? null, willRestart: true });
+          })
+          .catch((err) => {
+            runtimeLogger.error({
+              module: "openviking",
+              phase: "restart",
+              msg: "Auto-restart failed",
+              extra: {
+                error: err instanceof Error ? err.message : String(err),
+              },
+            });
+            this.onCrashCallback?.({ exitCode: code, signal: signal?.toString() ?? null, willRestart: false });
+          });
+      }, delay);
+    });
   }
 
   private async waitForHealthy(child: ChildProcessWithoutNullStreams, baseUrl: string): Promise<void> {

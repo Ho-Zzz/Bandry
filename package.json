@@ -7,20 +7,74 @@
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
-    "dev": "concurrently -k \"pnpm dev:renderer\" \"pnpm dev:main\" \"pnpm dev:electron\"",
+    "dev": "cross-env BANDRY_LOG_COLOR=1 FORCE_COLOR=1 bash scripts/ensure-openviking.sh && cross-env BANDRY_LOG_COLOR=1 FORCE_COLOR=1 concurrently -k \"pnpm dev:renderer\" \"pnpm dev:main\" \"pnpm dev:electron\"",
+    "ov:upgrade": "bash scripts/upgrade-openviking.sh",
     "dev:renderer": "vite",
-    "dev:main": "tsup --watch",
-    "dev:electron": "wait-on tcp:5173 file:dist-electron/main.cjs && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "dev:main": "cross-env BANDRY_LOG_COLOR=1 FORCE_COLOR=1 tsup --watch",
+    "dev:electron": "wait-on tcp:5173 file:dist-electron/main.cjs && cross-env BANDRY_LOG_COLOR=1 FORCE_COLOR=1 VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
     "build": "pnpm build:renderer && pnpm build:main",
     "build:renderer": "vite build",
     "build:main": "tsup",
+    "package": "pnpm build && electron-builder",
+    "package:dir": "pnpm build && electron-builder --dir",
     "preview": "vite preview",
     "test": "vitest run",
     "test:core": "vitest run",
     "test:experimental": "vitest run --config vitest.experimental.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
-    "clean": "rimraf dist dist-electron"
+    "gateway": "tsup && node dist-electron/gateway.cjs",
+    "dev:gateway": "concurrently -k \"tsup --watch\" \"wait-on file:dist-electron/gateway.cjs && node dist-electron/gateway.cjs\"",
+    "clean": "rimraf dist dist-electron release"
+  },
+  "build": {
+    "appId": "com.bandry.app",
+    "productName": "Bandry",
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.30",
@@ -28,20 +82,22 @@
     "@assistant-ui/react-markdown": "^0.12.3",
     "@heroui/react": "^2.8.9",
     "@heroui/theme": "^2.4.26",
+    "@larksuiteoapi/node-sdk": "^1.59.0",
     "@tailwindcss/vite": "^4.2.0",
     "ai": "^6.0.97",
     "autoprefixer": "^10.4.24",
     "better-sqlite3": "^12.6.2",
     "clsx": "^2.1.1",
-    "dotenv": "^17.3.1",
     "framer-motion": "^12.34.2",
     "lucide-react": "^0.575.0",
+    "node-cron": "^4.2.1",
     "p-queue": "^9.1.0",
     "p-retry": "^7.1.1",
     "pino": "^10.3.1",
     "postcss": "^8.5.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^7.13.0",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.0",
@@ -60,6 +116,7 @@
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "electron": "^35.0.0",
+    "electron-builder": "^26.8.1",
     "eslint": "^9.20.1",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.18",

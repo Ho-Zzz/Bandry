@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type {
   ChatClarificationOption,
   ChatHistoryMessage,
+  ChatMode,
   ChatUpdateEvent,
   MessageResult
 } from "../../../shared/ipc";
@@ -24,6 +25,11 @@ export type Message = {
   timestamp: number;
   trace?: ChatUpdateEvent[];
   requestId?: string;
+  mode?: ChatMode;
+  thinkingEnabled?: boolean;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 export type PendingClarification = {
@@ -35,6 +41,13 @@ export type PendingClarification = {
 
 type UseCopilotChatOptions = {
   conversationId?: string;
+  mode?: ChatMode;
+  thinkingEnabled?: boolean;
+};
+
+export type RequestSettings = {
+  mode?: ChatMode;
+  thinkingEnabled?: boolean;
 };
 
 const makeRequestId = (): string => {
@@ -84,15 +97,128 @@ export const resolvePendingClarificationFromUpdate = (
 
 export const normalizeClarificationInput = (value: string): string => value.trim();
 
+export const resolveFinalAssistantContent = (
+  streamedContent: string | undefined,
+  resultReply: string
+): string => {
+  if (resultReply.trim().length > 0) {
+    return resultReply;
+  }
+  return streamedContent ?? "";
+};
+
+export const mergeAssistantDelta = (
+  currentContent: string,
+  delta: string
+): string => {
+  if (!delta) {
+    return currentContent;
+  }
+  if (!currentContent) {
+    return delta;
+  }
+  if (currentContent.endsWith(delta)) {
+    return currentContent;
+  }
+
+  // Deduplicate retransmitted prefixes by finding the largest overlap
+  // between current tail and new delta head.
+  const maxOverlap = Math.min(currentContent.length, delta.length);
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    const currentSuffix = currentContent.slice(-overlap);
+    const deltaPrefix = delta.slice(0, overlap);
+    if (currentSuffix === deltaPrefix) {
+      return `${currentContent}${delta.slice(overlap)}`;
+    }
+  }
+
+  return `${currentContent}${delta}`;
+};
+
+const parseModeFromPlanningTrace = (message: string): ChatMode | undefined => {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized.startsWith("mode:")) {
+    return undefined;
+  }
+
+  const value = normalized.slice("mode:".length).trim();
+  if (value === "default" || value === "thinking" || value === "subagents") {
+    return value;
+  }
+
+  return undefined;
+};
+
+const parseThinkingEnabledFromPlanningTrace = (message: string): boolean | undefined => {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized.startsWith("thinking enabled:")) {
+    return undefined;
+  }
+
+  const value = normalized.slice("thinking enabled:".length).trim();
+  if (value === "true") {
+    return true;
+  }
+
+  if (value === "false") {
+    return false;
+  }
+
+  return undefined;
+};
+
+export const resolveRequestSettingsFromTrace = (trace?: ChatUpdateEvent[]): RequestSettings => {
+  if (!trace || trace.length === 0) {
+    return {};
+  }
+
+  let mode: ChatMode | undefined;
+  let thinkingEnabled: boolean | undefined;
+
+  for (const event of trace) {
+    if (event.stage !== "planning") {
+      continue;
+    }
+
+    mode ??= parseModeFromPlanningTrace(event.message);
+    if (thinkingEnabled === undefined) {
+      thinkingEnabled = parseThinkingEnabledFromPlanningTrace(event.message);
+    }
+
+    if (mode !== undefined && thinkingEnabled !== undefined) {
+      break;
+    }
+  }
+
+  return {
+    ...(mode ? { mode } : {}),
+    ...(thinkingEnabled !== undefined ? { thinkingEnabled } : {})
+  };
+};
+
+/**
+ * Module-level map storing workspace paths per conversation.
+ * Persists across re-renders but not across page reloads.
+ */
+const workspaceByConversation = new Map<string, string>();
+
+export const getConversationWorkspacePath = (conversationId: string): string | undefined => {
+  return workspaceByConversation.get(conversationId);
+};
+
 export function useCopilotChat(options: UseCopilotChatOptions = {}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>(options.conversationId);
+  const [activeModelProfileId, setActiveModelProfileId] = useState<string | undefined>(undefined);
   const [activeRequestByConversation, setActiveRequestByConversation] = useState<Record<string, string>>({});
   const [pendingClarification, setPendingClarification] = useState<PendingClarification | null>(null);
+  const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const traceByRequestIdRef = useRef<Record<string, ChatUpdateEvent[]>>({});
   const requestToConversationRef = useRef<Record<string, string>>({});
+  const loadVersionRef = useRef(0);
   const messagesRef = useRef<Message[]>([]);
   const conversationIdRef = useRef<string | undefined>(options.conversationId);
+  const activeRequestByConversationRef = useRef<Record<string, string>>({});
   const { upsertConversation } = useConversationStore();
 
   const isLoading = useMemo(() => {
@@ -106,6 +232,10 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
   useEffect(() => {
     conversationIdRef.current = conversationId;
   }, [conversationId]);
+
+  useEffect(() => {
+    activeRequestByConversationRef.current = activeRequestByConversation;
+  }, [activeRequestByConversation]);
 
   const setConversationActiveRequest = useCallback((convId: string, requestId: string | null) => {
     setActiveRequestByConversation((previous) => {
@@ -129,6 +259,16 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
     });
   }, []);
 
+  const getDefaultModelProfileId = useCallback(async (): Promise<string | undefined> => {
+    try {
+      const summary = await window.api.getConfigSummary();
+      const profileId = summary.routing["chat.default"]?.trim();
+      return profileId || undefined;
+    } catch {
+      return undefined;
+    }
+  }, []);
+
   const clearConversationRequestIfMatch = useCallback((convId: string, requestId: string) => {
     setActiveRequestByConversation((previous) => {
       if (previous[convId] !== requestId) {
@@ -140,11 +280,12 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
     });
   }, []);
 
-  const loadMessages = useCallback(async (convId: string) => {
+  const loadMessages = useCallback(async (convId: string, version: number) => {
     try {
       const dbMessages = await window.api.messageList(convId);
       const loadedMessages: Message[] = dbMessages.map((m: MessageResult) => {
         const trace = m.trace ? (JSON.parse(m.trace) as ChatUpdateEvent[]) : undefined;
+        const requestSettings = resolveRequestSettingsFromTrace(trace);
 
         return {
           id: m.id,
@@ -153,40 +294,148 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           status: m.status,
           timestamp: m.created_at,
           trace,
-          requestId: getRequestIdFromTrace(trace)
+          requestId: getRequestIdFromTrace(trace),
+          mode: requestSettings.mode,
+          thinkingEnabled: requestSettings.thinkingEnabled,
+          prompt_tokens: m.prompt_tokens,
+          completion_tokens: m.completion_tokens,
+          total_tokens: m.total_tokens
         };
       });
 
       const traces: Record<string, ChatUpdateEvent[]> = {};
+      const activeRequests: Record<string, string> = {};
+
       for (const message of loadedMessages) {
         if (message.requestId && message.trace) {
           traces[message.requestId] = message.trace;
           requestToConversationRef.current[message.requestId] = convId;
         }
+
+        // Track active requests for this conversation
+        if (message.role === "assistant" && message.status === "pending" && message.requestId) {
+          activeRequests[convId] = message.requestId;
+        }
+      }
+
+      if (loadVersionRef.current !== version) {
+        return;
       }
 
       traceByRequestIdRef.current = traces;
       setMessages(loadedMessages);
+
+      // Restore active request state
+      if (Object.keys(activeRequests).length > 0) {
+        setActiveRequestByConversation((prev) => ({
+          ...prev,
+          ...activeRequests
+        }));
+      }
     } catch (error) {
+      if (loadVersionRef.current !== version) {
+        return;
+      }
       console.error("Failed to load messages:", error);
     }
   }, []);
 
   // Load existing messages when conversationId changes
   useEffect(() => {
+    void (async () => {
+      const defaultProfileId = await getDefaultModelProfileId();
+      setActiveModelProfileId(defaultProfileId);
+    })();
+  }, [getDefaultModelProfileId]);
+
+  useEffect(() => {
+    loadVersionRef.current += 1;
+    const currentVersion = loadVersionRef.current;
+
     if (options.conversationId) {
       setConversationId(options.conversationId);
       setMessages([]);
       setPendingClarification(null);
       traceByRequestIdRef.current = {};
-      void loadMessages(options.conversationId);
+
+      // Restore workspace path: prefer in-memory cache, fall back to DB
+      const cachedWs = workspaceByConversation.get(options.conversationId);
+      if (cachedWs) {
+        setWorkspacePath(cachedWs);
+      }
+      window.api
+        .conversationGet(options.conversationId)
+        .then(async (conv) => {
+          if (!cachedWs) {
+            if (conv?.workspace_path) {
+              workspaceByConversation.set(options.conversationId!, conv.workspace_path);
+              setWorkspacePath(conv.workspace_path);
+            } else {
+              setWorkspacePath(null);
+            }
+          }
+          const resolvedProfileId = conv?.model_profile_id?.trim() || await getDefaultModelProfileId();
+          setActiveModelProfileId(resolvedProfileId);
+        })
+        .catch(() => {
+          if (!cachedWs) {
+            setWorkspacePath(null);
+          }
+        });
+
+      void loadMessages(options.conversationId, currentVersion).then(() => {
+        // Clean up orphaned pending messages after load
+        // These are messages that were pending when the component unmounted
+        // and never received their completion update
+        setMessages((prev) => {
+          let hasOrphanedPending = false;
+          const cleaned = prev.map((msg) => {
+            if (msg.role === "assistant" && msg.status === "pending" && msg.requestId) {
+              // Check if this request is actually active
+              const isActive = activeRequestByConversationRef.current[options.conversationId!] === msg.requestId;
+              if (!isActive) {
+                hasOrphanedPending = true;
+                // Mark as completed with whatever content we have
+                return {
+                  ...msg,
+                  status: "completed" as MessageStatus,
+                  content: msg.content || "响应已完成"
+                };
+              }
+            }
+            return msg;
+          });
+
+          // Update database for orphaned messages
+          if (hasOrphanedPending) {
+            for (const msg of cleaned) {
+              if (msg.role === "assistant" && msg.status === "completed") {
+                const original = prev.find((m) => m.id === msg.id);
+                if (original?.status === "pending") {
+                  window.api.messageUpdate(msg.id, {
+                    content: msg.content,
+                    status: "completed",
+                    trace: msg.trace ? JSON.stringify(msg.trace) : undefined
+                  }).catch((err) => console.error("Failed to update orphaned message:", err));
+                }
+              }
+            }
+          }
+
+          return cleaned;
+        });
+      });
     } else {
       setConversationId(undefined);
       setMessages([]);
       setPendingClarification(null);
       traceByRequestIdRef.current = {};
+      setWorkspacePath(null);
+      void getDefaultModelProfileId().then((profileId) => {
+        setActiveModelProfileId(profileId);
+      });
     }
-  }, [loadMessages, options.conversationId]);
+  }, [getDefaultModelProfileId, loadMessages, options.conversationId]);
 
   // Subscribe to chat updates
   useEffect(() => {
@@ -203,6 +452,15 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
       );
       if (pending) {
         setPendingClarification(pending);
+      }
+
+      // Capture workspace path from early update events so it's available
+      // before the chatSend promise resolves (users can click files during streaming).
+      if (update.payload?.workspacePath && mappedConversationId) {
+        workspaceByConversation.set(mappedConversationId, update.payload.workspacePath);
+        if (mappedConversationId === conversationIdRef.current) {
+          setWorkspacePath(update.payload.workspacePath);
+        }
       }
 
       setMessages((prev) =>
@@ -240,7 +498,7 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
 
           return {
             ...message,
-            content: `${message.content}${update.delta}`
+            content: mergeAssistantDelta(message.content, update.delta)
           };
         })
       );
@@ -252,23 +510,34 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
     };
   }, []);
 
+  useEffect(() => {
+    return window.api.onConversationUpdate((conversation) => {
+      upsertConversation(conversation);
+    });
+  }, [upsertConversation]);
+
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, messageMode?: ChatMode) => {
       const requestId = makeRequestId();
       const userMessageId = `user-${Date.now()}`;
       const assistantMessageId = `assistant-${Date.now()}`;
+      const effectiveMode = messageMode ?? options.mode ?? "default";
+      const effectiveThinkingEnabled = effectiveMode === "thinking" ? true : (options.thinkingEnabled ?? false);
 
       // Create conversation if needed
       let currentConvId: string;
+      const resolvedModelProfileId = activeModelProfileId ?? await getDefaultModelProfileId();
+      setActiveModelProfileId(resolvedModelProfileId);
       if (conversationId) {
         currentConvId = conversationId;
       } else {
         try {
           const conv = await window.api.conversationCreate({
-            model_profile_id: undefined
+            model_profile_id: resolvedModelProfileId
           });
           currentConvId = conv.id;
           setConversationId(currentConvId);
+          setActiveModelProfileId(conv.model_profile_id ?? resolvedModelProfileId);
           upsertConversation(conv);
         } catch (error) {
           console.error("Failed to create conversation:", error);
@@ -320,7 +589,9 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         status: "pending",
         timestamp: Date.now(),
         trace: [],
-        requestId
+        requestId,
+        mode: effectiveMode,
+        thinkingEnabled: effectiveThinkingEnabled
       };
 
       traceByRequestIdRef.current[requestId] = [];
@@ -365,10 +636,25 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
           requestId,
           conversationId: currentConvId,
           message: content,
-          history
+          history,
+          mode: effectiveMode,
+          modelProfileId: resolvedModelProfileId,
+          thinkingEnabled: effectiveThinkingEnabled
         });
 
+        // Capture workspace path for this conversation and persist to DB
+        if (result.workspacePath) {
+          workspaceByConversation.set(currentConvId, result.workspacePath);
+          setWorkspacePath(result.workspacePath);
+          window.api.conversationUpdate(currentConvId, { workspace_path: result.workspacePath }).catch(() => {});
+        }
+
         const finalTrace = traceByRequestIdRef.current[requestId] || [];
+
+        const streamedContent = messagesRef.current.find(
+          (item) => item.role === "assistant" && item.requestId === requestId
+        )?.content;
+        const finalContent = resolveFinalAssistantContent(streamedContent, result.reply);
 
         // Update pending message with final response
         setMessages((prev) =>
@@ -376,9 +662,12 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
             message.role === "assistant" && message.requestId === requestId
               ? {
                   ...message,
-                  content: result.reply,
+                  content: finalContent,
                   status: "completed" as MessageStatus,
-                  trace: finalTrace
+                  trace: finalTrace,
+                  prompt_tokens: result.usage?.promptTokens,
+                  completion_tokens: result.usage?.completionTokens,
+                  total_tokens: result.usage?.totalTokens
                 }
               : message
           )
@@ -387,9 +676,12 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         // Update message in database
         if (savedAssistantMsgId) {
           await window.api.messageUpdate(savedAssistantMsgId, {
-            content: result.reply,
+            content: finalContent,
             status: "completed",
-            trace: finalTrace.length > 0 ? JSON.stringify(finalTrace) : undefined
+            trace: finalTrace.length > 0 ? JSON.stringify(finalTrace) : undefined,
+            prompt_tokens: result.usage?.promptTokens,
+            completion_tokens: result.usage?.completionTokens,
+            total_tokens: result.usage?.totalTokens
           });
         }
 
@@ -443,7 +735,16 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
         clearConversationRequestIfMatch(currentConvId, requestId);
       }
     },
-    [clearConversationRequestIfMatch, conversationId, setConversationActiveRequest, upsertConversation]
+    [
+      activeModelProfileId,
+      clearConversationRequestIfMatch,
+      conversationId,
+      getDefaultModelProfileId,
+      options.mode,
+      options.thinkingEnabled,
+      setConversationActiveRequest,
+      upsertConversation
+    ]
   );
 
   const cancelCurrentRequest = useCallback(async (): Promise<boolean> => {
@@ -511,6 +812,8 @@ export function useCopilotChat(options: UseCopilotChatOptions = {}) {
     clearMessages,
     isLoading,
     conversationId,
-    pendingClarification
+    pendingClarification,
+    workspacePath,
+    activeModelProfileId
   };
 }

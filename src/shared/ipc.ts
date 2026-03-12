@@ -8,12 +8,38 @@ export type ChatHistoryMessage = {
   content: string;
 };
 
+/**
+ * Chat mode determines the agent's behavior and capabilities.
+ * - default: Fast response with single-step tool calls
+ * - thinking: Extended thinking with deep reasoning (uses thinking model)
+ * - subagents: Multi-agent collaboration with DAG scheduling, todolist, and task tools
+ */
+export type ChatMode = "default" | "thinking" | "subagents";
+
+export type ModelCapabilities = {
+  supportsThinking?: boolean;
+  supportsReasoningEffort?: boolean;
+  supportsVision?: boolean;
+  supportsToolCall?: boolean;
+};
+
+export type ThinkingConfig = {
+  extraBody?: Record<string, unknown>;
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+};
+
 export type ChatSendInput = {
   requestId?: string;
   conversationId?: string;
   message: string;
   history: ChatHistoryMessage[];
   modelProfileId?: string;
+  /** Chat mode - defaults to 'default' if not specified */
+  mode?: ChatMode;
+  /** Enable thinking mode for models that support it */
+  thinkingEnabled?: boolean;
+  /** Reasoning effort level */
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
 };
 
 export type ChatSendResult = {
@@ -21,6 +47,12 @@ export type ChatSendResult = {
   provider: ModelProvider;
   model: string;
   latencyMs: number;
+  workspacePath?: string;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
 };
 
 export type ChatCancelInput = {
@@ -32,7 +64,7 @@ export type ChatCancelResult = {
   cancelled: boolean;
 };
 
-export type ChatUpdateStage = "planning" | "tool" | "model" | "final" | "error" | "clarification";
+export type ChatUpdateStage = "planning" | "tool" | "model" | "final" | "error" | "clarification" | "subagent";
 
 export type ChatClarificationOption = {
   label: string;
@@ -45,8 +77,29 @@ export type ChatClarificationPayload = {
   options: ChatClarificationOption[];
 };
 
+/**
+ * Sub-agent execution progress info for subagents mode
+ */
+export type SubagentProgressPayload = {
+  taskId: string;
+  agentType: "general-purpose" | "researcher" | "bash" | "writer";
+  status: "running" | "completed" | "failed";
+  progress?: string;
+};
+
+export type ChatToolResultPayload = {
+  source: string;
+  status: "loading" | "success" | "failed";
+  output?: string;
+  artifacts?: string[];
+  workspacePath?: string;
+};
+
 export type ChatUpdatePayload = {
   clarification?: ChatClarificationPayload;
+  subagent?: SubagentProgressPayload;
+  workspacePath?: string;
+  toolResult?: ChatToolResultPayload;
 };
 
 export type ChatUpdateEvent = {
@@ -117,6 +170,8 @@ export type RuntimeConfigSummary = {
     provider: ModelProvider;
     model: string;
     enabled: boolean;
+    capabilities?: ModelCapabilities;
+    whenThinkingEnabled?: ThinkingConfig;
   }>;
   routing: Record<string, string>;
   tools: {
@@ -130,6 +185,7 @@ export type CatalogModelCapabilities = {
   reasoning: boolean;
   inputModalities: string[];
   outputModalities: string[];
+  isEmbeddingModel: boolean;
 };
 
 export type CatalogModelItem = {
@@ -226,6 +282,20 @@ export type SettingsModelProfile = {
   enabled: boolean;
   temperature?: number;
   maxTokens?: number;
+  capabilities?: ModelCapabilities;
+  whenThinkingEnabled?: ThinkingConfig;
+};
+
+export type SettingsChannelType = "feishu";
+
+export type SettingsChannelItem = {
+  id: string;
+  name?: string;
+  type: SettingsChannelType;
+  appId: string;
+  appSecret: string;
+  allowedChatIds: string[];
+  enabled: boolean;
 };
 
 export type GlobalSettingsState = {
@@ -236,6 +306,7 @@ export type GlobalSettingsState = {
       apiKey: string;
       baseUrl: string;
       model: string;
+      embeddingModel: string;
       orgId?: string;
     }
   >;
@@ -248,6 +319,8 @@ export type GlobalSettingsState = {
       host: string;
       port: number;
       apiKey: string;
+      vlmProfileId: string;
+      embeddingProfileId: string;
       serverCommand: string;
       serverArgs: string[];
       startTimeoutMs: number;
@@ -272,6 +345,17 @@ export type GlobalSettingsState = {
       baseUrl: string;
       timeoutMs: number;
     };
+    githubSearch: {
+      enabled: boolean;
+      apiKey: string;
+      baseUrl: string;
+      timeoutMs: number;
+      maxResults: number;
+    };
+  };
+  channels: {
+    enabled: boolean;
+    channels: SettingsChannelItem[];
   };
 };
 
@@ -283,6 +367,17 @@ export type SaveSettingsResult = {
   ok: boolean;
   requiresRestart: boolean;
   message: string;
+};
+
+export type ConfigStorageInfoResult = {
+  userConfigPath: string;
+  configDir: string;
+  notes: string;
+};
+
+export type OpenConfigDirResult = {
+  ok: boolean;
+  message?: string;
 };
 
 export type SandboxEntry = {
@@ -303,6 +398,7 @@ export type SandboxListDirResult = {
 export type SandboxReadFileInput = {
   path: string;
   encoding?: "utf8";
+  workspacePath?: string;
 };
 
 export type SandboxReadFileResult = {
@@ -344,12 +440,14 @@ export type SandboxExecResult = {
 export type ConversationInput = {
   title?: string;
   model_profile_id?: string;
+  workspace_path?: string;
 };
 
 export type ConversationResult = {
   id: string;
   title?: string;
   model_profile_id?: string;
+  workspace_path?: string;
   created_at: number;
   updated_at: number;
 };
@@ -361,6 +459,9 @@ export type MessageInput = {
   content: string;
   status?: "pending" | "completed" | "error";
   trace?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 export type MessageResult = {
@@ -371,10 +472,320 @@ export type MessageResult = {
   status: "pending" | "completed" | "error";
   trace?: string;
   created_at: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 export type MessageUpdateInput = {
   content?: string;
   status?: "pending" | "completed" | "error";
   trace?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+};
+
+// Memory types
+
+export type MemorySearchInput = {
+  query: string;
+  targetUri?: string;
+  limit?: number;
+};
+
+export type MemorySearchResultItem = {
+  uri: string;
+  abstract?: string;
+  score?: number;
+  category?: string;
+  matchReason?: string;
+};
+
+export type MemorySearchResult = {
+  items: MemorySearchResultItem[];
+  total: number;
+};
+
+export type MemoryAddResourceInput = {
+  path: string;
+};
+
+export type MemoryAddResourceResult = {
+  rootUri: string;
+};
+
+export type MemoryListResourcesInput = {
+  uri: string;
+};
+
+export type MemoryListResourceEntry = {
+  name: string;
+  uri: string;
+  type: "file" | "directory";
+};
+
+export type MemoryListResourcesResult = {
+  entries: MemoryListResourceEntry[];
+};
+
+export type MemoryReadResourceInput = {
+  uri: string;
+};
+
+export type MemoryReadResourceResult = {
+  uri: string;
+  content: string;
+};
+
+export type ReadFileBase64Input = {
+  path: string;
+};
+
+export type ReadFileBase64Result = {
+  base64: string;
+  mimeType: string;
+};
+
+export type MemoryDeleteResourceInput = {
+  uri: string;
+  recursive?: boolean;
+};
+
+export type MemoryDeleteResourceResult = {
+  ok: boolean;
+};
+
+export type MemoryStatusResult = {
+  enabled: boolean;
+  running: boolean;
+  url?: string;
+  error?: string;
+};
+
+// Soul types
+export type SoulState = {
+  soulContent: string;
+  identityContent: string;
+};
+
+export type SoulUpdateInput = {
+  soulContent?: string;
+  identityContent?: string;
+};
+
+export type SoulOperationResult = {
+  ok: boolean;
+  message: string;
+};
+
+export type SoulInterviewInput = {
+  history: { role: "user" | "assistant"; content: string }[];
+};
+
+export type SoulInterviewResult = {
+  reply: string;
+  done: boolean;
+};
+
+export type SoulInterviewSummarizeInput = {
+  history: { role: "user" | "assistant"; content: string }[];
+};
+
+export type SoulInterviewSummarizeResult = {
+  soulContent: string;
+  identityContent: string;
+};
+
+// Skill types
+export type SkillItem = {
+  name: string;
+  description: string;
+  tags: string[];
+  content: string;
+  isBundled: boolean;
+  enabled: boolean;
+};
+
+export type SkillCreateInput = {
+  name: string;
+  description: string;
+  tags: string[];
+  content: string;
+};
+
+export type SkillUpdateInput = {
+  description?: string;
+  tags?: string[];
+  content?: string;
+};
+
+export type SkillOperationResult = {
+  ok: boolean;
+  message: string;
+};
+
+export type SkillToggleInput = {
+  name: string;
+  enabled: boolean;
+};
+
+// Channel types
+export type ChannelStatusEvent = {
+  channelId: string;
+  status: "stopped" | "starting" | "running" | "error";
+  message?: string;
+  timestamp: number;
+};
+
+// Cron types
+export type CronJobItem = {
+  id: string;
+  name: string;
+  description?: string;
+  prompt: string;
+  schedule: string;
+  enabled: boolean;
+  modelProfileId?: string;
+  workspacePath?: string;
+  mode?: "default" | "thinking" | "subagents";
+  createdAt: number;
+  updatedAt: number;
+  lastRunAt?: number;
+  nextRunAt?: number;
+};
+
+export type CronCreateInput = Omit<CronJobItem, "id" | "createdAt" | "updatedAt" | "lastRunAt" | "nextRunAt">;
+
+export type CronUpdateInput = Partial<Omit<CronJobItem, "id" | "createdAt" | "updatedAt">> & { id: string };
+
+export type CronDeleteInput = { id: string };
+
+export type CronRunNowInput = { id: string };
+
+export type CronListResult = { jobs: CronJobItem[] };
+
+export type CronRunRecord = {
+  id: string;
+  jobId: string;
+  startedAt: number;
+  completedAt?: number;
+  status: "running" | "completed" | "failed";
+  output?: string;
+  error?: string;
+};
+
+export type CronHistoryInput = { jobId: string; limit?: number };
+
+export type CronHistoryResult = { records: CronRunRecord[] };
+
+export type CronRunEvent = { jobId: string; record: CronRunRecord };
+
+// User Files types
+export type UserFileRecord = {
+  id: string;
+  file_path: string;
+  size_bytes: number;
+  mime_type: string | null;
+  viking_uri: string | null;
+  viking_synced_at: number | null;
+  created_at: number;
+  updated_at: number;
+};
+
+export type FileEntry = {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  size?: number;
+  mimeType?: string;
+  createdAt?: number;
+  updatedAt?: number;
+};
+
+export type UserFilesCreateDirInput = {
+  dirPath: string;
+};
+
+export type UserFilesCreateDirResult = {
+  ok: boolean;
+};
+
+export type UserFilesSaveInput = {
+  filePath: string;
+  content: string;
+};
+
+export type UserFilesSaveResult = {
+  record: UserFileRecord;
+};
+
+export type UserFilesListInput = {
+  dirPath?: string;
+};
+
+export type UserFilesListResult = {
+  entries: FileEntry[];
+};
+
+export type UserFilesReadInput = {
+  filePath: string;
+};
+
+export type UserFilesReadResult = {
+  content: string;
+  mimeType: string;
+};
+
+export type UserFilesDeleteInput = {
+  filePath: string;
+  recursive?: boolean;
+};
+
+export type UserFilesDeleteResult = {
+  ok: boolean;
+};
+
+export type UserFilesRenameInput = {
+  oldPath: string;
+  newPath: string;
+};
+
+export type UserFilesRenameResult = {
+  ok: boolean;
+};
+
+export type UserFilesSaveConversationInput = {
+  conversationId: string;
+  targetPath: string;
+};
+
+export type UserFilesSaveConversationResult = {
+  record: UserFileRecord;
+};
+
+// Token statistics types
+export type ConversationTokenStatsInput = {
+  conversationId: string;
+};
+
+export type ConversationTokenStatsResult = {
+  conversationId: string;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  messageCount: number;
+};
+
+export type GlobalTokenStatsResult = {
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  conversationCount: number;
+  messageCount: number;
+  topConversations: Array<{
+    conversationId: string;
+    title?: string;
+    totalTokens: number;
+  }>;
 };

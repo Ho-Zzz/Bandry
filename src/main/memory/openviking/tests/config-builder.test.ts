@@ -1,0 +1,113 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { loadAppConfig } from "../../../config";
+import { buildOpenVikingConfig } from "../config-builder";
+
+const createConfig = async (seed: string) => {
+  const bandryHome = path.join(os.tmpdir(), `bandry-openviking-${seed}-${Date.now()}`);
+  await fs.mkdir(bandryHome, { recursive: true });
+  return loadAppConfig({
+    cwd: "/Users/bytedance/Workspace/hozzz/Bandry",
+    userHome: bandryHome,
+    env: {
+      ...process.env,
+      BANDRY_HOME: bandryHome
+    },
+  });
+};
+
+const addProfiles = (config: ReturnType<typeof loadAppConfig>): void => {
+  config.modelProfiles = [
+    {
+      id: "profile_openai_default",
+      name: "OpenAI Default",
+      provider: "openai",
+      model: config.providers.openai.model,
+      enabled: true
+    },
+    {
+      id: "profile_deepseek_default",
+      name: "DeepSeek Default",
+      provider: "deepseek",
+      model: config.providers.deepseek.model,
+      enabled: true
+    },
+    {
+      id: "profile_volcengine_default",
+      name: "Volcengine Default",
+      provider: "volcengine",
+      model: config.providers.volcengine.model,
+      enabled: true
+    }
+  ];
+};
+
+describe("buildOpenVikingConfig", () => {
+  it("fails when required profile bindings are missing", async () => {
+    const config = await createConfig("missing");
+    config.openviking.vlmProfileId = "";
+    config.openviking.embeddingProfileId = "";
+
+    expect(() =>
+      buildOpenVikingConfig({
+        config,
+        host: "127.0.0.1",
+        port: 1933,
+        agfsPort: 1833,
+        apiKey: "test",
+        dataDir: "/tmp"
+      })
+    ).toThrow("openviking.vlmProfileId is required");
+  });
+
+  it("fails when profile provider is not openai/volcengine", async () => {
+    const config = await createConfig("provider");
+    addProfiles(config);
+    config.providers.deepseek.apiKey = "sk-deepseek-valid-key-1234567890";
+    config.openviking.vlmProfileId = "profile_deepseek_default";
+    config.openviking.embeddingProfileId = "profile_openai_default";
+    config.providers.openai.apiKey = "sk-openai-valid-key-1234567890";
+
+    expect(() =>
+      buildOpenVikingConfig({
+        config,
+        host: "127.0.0.1",
+        port: 1933,
+        agfsPort: 1833,
+        apiKey: "test",
+        dataDir: "/tmp"
+      })
+    ).toThrow("only supports openai/volcengine");
+  });
+
+  it("builds config from bound profiles and sets embedding dimension by provider/model", async () => {
+    const config = await createConfig("ok");
+    addProfiles(config);
+    config.providers.openai.apiKey = "sk-openai-valid-key-1234567890";
+    config.providers.volcengine.apiKey = "ark-valid-key";
+    config.openviking.vlmProfileId = "profile_openai_default";
+    config.openviking.embeddingProfileId = "profile_volcengine_default";
+
+    const result = buildOpenVikingConfig({
+      config,
+      host: "127.0.0.1",
+      port: 1933,
+      agfsPort: 1833,
+      apiKey: "test",
+      dataDir: "/tmp"
+    }) as {
+      server: { root_api_key: string };
+      vlm: { provider: string; model: string };
+      embedding: { dense: { provider: string; model: string; dimension: number } };
+    };
+
+    expect(result.server.root_api_key).toBe("test");
+    expect(result.vlm.provider).toBe("openai");
+    expect(result.vlm.model).toBe("gpt-4.1-mini");
+    expect(result.embedding.dense.provider).toBe("volcengine");
+    expect(result.embedding.dense.model).toBe("doubao-seed-1-6-250615");
+    expect(result.embedding.dense.dimension).toBe(1024);
+  });
+});

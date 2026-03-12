@@ -23,6 +23,10 @@ export class ConversationStore {
     this.db = openSqliteDatabase(dbPath, schemaPath);
   }
 
+  getDatabase(): Database.Database {
+    return this.db;
+  }
+
   // ==================== Conversation Methods ====================
 
   createConversation(input: CreateConversationInput): ConversationRecord {
@@ -73,6 +77,11 @@ export class ConversationStore {
       values.push(input.model_profile_id || null);
     }
 
+    if (input.workspace_path !== undefined) {
+      updates.push("workspace_path = ?");
+      values.push(input.workspace_path || null);
+    }
+
     if (updates.length === 0) {
       return existing;
     }
@@ -99,6 +108,7 @@ export class ConversationStore {
       id: row.id as string,
       title: (row.title as string) || undefined,
       model_profile_id: (row.model_profile_id as string) || undefined,
+      workspace_path: (row.workspace_path as string) || undefined,
       created_at: row.created_at as number,
       updated_at: row.updated_at as number
     };
@@ -111,8 +121,9 @@ export class ConversationStore {
     const now = Date.now();
 
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, conversation_id, role, content, status, trace, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, conversation_id, role, content, status, trace, created_at,
+        prompt_tokens, completion_tokens, total_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -122,7 +133,10 @@ export class ConversationStore {
       input.content,
       input.status || "completed",
       input.trace || null,
-      now
+      now,
+      input.prompt_tokens ?? null,
+      input.completion_tokens ?? null,
+      input.total_tokens ?? null
     );
 
     // Update conversation's updated_at
@@ -170,6 +184,21 @@ export class ConversationStore {
       values.push(input.trace || null);
     }
 
+    if (input.prompt_tokens !== undefined) {
+      updates.push("prompt_tokens = ?");
+      values.push(input.prompt_tokens ?? null);
+    }
+
+    if (input.completion_tokens !== undefined) {
+      updates.push("completion_tokens = ?");
+      values.push(input.completion_tokens ?? null);
+    }
+
+    if (input.total_tokens !== undefined) {
+      updates.push("total_tokens = ?");
+      values.push(input.total_tokens ?? null);
+    }
+
     if (updates.length === 0) {
       return existing;
     }
@@ -197,7 +226,96 @@ export class ConversationStore {
       content: row.content as string,
       status: row.status as MessageRecord["status"],
       trace: (row.trace as string) || undefined,
-      created_at: row.created_at as number
+      created_at: row.created_at as number,
+      prompt_tokens: (row.prompt_tokens as number) || undefined,
+      completion_tokens: (row.completion_tokens as number) || undefined,
+      total_tokens: (row.total_tokens as number) || undefined
+    };
+  }
+
+  // ==================== Token Statistics Methods ====================
+
+  getConversationTokenStats(conversationId: string): {
+    conversationId: string;
+    totalTokens: number;
+    promptTokens: number;
+    completionTokens: number;
+    messageCount: number;
+  } {
+    const stmt = this.db.prepare(`
+      SELECT
+        COUNT(*) as message_count,
+        COALESCE(SUM(prompt_tokens), 0) as total_prompt_tokens,
+        COALESCE(SUM(completion_tokens), 0) as total_completion_tokens,
+        COALESCE(SUM(total_tokens), 0) as total_tokens
+      FROM messages
+      WHERE conversation_id = ? AND role = 'assistant'
+    `);
+
+    const row = stmt.get(conversationId) as Record<string, unknown>;
+
+    return {
+      conversationId,
+      totalTokens: (row.total_tokens as number) || 0,
+      promptTokens: (row.total_prompt_tokens as number) || 0,
+      completionTokens: (row.total_completion_tokens as number) || 0,
+      messageCount: (row.message_count as number) || 0
+    };
+  }
+
+  getGlobalTokenStats(): {
+    totalTokens: number;
+    promptTokens: number;
+    completionTokens: number;
+    conversationCount: number;
+    messageCount: number;
+    topConversations: Array<{
+      conversationId: string;
+      title?: string;
+      totalTokens: number;
+    }>;
+  } {
+    // Get aggregate statistics
+    const aggregateStmt = this.db.prepare(`
+      SELECT
+        COUNT(DISTINCT conversation_id) as conversation_count,
+        COUNT(*) as message_count,
+        COALESCE(SUM(prompt_tokens), 0) as total_prompt_tokens,
+        COALESCE(SUM(completion_tokens), 0) as total_completion_tokens,
+        COALESCE(SUM(total_tokens), 0) as total_tokens
+      FROM messages
+      WHERE role = 'assistant'
+    `);
+
+    const aggregateRow = aggregateStmt.get() as Record<string, unknown>;
+
+    // Get top 5 conversations by token usage
+    const topConversationsStmt = this.db.prepare(`
+      SELECT
+        m.conversation_id,
+        c.title,
+        COALESCE(SUM(m.total_tokens), 0) as total_tokens
+      FROM messages m
+      LEFT JOIN conversations c ON m.conversation_id = c.id
+      WHERE m.role = 'assistant'
+      GROUP BY m.conversation_id
+      ORDER BY total_tokens DESC
+      LIMIT 5
+    `);
+
+    const topRows = topConversationsStmt.all() as Record<string, unknown>[];
+
+    return {
+      totalTokens: (aggregateRow.total_tokens as number) || 0,
+      promptTokens: (aggregateRow.total_prompt_tokens as number) || 0,
+      completionTokens: (aggregateRow.total_completion_tokens as number) || 0,
+      conversationCount: (aggregateRow.conversation_count as number) || 0,
+      messageCount: (aggregateRow.message_count as number) || 0,
+      topConversations: topRows.map((row) => ({
+        conversationId: row.conversation_id as string,
+        title: (row.title as string) || undefined,
+        totalTokens: (row.total_tokens as number) || 0
+      }))
     };
   }
 

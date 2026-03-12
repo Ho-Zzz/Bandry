@@ -16,6 +16,9 @@ const applyProviderLayer = (target: AppConfig, providerName: LlmProvider, provid
   if (providerLayer.model !== undefined) {
     provider.model = providerLayer.model;
   }
+  if (providerLayer.embeddingModel !== undefined) {
+    provider.embeddingModel = providerLayer.embeddingModel;
+  }
   if (providerName === "openai" && providerLayer.orgId !== undefined) {
     provider.orgId = providerLayer.orgId;
   }
@@ -105,6 +108,12 @@ export const applyLayer = (target: AppConfig, layer: ConfigLayer): void => {
     }
     if (openvikingLayer.apiKey !== undefined) {
       target.openviking.apiKey = openvikingLayer.apiKey;
+    }
+    if (openvikingLayer.vlmProfileId !== undefined) {
+      target.openviking.vlmProfileId = openvikingLayer.vlmProfileId;
+    }
+    if (openvikingLayer.embeddingProfileId !== undefined) {
+      target.openviking.embeddingProfileId = openvikingLayer.embeddingProfileId;
     }
     if (openvikingLayer.serverCommand !== undefined) {
       target.openviking.serverCommand = openvikingLayer.serverCommand;
@@ -204,7 +213,31 @@ export const applyLayer = (target: AppConfig, layer: ConfigLayer): void => {
         ...(profileLayer.model !== undefined ? { model: profileLayer.model } : {}),
         ...(profileLayer.enabled !== undefined ? { enabled: profileLayer.enabled } : {}),
         ...(profileLayer.temperature !== undefined ? { temperature: profileLayer.temperature } : {}),
-        ...(profileLayer.maxTokens !== undefined ? { maxTokens: profileLayer.maxTokens } : {})
+        ...(profileLayer.maxTokens !== undefined ? { maxTokens: profileLayer.maxTokens } : {}),
+        ...(profileLayer.capabilities !== undefined
+          ? {
+              capabilities: {
+                ...(existing.capabilities ?? {}),
+                ...profileLayer.capabilities
+              }
+            }
+          : {}),
+        ...(profileLayer.whenThinkingEnabled !== undefined
+          ? {
+              whenThinkingEnabled: {
+                ...(existing.whenThinkingEnabled ?? {}),
+                ...profileLayer.whenThinkingEnabled,
+                ...(profileLayer.whenThinkingEnabled?.extraBody !== undefined
+                  ? {
+                      extraBody: {
+                        ...(existing.whenThinkingEnabled?.extraBody ?? {}),
+                        ...profileLayer.whenThinkingEnabled.extraBody
+                      }
+                    }
+                  : {})
+              }
+            }
+          : {})
       });
     }
     target.modelProfiles = Array.from(mergedById.values());
@@ -257,6 +290,24 @@ export const applyLayer = (target: AppConfig, layer: ConfigLayer): void => {
     }
     if (source.timeoutMs !== undefined) {
       target.tools.webFetch.timeoutMs = source.timeoutMs;
+    }
+  }
+
+  if (layer.channels) {
+    const channelsLayer = layer.channels;
+    if (channelsLayer.enabled !== undefined) {
+      target.channels.enabled = channelsLayer.enabled;
+    }
+    if (channelsLayer.channels !== undefined) {
+      target.channels.channels = channelsLayer.channels.map((ch) => ({
+        ...(ch.id !== undefined ? { id: ch.id } : {}),
+        ...(ch.name !== undefined ? { name: ch.name } : {}),
+        type: ch.type ?? "feishu",
+        appId: ch.appId ?? "",
+        appSecret: ch.appSecret ?? "",
+        ...(ch.allowedChatIds ? { allowedChatIds: ch.allowedChatIds } : {}),
+        enabled: ch.enabled ?? true,
+      }));
     }
   }
 

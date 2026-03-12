@@ -1,15 +1,28 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { type AppConfig } from "../config";
+import { hasUsableProviderApiKey } from "../config/provider-credential";
 import { normalizeConfig } from "../config/normalize-config";
 import type {
   GlobalSettingsState,
   SaveSettingsInput,
-  SaveSettingsResult
+  SaveSettingsResult,
+  SettingsChannelItem
 } from "../../shared/ipc";
 
 type SettingsServiceOptions = {
   config: AppConfig;
+};
+
+const OPENVIKING_ALLOWED_PROVIDERS = new Set(["openai", "volcengine"]);
+
+const normalizeChannelId = (rawId: string, index: number): string => {
+  const normalized = rawId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || `channel_${index + 1}`;
 };
 
 const toSettingsProviders = (
@@ -23,6 +36,7 @@ const toSettingsProviders = (
         apiKey: config.apiKey,
         baseUrl: config.baseUrl,
         model: config.model,
+        embeddingModel: config.embeddingModel,
         ...(config.orgId !== undefined ? { orgId: config.orgId } : {})
       }
     ])
@@ -37,6 +51,7 @@ const toConfigProvidersLayer = (
     apiKey: string;
     baseUrl: string;
     model: string;
+    embeddingModel: string;
     orgId?: string;
   };
 } => {
@@ -48,6 +63,7 @@ const toConfigProvidersLayer = (
         apiKey: config.apiKey,
         baseUrl: config.baseUrl,
         model: config.model,
+        embeddingModel: config.embeddingModel,
         ...(config.orgId !== undefined ? { orgId: config.orgId } : {})
       }
     ])
@@ -55,6 +71,16 @@ const toConfigProvidersLayer = (
 };
 
 const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
+  const channels: SettingsChannelItem[] = config.channels.channels.map((channel, index) => ({
+    id: normalizeChannelId(channel.id ?? "", index),
+    ...(channel.name?.trim() ? { name: channel.name.trim() } : {}),
+    type: "feishu",
+    appId: channel.appId,
+    appSecret: channel.appSecret,
+    allowedChatIds: [...(channel.allowedChatIds ?? [])],
+    enabled: channel.enabled !== false
+  }));
+
   return {
     providers: toSettingsProviders(config.providers),
     modelProfiles: config.modelProfiles.map((profile) => ({
@@ -64,7 +90,9 @@ const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
       model: profile.model,
       enabled: profile.enabled,
       temperature: profile.temperature,
-      maxTokens: profile.maxTokens
+      maxTokens: profile.maxTokens,
+      capabilities: profile.capabilities,
+      whenThinkingEnabled: profile.whenThinkingEnabled
     })),
     routing: { ...config.routing.assignments },
     memory: {
@@ -74,6 +102,8 @@ const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
         host: config.openviking.host,
         port: config.openviking.port,
         apiKey: config.openviking.apiKey,
+        vlmProfileId: config.openviking.vlmProfileId,
+        embeddingProfileId: config.openviking.embeddingProfileId,
         serverCommand: config.openviking.serverCommand,
         serverArgs: config.openviking.serverArgs,
         startTimeoutMs: config.openviking.startTimeoutMs,
@@ -97,17 +127,24 @@ const toGlobalSettingsState = (config: AppConfig): GlobalSettingsState => {
         apiKey: config.tools.webFetch.apiKey,
         baseUrl: config.tools.webFetch.baseUrl,
         timeoutMs: config.tools.webFetch.timeoutMs
+      },
+      githubSearch: {
+        enabled: config.tools.githubSearch.enabled,
+        apiKey: config.tools.githubSearch.apiKey,
+        baseUrl: config.tools.githubSearch.baseUrl,
+        timeoutMs: config.tools.githubSearch.timeoutMs,
+        maxResults: config.tools.githubSearch.maxResults
       }
+    },
+    channels: {
+      enabled: config.channels.enabled,
+      channels
     }
   };
 };
 
 const validateState = (state: GlobalSettingsState): string[] => {
   const errors: string[] = [];
-
-  if (state.modelProfiles.length === 0) {
-    errors.push("至少需要一个模型档案");
-  }
 
   const profileIds = new Set(state.modelProfiles.map((profile) => profile.id));
   for (const role of Object.keys(state.routing)) {
@@ -135,6 +172,69 @@ const validateState = (state: GlobalSettingsState): string[] => {
       errors.push(`模型档案 id 重复: ${profile.id}`);
     }
     duplicated.add(profile.id);
+  }
+
+  if (state.memory.enableMemory && state.memory.openviking.enabled) {
+    const profilesById = new Map(state.modelProfiles.map((profile) => [profile.id, profile]));
+    for (const [field, profileId] of [
+      ["vlmProfileId", state.memory.openviking.vlmProfileId],
+      ["embeddingProfileId", state.memory.openviking.embeddingProfileId]
+    ] as const) {
+      const id = profileId.trim();
+      if (!id) {
+        errors.push(`OpenViking ${field} 未配置`);
+        continue;
+      }
+
+      const profile = profilesById.get(id);
+      if (!profile) {
+        errors.push(`OpenViking ${field} 指向不存在的模型档案: ${id}`);
+        continue;
+      }
+      if (!profile.enabled) {
+        errors.push(`OpenViking ${field} 指向的模型档案未启用: ${id}`);
+      }
+      if (!OPENVIKING_ALLOWED_PROVIDERS.has(profile.provider)) {
+        errors.push(`OpenViking ${field} 仅支持 OpenAI/Volcengine: ${id}`);
+        continue;
+      }
+
+      const provider = state.providers[profile.provider];
+      if (!provider || !hasUsableProviderApiKey(profile.provider, provider.apiKey)) {
+        errors.push(`OpenViking ${field} 的 provider 凭证不可用: ${profile.provider}`);
+      }
+    }
+  }
+
+  const channelIds = new Set<string>();
+  for (let index = 0; index < state.channels.channels.length; index += 1) {
+    const channel = state.channels.channels[index];
+    const normalizedId = normalizeChannelId(channel.id, index);
+    if (channelIds.has(normalizedId)) {
+      errors.push(`Channel id 重复: ${normalizedId}`);
+    }
+    channelIds.add(normalizedId);
+
+    if (channel.type !== "feishu") {
+      errors.push(`暂不支持的 channel 类型: ${channel.type}`);
+      continue;
+    }
+
+    if (channel.enabled) {
+      if (!channel.appId.trim()) {
+        errors.push(`Channel ${normalizedId} 的 appId 不能为空`);
+      }
+      if (!channel.appSecret.trim()) {
+        errors.push(`Channel ${normalizedId} 的 appSecret 不能为空`);
+      }
+    }
+  }
+
+  if (state.channels.enabled) {
+    const hasEnabledChannel = state.channels.channels.some((channel) => channel.enabled);
+    if (!hasEnabledChannel) {
+      errors.push("启用 Channels 时，至少需要一个启用中的 Channel 配置");
+    }
   }
 
   return errors;
@@ -188,7 +288,28 @@ export class SettingsService {
           apiKey: input.state.tools.webFetch.apiKey,
           baseUrl: input.state.tools.webFetch.baseUrl,
           timeoutMs: input.state.tools.webFetch.timeoutMs
+        },
+        githubSearch: {
+          enabled: input.state.tools.githubSearch.enabled,
+          apiKey: input.state.tools.githubSearch.apiKey,
+          baseUrl: input.state.tools.githubSearch.baseUrl,
+          timeoutMs: input.state.tools.githubSearch.timeoutMs,
+          maxResults: input.state.tools.githubSearch.maxResults
         }
+      },
+      channels: {
+        enabled: input.state.channels.enabled,
+        channels: input.state.channels.channels.map((channel, index) => ({
+          id: normalizeChannelId(channel.id, index),
+          ...(channel.name?.trim() ? { name: channel.name.trim() } : {}),
+          type: "feishu" as const,
+          appId: channel.appId.trim(),
+          appSecret: channel.appSecret.trim(),
+          allowedChatIds: Array.from(
+            new Set(channel.allowedChatIds.map((item) => item.trim()).filter(Boolean))
+          ),
+          enabled: channel.enabled
+        }))
       },
       catalog: {
         source: {
@@ -214,6 +335,7 @@ export class SettingsService {
       providerConfig.apiKey = providerInput.apiKey;
       providerConfig.baseUrl = providerInput.baseUrl;
       providerConfig.model = providerInput.model;
+      providerConfig.embeddingModel = providerInput.embeddingModel;
       providerConfig.orgId = providerInput.orgId;
     }
 
@@ -246,13 +368,35 @@ export class SettingsService {
       baseUrl: input.state.tools.webFetch.baseUrl,
       timeoutMs: input.state.tools.webFetch.timeoutMs
     };
+    currentConfig.tools.githubSearch = {
+      ...currentConfig.tools.githubSearch,
+      enabled: input.state.tools.githubSearch.enabled,
+      apiKey: input.state.tools.githubSearch.apiKey,
+      baseUrl: input.state.tools.githubSearch.baseUrl,
+      timeoutMs: input.state.tools.githubSearch.timeoutMs,
+      maxResults: input.state.tools.githubSearch.maxResults
+    };
+    currentConfig.channels = {
+      enabled: input.state.channels.enabled,
+      channels: input.state.channels.channels.map((channel, index) => ({
+        id: normalizeChannelId(channel.id, index),
+        ...(channel.name?.trim() ? { name: channel.name.trim() } : {}),
+        type: "feishu",
+        appId: channel.appId.trim(),
+        appSecret: channel.appSecret.trim(),
+        allowedChatIds: Array.from(
+          new Set(channel.allowedChatIds.map((item) => item.trim()).filter(Boolean))
+        ),
+        enabled: channel.enabled
+      }))
+    };
 
     normalizeConfig(currentConfig);
 
     return {
       ok: true,
-      requiresRestart: true,
-      message: "配置已保存。部分模块（如沙盒与进程管理）建议重启应用后生效。"
+      requiresRestart: false,
+      message: "配置已保存，Memory/工具/Channels 配置已即时生效。"
     };
   }
 }

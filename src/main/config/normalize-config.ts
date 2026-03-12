@@ -16,6 +16,21 @@ const RUNTIME_ROLES: Array<keyof AppConfig["routing"]["assignments"]> = [
   "memory.fact_extractor"
 ];
 
+const withOpenVikingTargetUriAliases = (uris: string[]): string[] => {
+  const normalized = Array.from(new Set(uris.map((uri) => uri.trim()).filter(Boolean)));
+  const expanded = new Set(normalized);
+
+  for (const uri of normalized) {
+    if (uri === "viking://user/memories") {
+      expanded.add("viking://user/default/memories");
+    } else if (uri === "viking://user/default/memories") {
+      expanded.add("viking://user/memories");
+    }
+  }
+
+  return Array.from(expanded);
+};
+
 export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.paths.projectRoot = normalizePath(config.paths.projectRoot);
   config.paths.bandryHome = normalizePath(config.paths.bandryHome);
@@ -26,12 +41,13 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.paths.resourcesDir = normalizePath(config.paths.resourcesDir);
   config.paths.pluginsDir = normalizePath(config.paths.pluginsDir);
   config.paths.traceDir = normalizePath(config.paths.traceDir);
+  config.paths.skillsDir = normalizePath(config.paths.skillsDir);
+  config.paths.soulDir = normalizePath(config.paths.soulDir);
   config.paths.projectConfigPath = normalizePath(config.paths.projectConfigPath);
   config.paths.userConfigPath = normalizePath(config.paths.userConfigPath);
   config.paths.auditLogPath = normalizePath(config.paths.auditLogPath);
   config.paths.sandboxAuditLogPath = normalizePath(config.paths.sandboxAuditLogPath);
   config.paths.databasePath = normalizePath(config.paths.databasePath);
-  config.paths.dotenvPath = normalizePath(config.paths.dotenvPath);
 
   if (config.catalog.source.type !== "http" && config.catalog.source.type !== "file") {
     config.catalog.source.type = "http";
@@ -81,25 +97,38 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
 
   config.openviking.host = config.openviking.host.trim() || "127.0.0.1";
   config.openviking.port = Math.max(1, Math.min(65535, Math.floor(config.openviking.port)));
-  config.openviking.serverCommand = config.openviking.serverCommand.trim() || "openviking";
+  config.openviking.vlmProfileId = config.openviking.vlmProfileId.trim();
+  config.openviking.embeddingProfileId = config.openviking.embeddingProfileId.trim();
+  config.openviking.serverCommand = config.openviking.serverCommand.trim() || "openviking-server";
+  if (config.openviking.serverCommand === "openviking") {
+    // One-time config normalization from legacy default entry.
+    config.openviking.serverCommand = "openviking-server";
+  }
   config.openviking.serverArgs = config.openviking.serverArgs.map((arg) => arg.trim()).filter(Boolean);
-  if (config.openviking.serverArgs.length === 0) {
-    config.openviking.serverArgs = ["serve"];
+  if (
+    config.openviking.serverCommand === "openviking-server" &&
+    config.openviking.serverArgs.length === 1 &&
+    config.openviking.serverArgs[0] === "serve"
+  ) {
+    // Legacy default args are not needed for openviking-server.
+    config.openviking.serverArgs = [];
   }
   config.openviking.startTimeoutMs = Math.max(1_000, Math.floor(config.openviking.startTimeoutMs));
   config.openviking.healthcheckIntervalMs = Math.max(100, Math.floor(config.openviking.healthcheckIntervalMs));
   config.openviking.memoryTopK = Math.max(1, Math.floor(config.openviking.memoryTopK));
   config.openviking.memoryScoreThreshold = Math.max(0, Math.min(1, config.openviking.memoryScoreThreshold));
   config.openviking.commitDebounceMs = Math.max(500, Math.floor(config.openviking.commitDebounceMs));
-  config.openviking.targetUris = Array.from(
-    new Set(config.openviking.targetUris.map((uri) => uri.trim()).filter(Boolean))
-  );
+  config.openviking.targetUris = withOpenVikingTargetUriAliases(config.openviking.targetUris);
   if (config.openviking.targetUris.length === 0) {
-    config.openviking.targetUris = ["viking://user/memories", "viking://agent/memories"];
+    config.openviking.targetUris = withOpenVikingTargetUriAliases([
+      "viking://user/memories",
+      "viking://agent/memories"
+    ]);
   }
 
   for (const provider of Object.values(config.providers)) {
     provider.baseUrl = normalizeProviderBaseUrl(provider.baseUrl);
+    provider.embeddingModel = provider.embeddingModel.trim();
   }
 
   const normalizedProfiles = new Map<string, AppConfig["modelProfiles"][number]>();
@@ -134,6 +163,11 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
     const current = config.routing.assignments[role]?.trim() ?? "";
     config.routing.assignments[role] = current && normalizedProfiles.has(current) ? current : "";
   }
+  config.routing.assignments["memory.fact_extractor"] =
+    config.routing.assignments["lead.synthesizer"] ||
+    config.routing.assignments["lead.planner"] ||
+    config.routing.assignments["chat.default"] ||
+    "";
 
   config.tools.webSearch.enabled = Boolean(config.tools.webSearch.enabled);
   config.tools.webSearch.provider = "tavily";
@@ -145,6 +179,25 @@ export const normalizeConfig = (config: AppConfig): AppConfig => {
   config.tools.webFetch.provider = "jina";
   config.tools.webFetch.baseUrl = config.tools.webFetch.baseUrl.trim() || "https://r.jina.ai/http://";
   config.tools.webFetch.timeoutMs = Math.max(500, Math.floor(config.tools.webFetch.timeoutMs));
+
+  config.tools.githubSearch.enabled = Boolean(config.tools.githubSearch.enabled);
+  config.tools.githubSearch.baseUrl = config.tools.githubSearch.baseUrl.trim() || "https://api.github.com";
+  config.tools.githubSearch.timeoutMs = Math.max(500, Math.floor(config.tools.githubSearch.timeoutMs));
+  config.tools.githubSearch.maxResults = Math.max(1, Math.min(50, Math.floor(config.tools.githubSearch.maxResults)));
+
+  config.channels.channels = config.channels.channels
+    .map((ch, index) => ({
+      id: ch.id?.trim() || `channel_${index + 1}`,
+      ...(ch.name?.trim() ? { name: ch.name.trim() } : {}),
+      type: (ch.type || "feishu").trim().toLowerCase(),
+      appId: ch.appId?.trim() || "",
+      appSecret: ch.appSecret?.trim() || "",
+      allowedChatIds: Array.from(
+        new Set((ch.allowedChatIds ?? []).map((item) => item.trim()).filter(Boolean))
+      ),
+      enabled: ch.enabled !== false
+    }))
+    .filter((ch) => ch.type === "feishu" && ch.appId && ch.appSecret);
 
   config.runtime.devServerUrl = config.runtime.devServerUrl?.trim() || undefined;
   config.runtime.inheritedEnv = Object.fromEntries(

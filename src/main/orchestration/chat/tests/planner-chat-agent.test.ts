@@ -2,6 +2,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { ChatSendInput } from "../../../../shared/ipc";
 import { createDefaultConfig } from "../../../config/default-config";
+import { SandboxViolationError } from "../../../sandbox/errors";
 import { ToolPlanningChatAgent } from "../planner-chat-agent";
 
 const createConfig = () => {
@@ -17,12 +18,14 @@ const createConfig = () => {
       resourcesDir: path.join(workspaceDir, "resources"),
       pluginsDir: path.join(workspaceDir, "plugins"),
       traceDir: path.join(workspaceDir, "traces"),
+      skillsDir: path.join(workspaceDir, "skills"),
+      soulDir: path.join(workspaceDir, "soul"),
+      cronDir: path.join(workspaceDir, "cron"),
       projectConfigPath: path.join(workspaceDir, "config.json"),
       userConfigPath: path.join(workspaceDir, "user-config.json"),
       auditLogPath: path.join(workspaceDir, "model-audit.log"),
       sandboxAuditLogPath: path.join(workspaceDir, "sandbox-audit.log"),
       databasePath: path.join(workspaceDir, "bandry.db"),
-      dotenvPath: path.join(workspaceDir, ".env")
     },
     runtime: {
       inheritedEnv: {}
@@ -31,6 +34,33 @@ const createConfig = () => {
   config.providers.openai.apiKey = "sk-openai-valid-key-1234567890";
   config.providers.deepseek.apiKey = "sk-deepseek-valid-key-1234567890";
   config.providers.volcengine.apiKey = "test-volcengine-key";
+  config.modelProfiles = [
+    {
+      id: "profile_openai_default",
+      name: "OpenAI Default",
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      enabled: true
+    },
+    {
+      id: "profile_deepseek_default",
+      name: "DeepSeek Default",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      enabled: true
+    },
+    {
+      id: "profile_volcengine_default",
+      name: "Volcengine Default",
+      provider: "volcengine",
+      model: "doubao-seed-1-6-250615",
+      enabled: true
+    }
+  ];
+  config.routing.assignments["chat.default"] = "profile_deepseek_default";
+  config.routing.assignments["lead.planner"] = "profile_deepseek_default";
+  config.routing.assignments["lead.synthesizer"] = "profile_deepseek_default";
+  config.routing.assignments["memory.fact_extractor"] = "profile_deepseek_default";
   return config;
 };
 
@@ -250,9 +280,96 @@ describe("ToolPlanningChatAgent", () => {
     }
   });
 
+  it("emits concise planning milestones for analysis, tool intent, and answer preparation", async () => {
+    const config = createConfig();
+    config.tools.webSearch.enabled = true;
+    config.tools.webSearch.apiKey = "tvly-test-key";
+
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          results: [
+            {
+              title: "Weather",
+              url: "https://example.com/weather",
+              content: "Sunny"
+            }
+          ]
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
+
+    const modelsFactory = {
+      isProviderConfigured: vi.fn(() => true),
+      generateText: vi
+        .fn()
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"tool","tool":"web_search","reason":"我发现需要先确认天气信息","input":{"query":"新加坡天气"}}',
+          latencyMs: 30
+        })
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"answer","answer":"今天是晴天。"}',
+          latencyMs: 35
+        }),
+      generateTextStream: vi.fn(async () => ({
+        provider: "deepseek",
+        model: "deepseek-chat",
+        text: "今天是晴天。",
+        latencyMs: 50
+      }))
+    };
+
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(),
+      exec: vi.fn()
+    };
+
+    const agent = new ToolPlanningChatAgent(config, modelsFactory as never, sandboxService as never);
+    const updates: Array<{ stage: string; message: string }> = [];
+
+    try {
+      await agent.send(
+        {
+          message: "今天天气怎么样？",
+          history: [],
+          mode: "thinking"
+        },
+        (stage, detail) => {
+          updates.push({ stage, message: detail });
+        },
+        undefined,
+        undefined,
+        {
+          thinkingEnabled: true
+        }
+      );
+
+      expect(updates.some((item) => item.stage === "planning" && item.message === "分析问题并整理思路")).toBe(true);
+      expect(updates.some((item) => item.stage === "planning" && item.message === "我发现需要先确认天气信息")).toBe(true);
+      expect(updates.some((item) => item.stage === "planning" && item.message === "整理工具结果并准备回答")).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("does not fallback when lead route profile is unusable", async () => {
     const config = createConfig();
     config.providers.openai.apiKey = "123123123";
+    config.routing.assignments["lead.planner"] = "profile_openai_default";
+    config.routing.assignments["lead.synthesizer"] = "profile_openai_default";
 
     const modelsFactory = {
       isProviderConfigured: vi.fn(() => true),
@@ -309,11 +426,54 @@ describe("ToolPlanningChatAgent", () => {
     await expect(
       agent.send({
         message: "请总结一下",
-        history: []
+        history: [],
+        mode: "thinking"
       })
     ).rejects.toThrow(
       "[lead.synthesizer profile=profile_deepseek_default model=deepseek/deepseek-chat] model call failed: provider timeout"
     );
+  });
+
+  it("uses final synthesizer streaming for default direct answers without tools", async () => {
+    const config = createConfig();
+    const modelsFactory = {
+      isProviderConfigured: vi.fn(() => true),
+      generateText: vi.fn(async () => ({
+        provider: "deepseek",
+        model: "deepseek-chat",
+        text: '{"action":"answer","answer":"直接返回 planner 的回答"}',
+        latencyMs: 30
+      })),
+      generateTextStream: vi.fn(async (_input, onDelta: (delta: string) => void) => {
+        onDelta("直接");
+        onDelta("返回 planner 的回答");
+        return {
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: "直接返回 planner 的回答",
+          latencyMs: 40
+        };
+      })
+    };
+
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(),
+      exec: vi.fn()
+    };
+
+    const agent = new ToolPlanningChatAgent(config, modelsFactory as never, sandboxService as never);
+
+    const result = await agent.send({
+      message: "直接回答这个问题",
+      history: [],
+      mode: "default",
+      thinkingEnabled: false
+    });
+
+    expect(result.reply).toBe("直接返回 planner 的回答");
+    expect(modelsFactory.generateTextStream).toHaveBeenCalledTimes(1);
   });
 
   it("emits clarification payload and stops execution when planner asks clarification", async () => {
@@ -408,5 +568,193 @@ describe("ToolPlanningChatAgent", () => {
       message.content.includes("Planner draft answer")
     );
     expect(hasPlannerDraft).toBe(false);
+  });
+
+  it("forces write_file before answer when explicit persist is requested", async () => {
+    const config = createConfig();
+    const modelsFactory = {
+      isProviderConfigured: vi.fn(() => true),
+      generateText: vi
+        .fn()
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"answer","answer":"先给你结论"}',
+          latencyMs: 20
+        })
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"tool","tool":"write_file","input":{"path":"output/report.md","content":"# 市场简报"}}',
+          latencyMs: 20
+        })
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"answer","answer":"已完成简报"}',
+          latencyMs: 20
+        }),
+      generateTextStream: vi.fn(async () => ({
+        provider: "deepseek",
+        model: "deepseek-chat",
+        text: "这是最终简报内容",
+        latencyMs: 30
+      }))
+    };
+
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(async (payload: { path: string; content: string }) => ({
+        path: payload.path,
+        bytesWritten: Buffer.byteLength(payload.content, "utf8")
+      })),
+      exec: vi.fn()
+    };
+
+    const agent = new ToolPlanningChatAgent(config, modelsFactory as never, sandboxService as never);
+
+    const result = await agent.send({
+      message: "请你调研一下今天的美股市场大跌原因，生成一个 md 简报并保存到 output/report.md",
+      history: []
+    });
+
+    expect(sandboxService.writeFile).toHaveBeenCalledTimes(1);
+    expect(result.reply).toContain("已保存到文件：[report.md](/mnt/workspace/output/report.md)");
+  });
+
+  it("asks clarification when explicit write target already exists", async () => {
+    const config = createConfig();
+    const modelsFactory = {
+      isProviderConfigured: vi.fn(() => true),
+      generateText: vi
+        .fn()
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"tool","tool":"write_file","input":{"path":"output/report.md","content":"# 内容"}}',
+          latencyMs: 20
+        })
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '[{"label":"改用默认路径","value":"请保存到 output/document.md"},{"label":"指定新路径","value":"请保存到 output/report-new.md"},{"label":"仅输出草稿","value":"先不要保存到文件"}]',
+          latencyMs: 20
+        }),
+      generateTextStream: vi.fn()
+    };
+
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(async () => {
+        throw new SandboxViolationError("FILE_EXISTS", "Target file already exists");
+      }),
+      exec: vi.fn()
+    };
+
+    const updates: Array<{ stage: string; message: string }> = [];
+    const agent = new ToolPlanningChatAgent(config, modelsFactory as never, sandboxService as never);
+
+    const result = await agent.send(
+      {
+        message: "把简报写入 output/report.md",
+        history: []
+      },
+      (stage, detail) => {
+        updates.push({ stage, message: detail });
+      }
+    );
+
+    expect(result.reply).toContain("需要进一步确认");
+    expect(modelsFactory.generateTextStream).not.toHaveBeenCalled();
+    expect(updates.some((item) => item.stage === "clarification")).toBe(true);
+  });
+
+  it("falls back to backend write when planner never performs write_file", async () => {
+    const config = createConfig();
+    const modelsFactory = {
+      isProviderConfigured: vi.fn(() => true),
+      generateText: vi.fn(async () => ({
+        provider: "deepseek",
+        model: "deepseek-chat",
+        text: '{"action":"answer","answer":"直接回答"}',
+        latencyMs: 20
+      })),
+      generateTextStream: vi.fn(async () => ({
+        provider: "deepseek",
+        model: "deepseek-chat",
+        text: "最终正文",
+        latencyMs: 20
+      }))
+    };
+
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(async (payload: { path: string; content: string }) => ({
+        path: payload.path,
+        bytesWritten: Buffer.byteLength(payload.content, "utf8")
+      })),
+      exec: vi.fn()
+    };
+
+    const agent = new ToolPlanningChatAgent(config, modelsFactory as never, sandboxService as never);
+    const result = await agent.send({
+      message: "请输出 markdown 文档并保存到文件",
+      history: []
+    });
+
+    expect(sandboxService.writeFile).toHaveBeenCalledTimes(1);
+    expect(result.reply).toContain("已保存到文件：[");
+    expect(result.reply).toContain("](/mnt/workspace/output/");
+  });
+
+  it("stops redundant write_file calls after first persist success and removes duplicated path block", async () => {
+    const config = createConfig();
+    const modelsFactory = {
+      isProviderConfigured: vi.fn(() => true),
+      generateText: vi
+        .fn()
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"tool","tool":"write_file","input":{"path":"output/conversation.md","content":"# 记录"}}',
+          latencyMs: 20
+        })
+        .mockResolvedValueOnce({
+          provider: "deepseek",
+          model: "deepseek-chat",
+          text: '{"action":"tool","tool":"write_file","input":{"path":"output/conversation.md","content":"# 记录2"}}',
+          latencyMs: 20
+        }),
+      generateTextStream: vi.fn(async () => ({
+        provider: "deepseek",
+        model: "deepseek-chat",
+        text: "文件路径: [conversation.md](/mnt/workspace/output/conversation.md)\n\n正文内容。",
+        latencyMs: 20
+      }))
+    };
+
+    const sandboxService = {
+      listDir: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(async (payload: { path: string; content: string }) => ({
+        path: payload.path,
+        bytesWritten: Buffer.byteLength(payload.content, "utf8")
+      })),
+      exec: vi.fn()
+    };
+
+    const agent = new ToolPlanningChatAgent(config, modelsFactory as never, sandboxService as never);
+    const result = await agent.send({
+      message: "请把这段对话导出成 md 并保存到文件",
+      history: []
+    });
+
+    expect(sandboxService.writeFile).toHaveBeenCalledTimes(1);
+    expect(result.reply).toContain("正文内容。");
+    expect(result.reply).not.toContain("文件路径:");
+    expect(result.reply).toContain("已保存到文件：[conversation.md](/mnt/workspace/output/conversation.md)");
   });
 });

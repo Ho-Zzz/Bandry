@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
     title TEXT,
     model_profile_id TEXT,
+    workspace_path TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -52,9 +53,30 @@ CREATE TABLE IF NOT EXISTS messages (
     status TEXT DEFAULT 'completed' CHECK(status IN ('pending', 'completed', 'error')),
     trace TEXT,
     created_at INTEGER NOT NULL,
+    prompt_tokens INTEGER,
+    completion_tokens INTEGER,
+    total_tokens INTEGER,
     FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 
 -- Indexes for conversations and messages
 CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_messages_tokens ON messages(total_tokens) WHERE total_tokens IS NOT NULL;
+
+-- User files table
+-- Stores user-managed files that sync to OpenViking
+CREATE TABLE IF NOT EXISTS user_files (
+    id TEXT PRIMARY KEY,
+    file_path TEXT NOT NULL UNIQUE,
+    size_bytes INTEGER NOT NULL,
+    mime_type TEXT,
+    viking_uri TEXT,
+    viking_synced_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+-- Indexes for user files
+CREATE INDEX IF NOT EXISTS idx_user_files_path ON user_files(file_path);
+CREATE INDEX IF NOT EXISTS idx_user_files_viking ON user_files(viking_uri);

@@ -16,12 +16,14 @@ const createConfig = () => {
       resourcesDir: path.join(workspaceDir, "resources"),
       pluginsDir: path.join(workspaceDir, "plugins"),
       traceDir: path.join(workspaceDir, "traces"),
+      skillsDir: path.join(workspaceDir, "skills"),
+      soulDir: path.join(workspaceDir, "soul"),
+      cronDir: path.join(workspaceDir, "cron"),
       projectConfigPath: path.join(workspaceDir, "config.json"),
       userConfigPath: path.join(workspaceDir, "user-config.json"),
       auditLogPath: path.join(workspaceDir, "model-audit.log"),
       sandboxAuditLogPath: path.join(workspaceDir, "sandbox-audit.log"),
       databasePath: path.join(workspaceDir, "bandry.db"),
-      dotenvPath: path.join(workspaceDir, ".env")
     },
     runtime: {
       inheritedEnv: {}
@@ -31,6 +33,32 @@ const createConfig = () => {
   config.providers.openai.apiKey = "sk-openai-valid-key-1234567890";
   config.providers.deepseek.apiKey = "sk-deepseek-valid-key-1234567890";
   config.providers.volcengine.apiKey = "volc-key";
+  config.modelProfiles = [
+    {
+      id: "profile_openai_default",
+      name: "OpenAI Default",
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      enabled: true,
+      temperature: 0.2
+    },
+    {
+      id: "profile_deepseek_default",
+      name: "DeepSeek Default",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      enabled: true,
+      temperature: 0.2
+    },
+    {
+      id: "profile_volcengine_default",
+      name: "Volcengine Default",
+      provider: "volcengine",
+      model: "doubao-seed-1-6-250615",
+      enabled: true,
+      temperature: 0.2
+    }
+  ];
   return config;
 };
 

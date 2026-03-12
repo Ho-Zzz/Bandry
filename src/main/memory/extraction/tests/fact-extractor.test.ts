@@ -25,73 +25,97 @@ const createMockConfig = (): AppConfig => ({
     maxOutputBytes: 64 * 1024,
     auditLogEnabled: false
   },
+  subagent: {
+    maxConcurrent: 3,
+    timeoutMs: 900_000
+  },
   providers: {
     openai: {
       enabled: true,
       apiKey: "sk-openai-valid-key-1234567890",
       baseUrl: "",
-      model: "gpt-4"
+      model: "gpt-4",
+      embeddingModel: "text-embedding-3-large"
     },
     deepseek: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
     },
     volcengine: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: "doubao-embedding-vision-250615"
     },
     openrouter: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
     },
     groq: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
     },
     moonshot: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
     },
     qwen: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
     },
     siliconflow: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
     },
     together: {
       enabled: false,
       apiKey: "",
       baseUrl: "",
-      model: ""
+      model: "",
+      embeddingModel: ""
+    },
+    minimax: {
+      enabled: false,
+      apiKey: "",
+      baseUrl: "",
+      model: "",
+      embeddingModel: ""
     }
   },
   features: {
     enableMemory: false,
-    enableMCP: false
+    enableMCP: false,
+    enableSkills: false,
+    enableSoul: false
   },
   openviking: {
     enabled: true,
     host: "127.0.0.1",
     port: 1933,
     apiKey: "",
-    serverCommand: "openviking",
-    serverArgs: ["serve"],
+    vlmProfileId: "profile_openai_default",
+    embeddingProfileId: "profile_openai_default",
+    serverCommand: "openviking-server",
+    serverArgs: [],
     startTimeoutMs: 20_000,
     healthcheckIntervalMs: 500,
     memoryTopK: 6,
@@ -143,7 +167,18 @@ const createMockConfig = (): AppConfig => ({
       apiKey: "",
       baseUrl: "https://r.jina.ai/http://",
       timeoutMs: 15000
+    },
+    githubSearch: {
+      enabled: true,
+      apiKey: "",
+      baseUrl: "https://api.github.com",
+      timeoutMs: 15000,
+      maxResults: 10
     }
+  },
+  channels: {
+    enabled: false,
+    channels: []
   },
   paths: {
     projectRoot: "",
@@ -160,7 +195,9 @@ const createMockConfig = (): AppConfig => ({
     databasePath: "",
     traceDir: "",
     resourcesDir: "",
-    dotenvPath: ""
+    skillsDir: "",
+    soulDir: "",
+    cronDir: "",
   },
   runtime: {
     inheritedEnv: {}

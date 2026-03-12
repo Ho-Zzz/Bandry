@@ -32,6 +32,7 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
   const catalogSourceRaw = asObject(catalogRaw.source);
   const routingRaw = asObject(root.routing);
   const toolsRaw = asObject(root.tools);
+  const channelsRaw = asObject(root.channels);
   type LlmLayer = NonNullable<ConfigLayer["llm"]>;
   const llmLayer: ConfigLayer["llm"] = {
     defaultProvider: toStringValue(llmRaw.defaultProvider) as LlmLayer["defaultProvider"] | undefined,
@@ -65,6 +66,8 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
     host: toStringValue(openvikingRaw.host),
     port: toNumberValue(openvikingRaw.port),
     apiKey: toStringValue(openvikingRaw.apiKey),
+    vlmProfileId: toStringValue(openvikingRaw.vlmProfileId),
+    embeddingProfileId: toStringValue(openvikingRaw.embeddingProfileId),
     serverCommand: toStringValue(openvikingRaw.serverCommand),
     serverArgs: toStringListValue(openvikingRaw.serverArgs),
     startTimeoutMs: toNumberValue(openvikingRaw.startTimeoutMs),
@@ -108,7 +111,45 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
           model: toStringValue(item.model),
           enabled: toBooleanValue(item.enabled),
           temperature: toNumberValue(item.temperature),
-          maxTokens: toNumberValue(item.maxTokens)
+          maxTokens: toNumberValue(item.maxTokens),
+          capabilities: (() => {
+            if (item.capabilities === undefined) {
+              return undefined;
+            }
+            const raw = asObject(item.capabilities);
+            const parsed = {
+              supportsThinking: toBooleanValue(raw.supportsThinking),
+              supportsReasoningEffort: toBooleanValue(raw.supportsReasoningEffort),
+              supportsVision: toBooleanValue(raw.supportsVision),
+              supportsToolCall: toBooleanValue(raw.supportsToolCall)
+            };
+            if (Object.values(parsed).every((value) => value === undefined)) {
+              return undefined;
+            }
+            return parsed;
+          })(),
+          whenThinkingEnabled: (() => {
+            if (item.whenThinkingEnabled === undefined) {
+              return undefined;
+            }
+            const raw = asObject(item.whenThinkingEnabled);
+            const rawExtraBody = raw.extraBody;
+            const extraBody = (
+              typeof rawExtraBody === "object" &&
+              rawExtraBody !== null &&
+              !Array.isArray(rawExtraBody)
+            )
+              ? rawExtraBody as Record<string, unknown>
+              : undefined;
+            const reasoningEffort = toStringValue(raw.reasoningEffort) as "minimal" | "low" | "medium" | "high" | undefined;
+            if (extraBody === undefined && reasoningEffort === undefined) {
+              return undefined;
+            }
+            return {
+              extraBody,
+              reasoningEffort
+            };
+          })()
         }))
         .filter((item) => item.id.trim().length > 0)
     : undefined;
@@ -128,6 +169,7 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
 
   const webSearchRaw = asObject(toolsRaw.webSearch);
   const webFetchRaw = asObject(toolsRaw.webFetch);
+  const githubSearchRaw = asObject(toolsRaw.githubSearch);
   const toolsLayer: ConfigLayer["tools"] = {
     webSearch: {
       enabled: toBooleanValue(webSearchRaw.enabled),
@@ -143,7 +185,31 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
       apiKey: toStringValue(webFetchRaw.apiKey),
       baseUrl: toStringValue(webFetchRaw.baseUrl),
       timeoutMs: toNumberValue(webFetchRaw.timeoutMs)
+    },
+    githubSearch: {
+      enabled: toBooleanValue(githubSearchRaw.enabled),
+      apiKey: toStringValue(githubSearchRaw.apiKey),
+      baseUrl: toStringValue(githubSearchRaw.baseUrl),
+      timeoutMs: toNumberValue(githubSearchRaw.timeoutMs),
+      maxResults: toNumberValue(githubSearchRaw.maxResults)
     }
+  };
+
+  const channelsLayer: ConfigLayer["channels"] = {
+    enabled: toBooleanValue(channelsRaw.enabled),
+    channels: Array.isArray(channelsRaw.channels)
+      ? channelsRaw.channels
+          .map((item) => asObject(item))
+          .map((item) => ({
+            id: toStringValue(item.id),
+            name: toStringValue(item.name),
+            type: toStringValue(item.type) ?? "feishu",
+            appId: toStringValue(item.appId),
+            appSecret: toStringValue(item.appSecret),
+            allowedChatIds: toStringListValue(item.allowedChatIds),
+            enabled: toBooleanValue(item.enabled)
+          }))
+      : undefined
   };
 
   const providerRoot = asObject(root.providers);
@@ -160,6 +226,7 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
       apiKey: toStringValue(providerConfig.apiKey),
       baseUrl: toStringValue(providerConfig.baseUrl),
       model: toStringValue(providerConfig.model),
+      embeddingModel: toStringValue(providerConfig.embeddingModel),
       orgId: toStringValue(providerConfig.orgId)
     };
   }
@@ -174,6 +241,7 @@ export const readJsonLayer = (filePath: string): ConfigLayer => {
     modelProfiles: modelProfilesLayer,
     routing: routingLayer,
     tools: toolsLayer,
+    channels: channelsLayer,
     providers
   };
 };

@@ -13,6 +13,24 @@ export type RuntimeRole =
   | "sub.writer"
   | "memory.fact_extractor";
 
+/**
+ * Model capabilities indicate what features a model supports
+ */
+export type ModelCapabilities = {
+  supportsThinking?: boolean;
+  supportsReasoningEffort?: boolean;
+  supportsVision?: boolean;
+  supportsToolCall?: boolean;
+};
+
+/**
+ * Configuration to apply when thinking mode is enabled
+ */
+export type ThinkingConfig = {
+  extraBody?: Record<string, unknown>;
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+};
+
 export type ModelProfile = {
   id: string;
   name: string;
@@ -21,6 +39,8 @@ export type ModelProfile = {
   enabled: boolean;
   temperature?: number;
   maxTokens?: number;
+  capabilities?: ModelCapabilities;
+  whenThinkingEnabled?: ThinkingConfig;
 };
 
 export type ModelProfileLayer = Partial<ModelProfile> & Pick<ModelProfile, "id">;
@@ -50,14 +70,25 @@ export type InternalWebFetchConfig = {
   timeoutMs: number;
 };
 
+export type InternalGitHubSearchConfig = {
+  enabled: boolean;
+  /** GitHub personal access token (optional, increases rate limit) */
+  apiKey: string;
+  baseUrl: string;
+  timeoutMs: number;
+  maxResults: number;
+};
+
 export type InternalToolsConfig = {
   webSearch: InternalWebSearchConfig;
   webFetch: InternalWebFetchConfig;
+  githubSearch: InternalGitHubSearchConfig;
 };
 
 export type InternalToolsLayerConfig = Partial<{
   webSearch: Partial<InternalWebSearchConfig>;
   webFetch: Partial<InternalWebFetchConfig>;
+  githubSearch: Partial<InternalGitHubSearchConfig>;
 }>;
 
 export type CatalogSourceType = "http" | "file";
@@ -87,12 +118,14 @@ export type AppPaths = {
   resourcesDir: string;
   pluginsDir: string;
   traceDir: string;
+  skillsDir: string;
+  soulDir: string;
+  cronDir: string;
   projectConfigPath: string;
   userConfigPath: string;
   auditLogPath: string;
   sandboxAuditLogPath: string;
   databasePath: string;
-  dotenvPath: string;
 };
 
 export type RuntimeConfig = {
@@ -105,6 +138,7 @@ export type ProviderLayerConfig = Partial<{
   apiKey: string;
   baseUrl: string;
   model: string;
+  embeddingModel: string;
   orgId: string;
 }>;
 
@@ -133,6 +167,8 @@ export type LlmLayerConfig = Partial<{
 export type FeaturesLayerConfig = Partial<{
   enableMemory: boolean;
   enableMCP: boolean;
+  enableSkills: boolean;
+  enableSoul: boolean;
 }>;
 
 export type OpenVikingLayerConfig = Partial<{
@@ -140,6 +176,8 @@ export type OpenVikingLayerConfig = Partial<{
   host: string;
   port: number;
   apiKey: string;
+  vlmProfileId: string;
+  embeddingProfileId: string;
   serverCommand: string;
   serverArgs: string[];
   startTimeoutMs: number;
@@ -161,11 +199,27 @@ export type PathsLayerConfig = Partial<
     | "resourcesDir"
     | "pluginsDir"
     | "traceDir"
+    | "skillsDir"
+    | "soulDir"
+    | "cronDir"
     | "auditLogPath"
     | "sandboxAuditLogPath"
     | "databasePath"
   >
 >;
+
+export type ChannelsLayerConfig = Partial<{
+  enabled: boolean;
+  channels: Array<{
+    id?: string;
+    name?: string;
+    type: string;
+    appId?: string;
+    appSecret?: string;
+    allowedChatIds?: string[];
+    enabled?: boolean;
+  }>;
+}>;
 
 export type ConfigLayer = {
   llm?: LlmLayerConfig;
@@ -180,6 +234,7 @@ export type ConfigLayer = {
   modelProfiles?: ModelProfileLayer[];
   routing?: RoutingLayerConfig;
   tools?: InternalToolsLayerConfig;
+  channels?: ChannelsLayerConfig;
 };
 
 export type ProviderConfig = {
@@ -187,6 +242,7 @@ export type ProviderConfig = {
   apiKey: string;
   baseUrl: string;
   model: string;
+  embeddingModel: string;
   orgId?: string;
 };
 
@@ -211,16 +267,27 @@ export type AppConfig = {
     maxOutputBytes: number;
     auditLogEnabled: boolean;
   };
+  /** Sub-agent configuration for subagents mode */
+  subagent: {
+    /** Maximum concurrent sub-agents (2-5, default 3) */
+    maxConcurrent: number;
+    /** Sub-agent execution timeout in ms (default 900000 = 15min) */
+    timeoutMs: number;
+  };
   providers: Record<LlmProvider, ProviderConfig>;
   features: {
     enableMemory: boolean;
     enableMCP: boolean;
+    enableSkills: boolean;
+    enableSoul: boolean;
   };
   openviking: {
     enabled: boolean;
     host: string;
     port: number;
     apiKey: string;
+    vlmProfileId: string;
+    embeddingProfileId: string;
     serverCommand: string;
     serverArgs: string[];
     startTimeoutMs: number;
@@ -236,6 +303,18 @@ export type AppConfig = {
   modelProfiles: ModelProfile[];
   routing: RoutingConfig;
   tools: InternalToolsConfig;
+  channels: {
+    enabled: boolean;
+    channels: Array<{
+      id?: string;
+      name?: string;
+      type: string;
+      appId: string;
+      appSecret: string;
+      allowedChatIds?: string[];
+      enabled?: boolean;
+    }>;
+  };
   paths: AppPaths;
   runtime: RuntimeConfig;
 };
@@ -269,6 +348,8 @@ export type PublicConfigSummary = {
     provider: LlmProvider;
     model: string;
     enabled: boolean;
+    capabilities?: ModelCapabilities;
+    whenThinkingEnabled?: ThinkingConfig;
   }>;
   routing: Record<RuntimeRole, string>;
   tools: {

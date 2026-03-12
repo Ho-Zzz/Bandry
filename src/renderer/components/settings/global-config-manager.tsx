@@ -1,8 +1,13 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Brain, CheckCircle2, XCircle, Plus, Trash2, FolderOpen } from "lucide-react";
 import { Button, Card, CardBody, CardHeader, Input, Switch } from "@heroui/react";
-import type { GlobalSettingsState } from "../../../shared/ipc";
+import type {
+  ConfigStorageInfoResult,
+  ConnectedModelResult,
+  GlobalSettingsState,
+  MemoryStatusResult
+} from "../../../shared/ipc";
 
 export const GlobalConfigManager = () => {
   const navigate = useNavigate();
@@ -11,6 +16,8 @@ export const GlobalConfigManager = () => {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string>("");
   const [visibleApiKeys, setVisibleApiKeys] = useState<Record<string, boolean>>({});
+  const [connectedModels, setConnectedModels] = useState<ConnectedModelResult[]>([]);
+  const [storageInfo, setStorageInfo] = useState<ConfigStorageInfoResult | null>(null);
 
   const isApiKeyVisible = (fieldId: string) => Boolean(visibleApiKeys[fieldId]);
   const toggleApiKeyVisibility = (fieldId: string) => {
@@ -30,12 +37,96 @@ export const GlobalConfigManager = () => {
     </button>
   );
 
+  const [memoryStatus, setMemoryStatus] = useState<MemoryStatusResult | null>(null);
+  const openVikingCandidates = useMemo(() => {
+    return connectedModels.filter((model) => (
+      model.enabled &&
+      model.providerConfigured &&
+      (model.provider === "openai" || model.provider === "volcengine")
+    ));
+  }, [connectedModels]);
+
+  const validateMemoryBindings = useCallback((draft: GlobalSettingsState): string | null => {
+    if (!draft.memory.enableMemory || !draft.memory.openviking.enabled) {
+      return null;
+    }
+
+    const byId = new Map(openVikingCandidates.map((item) => [item.profileId, item]));
+    const ensure = (
+      label: "VLM" | "Embedding",
+      profileId: string
+    ): string | null => {
+      const id = profileId.trim();
+      if (!id) {
+        return `OpenViking ${label} Profile 未配置，请先选择可用模型。`;
+      }
+      if (!byId.has(id)) {
+        return `OpenViking ${label} Profile 不可用（需 OpenAI/Volcengine 且凭证可用）。`;
+      }
+      return null;
+    };
+
+    return (
+      ensure("VLM", draft.memory.openviking.vlmProfileId) ??
+      ensure("Embedding", draft.memory.openviking.embeddingProfileId)
+    );
+  }, [openVikingCandidates]);
+
+  const refreshMemoryStatus = useCallback(async () => {
+    try {
+      const result = await window.api.memoryStatus();
+      setMemoryStatus(result);
+    } catch {
+      setMemoryStatus(null);
+    }
+  }, []);
+
+  const updateChannelsState = useCallback(
+    (updater: (channels: GlobalSettingsState["channels"]) => GlobalSettingsState["channels"]) => {
+      setState((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          channels: updater(current.channels)
+        };
+      });
+    },
+    []
+  );
+
+  const addFeishuChannel = useCallback(() => {
+    const id = `feishu_${Date.now().toString(36)}`;
+    updateChannelsState((channels) => ({
+      ...channels,
+      channels: [
+        ...channels.channels,
+        {
+          id,
+          name: "",
+          type: "feishu",
+          appId: "",
+          appSecret: "",
+          allowedChatIds: [],
+          enabled: true
+        }
+      ]
+    }));
+  }, [updateChannelsState]);
+
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
-        const result = await window.api.getSettingsState();
+        const [result, connected] = await Promise.all([
+          window.api.getSettingsState(),
+          window.api.modelsListConnected()
+        ]);
         setState(result);
+        setConnectedModels(connected.models);
+        const storage = await window.api.getConfigStorageInfo();
+        setStorageInfo(storage);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "加载配置失败");
       } finally {
@@ -43,7 +134,8 @@ export const GlobalConfigManager = () => {
       }
     };
     void load();
-  }, []);
+    void refreshMemoryStatus();
+  }, [refreshMemoryStatus]);
 
   if (loading) {
     return <div className="p-6 text-sm text-gray-500">Loading settings...</div>;
@@ -57,11 +149,31 @@ export const GlobalConfigManager = () => {
     setSaving(true);
     setMessage("");
     try {
+      const validationError = validateMemoryBindings(state);
+      if (validationError) {
+        setState((current) => (
+          current
+            ? {
+                ...current,
+                memory: {
+                  ...current.memory,
+                  enableMemory: false
+                }
+              }
+            : current
+        ));
+        setMessage(validationError);
+        return;
+      }
       const result = await window.api.saveSettingsState({ state });
       setMessage(result.message);
       if (result.ok) {
-        const latest = await window.api.getSettingsState();
+        const [latest, connected] = await Promise.all([
+          window.api.getSettingsState(),
+          window.api.modelsListConnected()
+        ]);
         setState(latest);
+        setConnectedModels(connected.models);
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "保存失败");
@@ -92,30 +204,131 @@ export const GlobalConfigManager = () => {
       </Card>
 
       <Card>
-        <CardHeader>
-          <h3 className="text-lg font-semibold">记忆能力（OpenViking）</h3>
+        <CardHeader className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Configuration Storage</h3>
+          <Button
+            variant="flat"
+            startContent={<FolderOpen size={14} />}
+            onPress={async () => {
+              try {
+                const result = await window.api.openConfigDir();
+                if (!result.ok) {
+                  setMessage(result.message ?? "打开配置目录失败");
+                }
+              } catch (error) {
+                setMessage(error instanceof Error ? error.message : "打开配置目录失败");
+              }
+            }}
+          >
+            打开配置目录
+          </Button>
+        </CardHeader>
+        <CardBody className="space-y-2 text-sm text-gray-700">
+          <p>
+            用户配置文件：<span className="font-mono">{storageInfo?.userConfigPath ?? "loading..."}</span>
+          </p>
+          <p>
+            配置目录：<span className="font-mono">{storageInfo?.configDir ?? "loading..."}</span>
+          </p>
+          <p className="text-xs text-gray-500">
+            {storageInfo?.notes ?? "Config source: defaults + project(optional) + userConfig. .env is disabled."}
+          </p>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Brain size={20} className="text-indigo-600" />
+            <h3 className="text-lg font-semibold">记忆能力（OpenViking）</h3>
+          </div>
+          {memoryStatus ? (
+            <div className="flex items-center gap-1.5 text-xs">
+              {memoryStatus.running ? (
+                <>
+                  <CheckCircle2 size={14} className="text-emerald-500" />
+                  <span className="text-emerald-700">运行中</span>
+                  {memoryStatus.url ? (
+                    <span className="ml-1 text-gray-400">{memoryStatus.url}</span>
+                  ) : null}
+                </>
+              ) : memoryStatus.enabled ? (
+                <>
+                  <XCircle size={14} className="text-amber-500" />
+                  <span className="text-amber-700">未运行</span>
+                </>
+              ) : (
+                <>
+                  <XCircle size={14} className="text-gray-400" />
+                  <span className="text-gray-500">已禁用</span>
+                </>
+              )}
+              <Button
+                variant="light"
+                size="sm"
+                className="ml-2 h-6 min-w-0 px-2 text-xs"
+                onPress={() => { void refreshMemoryStatus(); }}
+              >
+                刷新
+              </Button>
+            </div>
+          ) : null}
         </CardHeader>
         <CardBody className="space-y-4">
           <div className="flex items-center justify-between rounded-lg border p-3">
-            <span>启用 Memory Middleware</span>
+            <div>
+              <span className="font-medium">启用 Memory Middleware</span>
+              <p className="text-xs text-gray-500 mt-0.5">开启后 Agent 会在对话中注入历史记忆上下文，并自动沉淀对话记忆</p>
+            </div>
             <Switch
               isSelected={state.memory.enableMemory}
-              onValueChange={(value) =>
-                setState((current) => (
-                  current
-                    ? {
-                        ...current,
-                        memory: {
-                          ...current.memory,
-                          enableMemory: value
+              onValueChange={(value) => {
+                if (!value) {
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          memory: {
+                            ...current.memory,
+                            enableMemory: false
+                          }
                         }
-                      }
-                    : current
-                ))
-              }
+                      : current
+                  ));
+                  return;
+                }
+
+                const nextState = {
+                  ...state,
+                  memory: {
+                    ...state.memory,
+                    enableMemory: true
+                  }
+                };
+                const validationError = validateMemoryBindings(nextState);
+                if (validationError) {
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          memory: {
+                            ...current.memory,
+                            enableMemory: false
+                          }
+                        }
+                      : current
+                  ));
+                  setMessage(validationError);
+                  return;
+                }
+                setState(nextState);
+              }}
             />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
+            事实提取模型会自动跟随 LeadAgent 的模型配置（优先 lead.synthesizer，缺失时回退 lead.planner / chat.default）。
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             <Input
               label="OpenViking Host"
               value={state.memory.openviking.host}
@@ -156,8 +369,69 @@ export const GlobalConfigManager = () => {
                 ))
               }
             />
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500">OpenViking VLM Profile</label>
+              <select
+                value={state.memory.openviking.vlmProfileId}
+                onChange={(event) =>
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          memory: {
+                            ...current.memory,
+                            openviking: {
+                              ...current.memory.openviking,
+                              vlmProfileId: event.target.value
+                            }
+                          }
+                        }
+                      : current
+                  ))
+                }
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Select OpenAI/Volcengine model profile...</option>
+                {openVikingCandidates.map((item) => (
+                  <option key={item.profileId} value={item.profileId}>
+                    {item.providerName} / {item.model}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500">OpenViking Embedding Profile</label>
+              <select
+                value={state.memory.openviking.embeddingProfileId}
+                onChange={(event) =>
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          memory: {
+                            ...current.memory,
+                            openviking: {
+                              ...current.memory.openviking,
+                              embeddingProfileId: event.target.value
+                            }
+                          }
+                        }
+                      : current
+                  ))
+                }
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Select OpenAI/Volcengine model profile...</option>
+                {openVikingCandidates.map((item) => (
+                  <option key={item.profileId} value={item.profileId}>
+                    {item.providerName} / {item.model}
+                  </option>
+                ))}
+              </select>
+            </div>
             <Input
               label="Top K"
+              description="每次检索返回的最大记忆条数"
               value={String(state.memory.openviking.memoryTopK)}
               onValueChange={(value) =>
                 setState((current) => (
@@ -169,6 +443,27 @@ export const GlobalConfigManager = () => {
                           openviking: {
                             ...current.memory.openviking,
                             memoryTopK: Number(value) || 0
+                          }
+                        }
+                      }
+                    : current
+                ))
+              }
+            />
+            <Input
+              label="Score Threshold"
+              description="低于此分数的记忆将被过滤"
+              value={String(state.memory.openviking.memoryScoreThreshold)}
+              onValueChange={(value) =>
+                setState((current) => (
+                  current
+                    ? {
+                        ...current,
+                        memory: {
+                          ...current.memory,
+                          openviking: {
+                            ...current.memory.openviking,
+                            memoryScoreThreshold: Number(value) || 0
                           }
                         }
                       }
@@ -342,6 +637,275 @@ export const GlobalConfigManager = () => {
               />
             </div>
           </div>
+
+          <div className="rounded-lg border p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="font-medium">github_search (GitHub API)</span>
+                <p className="text-xs text-gray-500 mt-1">搜索 GitHub 仓库、代码等。API Key 可选，但可提高速率限制。</p>
+              </div>
+              <Switch
+                isSelected={state.tools.githubSearch.enabled}
+                onValueChange={(value) =>
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            githubSearch: {
+                              ...current.tools.githubSearch,
+                              enabled: value
+                            }
+                          }
+                        }
+                      : current
+                  ))
+                }
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Input
+                label="API Key (Optional)"
+                type={isApiKeyVisible("tools.githubSearch.apiKey") ? "text" : "password"}
+                value={state.tools.githubSearch.apiKey}
+                placeholder="ghp_xxxx"
+                endContent={renderApiKeyToggle("tools.githubSearch.apiKey")}
+                onValueChange={(value) =>
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            githubSearch: {
+                              ...current.tools.githubSearch,
+                              apiKey: value
+                            }
+                          }
+                        }
+                      : current
+                  ))
+                }
+              />
+              <Input
+                label="Base URL"
+                value={state.tools.githubSearch.baseUrl}
+                onValueChange={(value) =>
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            githubSearch: {
+                              ...current.tools.githubSearch,
+                              baseUrl: value
+                            }
+                          }
+                        }
+                      : current
+                  ))
+                }
+              />
+              <Input
+                label="Max Results"
+                value={String(state.tools.githubSearch.maxResults)}
+                onValueChange={(value) =>
+                  setState((current) => (
+                    current
+                      ? {
+                          ...current,
+                          tools: {
+                            ...current.tools,
+                            githubSearch: {
+                              ...current.tools.githubSearch,
+                              maxResults: Number(value) || 1
+                            }
+                          }
+                        }
+                      : current
+                  ))
+                }
+              />
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Channels（Feishu）</h3>
+          <Button
+            color="primary"
+            variant="flat"
+            size="sm"
+            startContent={<Plus size={14} />}
+            onPress={addFeishuChannel}
+          >
+            新增 Feishu Channel
+          </Button>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <span className="font-medium">启用 Channels</span>
+              <p className="text-xs text-gray-500 mt-0.5">关闭后不会启动任何外部消息通道。</p>
+            </div>
+            <Switch
+              isSelected={state.channels.enabled}
+              onValueChange={(value) =>
+                updateChannelsState((channels) => ({
+                  ...channels,
+                  enabled: value
+                }))
+              }
+            />
+          </div>
+
+          {state.channels.channels.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-4 text-sm text-gray-500">
+              暂无 Channel 配置。点击“新增 Feishu Channel”创建一条配置。
+            </div>
+          ) : null}
+
+          {state.channels.channels.map((channel, index) => (
+            <div key={channel.id || `${channel.type}_${index}`} className="rounded-lg border p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">
+                  {channel.name?.trim() || `Feishu Channel #${index + 1}`}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">启用</span>
+                  <Switch
+                    size="sm"
+                    isSelected={channel.enabled}
+                    onValueChange={(value) =>
+                      updateChannelsState((channels) => ({
+                        ...channels,
+                        channels: channels.channels.map((item, itemIndex) =>
+                          itemIndex === index
+                            ? {
+                                ...item,
+                                enabled: value
+                              }
+                            : item
+                        )
+                      }))
+                    }
+                  />
+                  <Button
+                    variant="light"
+                    color="danger"
+                    size="sm"
+                    isIconOnly
+                    onPress={() =>
+                      updateChannelsState((channels) => ({
+                        ...channels,
+                        channels: channels.channels.filter((_, itemIndex) => itemIndex !== index)
+                      }))
+                    }
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Input
+                  label="显示名称（可选）"
+                  value={channel.name ?? ""}
+                  onValueChange={(value) =>
+                    updateChannelsState((channels) => ({
+                      ...channels,
+                      channels: channels.channels.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...item,
+                              name: value
+                            }
+                          : item
+                      )
+                    }))
+                  }
+                />
+                <Input
+                  label="Channel ID（唯一）"
+                  value={channel.id}
+                  onValueChange={(value) =>
+                    updateChannelsState((channels) => ({
+                      ...channels,
+                      channels: channels.channels.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...item,
+                              id: value
+                            }
+                          : item
+                      )
+                    }))
+                  }
+                />
+                <Input
+                  label="Feishu App ID"
+                  value={channel.appId}
+                  onValueChange={(value) =>
+                    updateChannelsState((channels) => ({
+                      ...channels,
+                      channels: channels.channels.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...item,
+                              appId: value
+                            }
+                          : item
+                      )
+                    }))
+                  }
+                />
+                <Input
+                  label="Feishu App Secret"
+                  type={isApiKeyVisible(`channels.${index}.appSecret`) ? "text" : "password"}
+                  value={channel.appSecret}
+                  endContent={renderApiKeyToggle(`channels.${index}.appSecret`)}
+                  onValueChange={(value) =>
+                    updateChannelsState((channels) => ({
+                      ...channels,
+                      channels: channels.channels.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...item,
+                              appSecret: value
+                            }
+                          : item
+                      )
+                    }))
+                  }
+                />
+                <Input
+                  className="md:col-span-2"
+                  label="Allowed Chat IDs（逗号分隔，可选）"
+                  value={channel.allowedChatIds.join(",")}
+                  onValueChange={(value) =>
+                    updateChannelsState((channels) => ({
+                      ...channels,
+                      channels: channels.channels.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...item,
+                              allowedChatIds: value
+                                .split(",")
+                                .map((part) => part.trim())
+                                .filter(Boolean)
+                            }
+                          : item
+                      )
+                    }))
+                  }
+                />
+              </div>
+            </div>
+          ))}
         </CardBody>
       </Card>
 

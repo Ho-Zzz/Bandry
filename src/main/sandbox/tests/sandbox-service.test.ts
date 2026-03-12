@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadAppConfig } from "../../config";
+import { createDefaultConfig } from "../../config/default-config";
 import { SandboxViolationError } from "../errors";
 import { SandboxService } from "../sandbox-service";
 
@@ -30,20 +30,36 @@ const createFixture = async (): Promise<Fixture> => {
   return { rootDir, workspaceDir, userHome, outsideDir };
 };
 
-const createService = (fixture: Fixture, extraEnv: NodeJS.ProcessEnv = {}): SandboxService => {
-  const config = loadAppConfig({
-    cwd: fixture.workspaceDir,
-    userHome: fixture.userHome,
-    skipDotenv: true,
-    env: {
-      BANDRY_WORKSPACE_DIR: fixture.workspaceDir,
-      SANDBOX_ALLOWED_WORKSPACES: fixture.workspaceDir,
-      SANDBOX_ALLOWED_COMMANDS: "ls,cat,mkdir,echo,node",
-      SANDBOX_EXEC_TIMEOUT_MS: "1000",
-      SANDBOX_MAX_OUTPUT_BYTES: "32768",
-      ...extraEnv
+const createService = (fixture: Fixture, timeoutMs: number = 1000): SandboxService => {
+  const config = createDefaultConfig({
+    paths: {
+      projectRoot: fixture.workspaceDir,
+      bandryHome: path.join(fixture.userHome, ".bandry"),
+      configDir: path.join(fixture.userHome, ".bandry", "config"),
+      logsDir: path.join(fixture.userHome, ".bandry", "logs"),
+      workspaceDir: fixture.workspaceDir,
+      workspacesDir: fixture.workspaceDir,
+      resourcesDir: path.join(fixture.userHome, ".bandry", "resources"),
+      pluginsDir: path.join(fixture.userHome, ".bandry", "plugins"),
+      traceDir: path.join(fixture.userHome, ".bandry", "traces"),
+      skillsDir: path.join(fixture.userHome, ".bandry", "skills"),
+      soulDir: path.join(fixture.userHome, ".bandry", "soul"),
+      projectConfigPath: path.join(fixture.workspaceDir, ".bandry", "config.json"),
+      userConfigPath: path.join(fixture.userHome, ".bandry", "config", "config.json"),
+      auditLogPath: path.join(fixture.userHome, ".bandry", "logs", "model-audit.log"),
+      sandboxAuditLogPath: path.join(fixture.userHome, ".bandry", "logs", "sandbox-audit.log"),
+      databasePath: path.join(fixture.userHome, ".bandry", "config", "bandry.db")
+    },
+    runtime: {
+      inheritedEnv: {
+        PATH: process.env.PATH ?? ""
+      }
     }
   });
+  config.sandbox.allowedWorkspaces = [fixture.workspaceDir];
+  config.sandbox.allowedCommands = ["ls", "cat", "mkdir", "echo", "node"];
+  config.sandbox.execTimeoutMs = timeoutMs;
+  config.sandbox.maxOutputBytes = 32768;
   return new SandboxService(config);
 };
 
@@ -126,9 +142,7 @@ describe("SandboxService", () => {
 
   it("kills long-running commands on timeout", async () => {
     const fixture = await createFixture();
-    const service = createService(fixture, {
-      SANDBOX_EXEC_TIMEOUT_MS: "200"
-    });
+    const service = createService(fixture, 200);
 
     let error: unknown;
     try {

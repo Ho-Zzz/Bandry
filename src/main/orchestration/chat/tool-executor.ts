@@ -1,13 +1,23 @@
-import type { SandboxExecInput } from "../../../shared/ipc";
+import type { SandboxExecInput, ChatUpdateStage, SubagentProgressPayload } from "../../../shared/ipc";
 import type { AppConfig } from "../../config";
+import type { MemoryProvider } from "../../memory/contracts/types";
 import type { SandboxService } from "../../sandbox";
+import { SandboxViolationError } from "../../sandbox/errors";
 import type { DAGPlan, AgentResult } from "../workflow/dag/agents";
 import { DelegationEngine } from "../workflow/dag/delegation-engine";
 import { validateDelegationTasks } from "./delegation-schema";
-import { runWebFetch, runWebSearch } from "./internal-web-tools";
+import { runWebFetch, runWebSearch, runGitHubSearch } from "./internal-web-tools";
+import {
+  resolvePersistWritePath,
+  validatePersistContent
+} from "./persist-policy";
 import { formatExec, formatListDir, formatReadFile } from "./observation-formatters";
-import type { PlannerActionTool, ToolObservation } from "./planner-types";
+import type { PlannerActionTool, ToolObservation, TodoInput, SubagentType } from "./planner-types";
 import { normalizeSpaces } from "./text-utils";
+import { executeWriteTodos, type WriteTodosContext } from "./tools/write-todos-tool";
+import { executeTaskTool, type TaskToolContext } from "./tools/task-tool";
+import { executeMemorySearch } from "./tools/memory-tool";
+import type { TodoItem } from "./middleware/types";
 
 type ExecutePlannerToolOptions = {
   action: PlannerActionTool;
@@ -15,7 +25,11 @@ type ExecutePlannerToolOptions = {
   sandboxService: SandboxService;
   workspacePath?: string;
   onDelegationUpdate?: (message: string) => void;
+  onSubagentUpdate?: (stage: ChatUpdateStage, message: string, payload?: { subagent?: SubagentProgressPayload }) => void;
   abortSignal?: AbortSignal;
+  todos?: TodoItem[];
+  memoryProvider?: MemoryProvider;
+  sessionId?: string;
 };
 
 export const executePlannerTool = async ({
@@ -24,9 +38,34 @@ export const executePlannerTool = async ({
   sandboxService,
   workspacePath,
   onDelegationUpdate,
-  abortSignal
-}: ExecutePlannerToolOptions): Promise<ToolObservation> => {
+  onSubagentUpdate,
+  abortSignal,
+  todos = [],
+  memoryProvider,
+  sessionId
+}: ExecutePlannerToolOptions): Promise<ToolObservation & { updatedTodos?: TodoItem[] }> => {
   const fallbackPath = config.sandbox.virtualRoot;
+  const virtualRoot = config.sandbox.virtualRoot.replace(/\/+$/, "");
+  const normalizeArtifactPath = (artifactPath: string): string => {
+    if (artifactPath.startsWith(`${virtualRoot}/`)) {
+      return artifactPath;
+    }
+    const relative = artifactPath.startsWith("/") ? artifactPath.slice(1) : artifactPath;
+    return `${virtualRoot}/${relative}`;
+  };
+  const isSupportedArtifactPath = (artifactPath: string): boolean => {
+    const normalized = artifactPath.trim();
+    if (!normalized) {
+      return false;
+    }
+
+    if (normalized.startsWith(`${virtualRoot}/output/`)) {
+      return true;
+    }
+
+    const relative = normalized.startsWith("/") ? normalized.slice(1) : normalized;
+    return relative.startsWith("output/");
+  };
 
   try {
     if (action.tool === "list_dir") {
@@ -57,6 +96,89 @@ export const executePlannerTool = async ({
         input: { path: targetPath },
         ok: true,
         output: formatReadFile(result)
+      };
+    }
+
+    if (action.tool === "write_file") {
+      const content = action.input?.content;
+      if (typeof content !== "string") {
+        return {
+          tool: "write_file",
+          input: action.input ?? {},
+          ok: false,
+          output: "Missing required field: input.content"
+        };
+      }
+
+      const contentError = validatePersistContent(content);
+      if (contentError) {
+        return {
+          tool: "write_file",
+          input: action.input ?? {},
+          ok: false,
+          output: `CONTENT_LIMIT: ${contentError}`
+        };
+      }
+
+      const writePathResult = resolvePersistWritePath({
+        requestedPath: action.input?.path,
+        defaultPath: "output/document.md",
+        virtualRoot: config.sandbox.virtualRoot
+      });
+      if (!writePathResult.ok) {
+        return {
+          tool: "write_file",
+          input: action.input ?? {},
+          ok: false,
+          output: `${writePathResult.code}: ${writePathResult.message}`
+        };
+      }
+
+      const result = await sandboxService.writeFile({
+        path: writePathResult.path,
+        content,
+        createDirs: true,
+        overwrite: false
+      });
+      return {
+        tool: "write_file",
+        input: { path: writePathResult.path, overwrite: false },
+        ok: true,
+        output: `Wrote file successfully: path=${result.path}, bytes=${result.bytesWritten}`,
+        artifacts: [normalizeArtifactPath(result.path)]
+      };
+    }
+
+    if (action.tool === "present_files") {
+      const filepaths = action.input?.filepaths;
+      if (!Array.isArray(filepaths) || filepaths.length === 0) {
+        return {
+          tool: "present_files",
+          input: action.input ?? {},
+          ok: false,
+          output: "Missing required field: input.filepaths"
+        };
+      }
+
+      const invalidPath = filepaths.find((value) => typeof value !== "string" || !isSupportedArtifactPath(value));
+      if (invalidPath) {
+        return {
+          tool: "present_files",
+          input: action.input ?? {},
+          ok: false,
+          output: `PATH_NOT_ALLOWED: Only files under ${virtualRoot}/output are allowed for present_files. Invalid path: ${String(invalidPath)}`
+        };
+      }
+
+      const artifacts = filepaths
+        .map((value) => normalizeArtifactPath(value))
+        .filter((value, index, list) => list.indexOf(value) === index);
+      return {
+        tool: "present_files",
+        input: { filepaths: artifacts },
+        ok: true,
+        output: artifacts.length > 0 ? `Presented files: ${artifacts.join(", ")}` : "No files presented",
+        artifacts
       };
     }
 
@@ -98,6 +220,33 @@ export const executePlannerTool = async ({
         ok: true,
         output: result
       };
+    }
+
+    if (action.tool === "github_search") {
+      const query = action.input?.query?.trim();
+      if (!query) {
+        return {
+          tool: "github_search",
+          input: action.input ?? {},
+          ok: false,
+          output: "Missing required field: input.query"
+        };
+      }
+
+      const result = await runGitHubSearch(config, query, "repositories");
+      return {
+        tool: "github_search",
+        input: { query },
+        ok: true,
+        output: result
+      };
+    }
+
+    if (action.tool === "memory_search") {
+      return executeMemorySearch(
+        { query: action.input?.query },
+        { memoryProvider, sessionId: sessionId ?? "default" }
+      );
     }
 
     if (action.tool === "ask_clarification") {
@@ -163,7 +312,8 @@ export const executePlannerTool = async ({
         .join("; ");
       const artifacts = entries
         .flatMap(([, result]) => result.artifacts ?? [])
-        .filter((value, index, list) => list.indexOf(value) === index);
+        .filter((value, index, list) => list.indexOf(value) === index)
+        .map((artifact) => normalizeArtifactPath(artifact));
 
       const renderResult = (taskId: string, result: AgentResult): string => {
         const suffix = result.error ? ` | error=${result.error}` : "";
@@ -177,10 +327,64 @@ export const executePlannerTool = async ({
         output: [
           `Delegation finished: ${successCount}/${entries.length} succeeded.`,
           ...entries.map(([taskId, result]) => renderResult(taskId, result)),
-          ...(artifacts.length > 0 ? [`Artifacts: ${artifacts.join(", ")}`] : []),
           ...(failedText ? [`Failures: ${failedText}`] : [])
-        ].join("\n")
+        ].join("\n"),
+        artifacts
       };
+    }
+
+    // write_todos tool (subagents mode)
+    if (action.tool === "write_todos") {
+      const todosInput = action.input?.todos as TodoInput[] | undefined;
+      if (!todosInput) {
+        return {
+          tool: "write_todos",
+          input: action.input ?? {},
+          ok: false,
+          output: "Missing required field: input.todos"
+        };
+      }
+
+      const context: WriteTodosContext = { todos };
+      const result = executeWriteTodos({ todos: todosInput }, context);
+      return {
+        ...result.observation,
+        updatedTodos: result.updatedTodos
+      };
+    }
+
+    // task tool (subagents mode)
+    if (action.tool === "task") {
+      const description = action.input?.description?.trim();
+      const prompt = action.input?.prompt?.trim();
+      const subagentType = action.input?.subagentType as SubagentType | undefined;
+
+      if (!description || !prompt || !subagentType) {
+        return {
+          tool: "task",
+          input: action.input ?? {},
+          ok: false,
+          output: "Missing required fields: description, prompt, and subagentType"
+        };
+      }
+
+      const taskContext: TaskToolContext = {
+        config,
+        sandboxService,
+        workspacePath: workspacePath || config.paths.workspacesDir,
+        onUpdate: onSubagentUpdate,
+        abortSignal
+      };
+
+      return executeTaskTool(
+        {
+          description,
+          prompt,
+          subagentType,
+          maxTurns: action.input?.maxTurns
+        },
+        taskContext
+      );
     }
 
     const command = action.input?.command?.trim() || "ls";
@@ -199,6 +403,15 @@ export const executePlannerTool = async ({
       output: formatExec(result)
     };
   } catch (error) {
+    if (error instanceof SandboxViolationError) {
+      return {
+        tool: action.tool,
+        input: action.input ?? {},
+        ok: false,
+        output: `${error.code}: ${normalizeSpaces(error.message)}`
+      };
+    }
+
     return {
       tool: action.tool,
       input: action.input ?? {},

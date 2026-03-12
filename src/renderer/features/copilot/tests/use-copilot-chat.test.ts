@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ChatUpdateEvent } from "../../../../shared/ipc";
 import {
+  mergeAssistantDelta,
   isConversationLoading,
   normalizeClarificationInput,
-  resolvePendingClarificationFromUpdate
+  resolveRequestSettingsFromTrace,
+  resolvePendingClarificationFromUpdate,
+  resolveFinalAssistantContent
 } from "../use-copilot-chat";
 
 describe("use-copilot-chat helpers", () => {
@@ -44,4 +47,40 @@ describe("use-copilot-chat helpers", () => {
     expect(normalizeClarificationInput("  继续执行  ")).toBe("继续执行");
     expect(normalizeClarificationInput("   ")).toBe("");
   });
+
+  it("extracts request mode and thinking state from planning trace", () => {
+    const trace: ChatUpdateEvent[] = [
+      {
+        requestId: "req_2",
+        stage: "planning",
+        message: "Mode: default",
+        timestamp: 1
+      },
+      {
+        requestId: "req_2",
+        stage: "planning",
+        message: "Thinking enabled: false",
+        timestamp: 2
+      }
+    ];
+
+    expect(resolveRequestSettingsFromTrace(trace)).toEqual({
+      mode: "default",
+      thinkingEnabled: false
+    });
+  });
+
+  it("prefers final reply and falls back to streamed content", () => {
+    expect(resolveFinalAssistantContent("streaming text", "full reply")).toBe("full reply");
+    expect(resolveFinalAssistantContent("   ", "full reply")).toBe("full reply");
+    expect(resolveFinalAssistantContent("stream only", "   ")).toBe("stream only");
+  });
+
+  it("deduplicates overlapped stream deltas", () => {
+    expect(mergeAssistantDelta("", "你好")).toBe("你好");
+    expect(mergeAssistantDelta("你好世界", "世界和平")).toBe("你好世界和平");
+    expect(mergeAssistantDelta("abc", "abc")).toBe("abc");
+    expect(mergeAssistantDelta("Hello", " world")).toBe("Hello world");
+  });
+
 });

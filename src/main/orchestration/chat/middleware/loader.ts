@@ -1,20 +1,30 @@
-import type { AppConfig } from "../../../config";
+import type { AppConfig, ModelCapabilities } from "../../../config";
 import type { ModelsFactory } from "../../../llm/runtime";
+import type { MemoryProvider } from "../../../memory/contracts/types";
 import type { SandboxService } from "../../../sandbox";
 import type { ConversationStore } from "../../../persistence/sqlite";
+import type { ChatMode } from "../../../../shared/ipc";
 import { MiddlewarePipeline } from "./pipeline";
-import type { Middleware } from "./types";
+import type { Middleware, MiddlewareContext } from "./types";
 import { WorkspaceMiddleware } from "./workspace";
 import { LocalResourceMiddleware } from "./local-resource";
 import { SandboxBindingMiddleware } from "./sandbox-binding";
 import { DanglingToolCallMiddleware } from "./dangling-tool-call";
 import { SummarizationMiddleware } from "./summarization";
 import { TitleMiddleware } from "./title";
+import { MemoryMiddleware } from "./memory";
 import { SubagentLimitMiddleware } from "./subagent-limit";
 import { ClarificationMiddleware } from "./clarification";
+import { TodoListMiddleware } from "./todolist";
+import { SoulMiddleware } from "./soul";
+import { SkillMiddleware } from "./skill";
 
 class NoopMemoryMiddleware implements Middleware {
   name = "memory";
+
+  async afterAgent(ctx: MiddlewareContext): Promise<MiddlewareContext> {
+    return ctx;
+  }
 }
 
 export type MiddlewareLoaderOptions = {
@@ -22,22 +32,81 @@ export type MiddlewareLoaderOptions = {
   modelsFactory: ModelsFactory;
   sandboxService: SandboxService;
   conversationStore?: ConversationStore;
+  memoryProvider?: MemoryProvider;
+  mode?: ChatMode;
+  conversationId?: string;
+  modelCapabilities?: ModelCapabilities;
+  requestParams?: {
+    thinkingEnabled?: boolean;
+    isPlanMode?: boolean;
+  };
 };
 
-export const buildMiddlewares = (options: MiddlewareLoaderOptions): Middleware[] => {
+/**
+ * Build middleware stack based on mode.
+ *
+ * Middleware execution order:
+ * 1. WorkspaceMiddleware - Create task workspace
+ * 2. SoulMiddleware - Inject soul persona context
+ * 3. SkillMiddleware - Inject skills context
+ * 4. LocalResourceMiddleware - Handle local resources
+ * 5. SandboxBindingMiddleware - Bind sandbox context
+ * 6. DanglingToolCallMiddleware - Fix dangling tool calls
+ * 7. SummarizationMiddleware - Context compression (optional)
+ * 8. TitleMiddleware - Title generation (only if conversation has no title)
+ * 9. MemoryMiddleware - Memory queue
+ * 10. TodoListMiddleware - Task list management (subagents / plan mode)
+ * 11. SubagentLimitMiddleware - Concurrency limits (subagents / plan mode)
+ * 12. ClarificationMiddleware - User clarification (must be last)
+ */
+export const buildMiddlewares = (
+  options: MiddlewareLoaderOptions,
+): Middleware[] => {
+  const mode = options.mode ?? "default";
+  const isPlanMode = options.requestParams?.isPlanMode === true;
+  const supportsVision = options.modelCapabilities?.supportsVision === true;
+  void supportsVision;
+
+  const memoryMiddleware = options.memoryProvider
+    ? new MemoryMiddleware(options.memoryProvider)
+    : new NoopMemoryMiddleware();
+
   const middlewares: Middleware[] = [
     new WorkspaceMiddleware(options.config.paths.workspacesDir),
+    new SoulMiddleware(options.config),
+    new SkillMiddleware(options.config),
     new LocalResourceMiddleware(),
     new SandboxBindingMiddleware(options.sandboxService),
     new DanglingToolCallMiddleware(),
     new SummarizationMiddleware(),
-    new TitleMiddleware(),
-    new NoopMemoryMiddleware(),
-    new SubagentLimitMiddleware(),
-    new ClarificationMiddleware()
   ];
 
-  // Clarification must always be last.
+  // Only add TitleMiddleware if conversation doesn't have a title yet
+  const shouldGenerateTitle = (() => {
+    if (!options.conversationStore || !options.conversationId) {
+      return false;
+    }
+    const conversation = options.conversationStore.getConversation(
+      options.conversationId,
+    );
+    return !conversation?.title || conversation.title.trim().length === 0;
+  })();
+
+  if (shouldGenerateTitle) {
+    middlewares.push(new TitleMiddleware());
+  }
+
+  middlewares.push(memoryMiddleware);
+
+  // Add mode-specific middlewares
+  if (mode === "subagents" || isPlanMode) {
+    middlewares.push(new TodoListMiddleware());
+    middlewares.push(new SubagentLimitMiddleware());
+  }
+
+  // Clarification must always be last
+  middlewares.push(new ClarificationMiddleware());
+
   const last = middlewares[middlewares.length - 1];
   if (!last || last.name !== "clarification") {
     throw new Error("ClarificationMiddleware must be the last middleware");
@@ -46,7 +115,9 @@ export const buildMiddlewares = (options: MiddlewareLoaderOptions): Middleware[]
   return middlewares;
 };
 
-export const createMiddlewarePipeline = (options: MiddlewareLoaderOptions): MiddlewarePipeline => {
+export const createMiddlewarePipeline = (
+  options: MiddlewareLoaderOptions,
+): MiddlewarePipeline => {
   const pipeline = new MiddlewarePipeline();
   for (const middleware of buildMiddlewares(options)) {
     pipeline.use(middleware);

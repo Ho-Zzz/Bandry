@@ -5,6 +5,7 @@ node_modules/
 dist/
 dist-electron/
 out/
+release/
 coverage/
 
 # Environment files
@@ -44,3 +45,6 @@ playwright-report/
 tmp/
 temp/
 .trae/*
+
+python-env/
+python-env-backup/

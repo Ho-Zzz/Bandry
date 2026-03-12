@@ -19,7 +19,10 @@ import {
   ChevronRight as ChevronRightIcon,
   MessageSquare,
   Plus,
-  Settings
+  Settings,
+  Blocks,
+  Brain,
+  Clock
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useConversationStore } from "../../store/use-conversation-store";
@@ -40,6 +43,7 @@ const CollapseToggle = ({
   onToggle: () => void;
 }) => (
   <button
+    type="button"
     onClick={onToggle}
     className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-200/50 transition-all"
     title={state === "expanded" ? "Collapse sidebar" : "Expand sidebar"}
@@ -103,6 +107,7 @@ const NavItem = ({
   if (isCollapsed) {
     return (
       <button
+        type="button"
         onClick={onClick}
         className={clsx(
           "flex items-center justify-center w-10 h-10 rounded-xl transition-all mx-auto mb-2",
@@ -124,6 +129,7 @@ const NavItem = ({
 
   return (
     <button
+      type="button"
       onClick={onClick}
       className={clsx(
         "flex items-center w-full px-2.5 py-1.5 rounded-md text-[13px] font-medium cursor-pointer transition-all select-none mb-0.5",
@@ -163,6 +169,7 @@ const ConversationItem = ({
   if (isCollapsed) {
     return (
       <button
+        type="button"
         onClick={onClick}
         className={clsx(
           "flex items-center justify-center w-10 h-10 rounded-xl transition-all mx-auto mb-2",
@@ -179,6 +186,7 @@ const ConversationItem = ({
 
   return (
     <button
+      type="button"
       onClick={onClick}
       className={clsx(
         "flex items-center w-full px-2.5 py-1.5 rounded-md text-[13px] font-medium cursor-pointer transition-all select-none mb-0.5",
@@ -195,8 +203,7 @@ const ConversationItem = ({
 
 export const Sidebar = ({
   state,
-  onStateChange,
-  activeTaskCount = 0
+  onStateChange
 }: SidebarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -226,6 +233,15 @@ export const Sidebar = ({
           break;
         case "models":
           navigate("/model-studio");
+          break;
+        case "skills":
+          navigate("/skills");
+          break;
+        case "automations":
+          navigate("/automations");
+          break;
+        case "memory":
+          navigate("/memory-studio");
           break;
         case "settings":
           navigate("/settings");
@@ -257,6 +273,9 @@ export const Sidebar = ({
         assets: "/assets",
         directory: "/employees",
         models: "/model-studio",
+        skills: "/skills",
+        automations: "/automations",
+        memory: "/memory-studio",
         settings: "/settings"
       };
       return location.pathname === pathMap[navItem.id];
@@ -274,7 +293,7 @@ export const Sidebar = ({
   return (
     <aside
       className={clsx(
-        "h-full flex flex-col flex-shrink-0 z-20 transition-all duration-200 ease-in-out",
+        "relative h-full flex flex-col flex-shrink-0 z-[100] pointer-events-auto transition-all duration-200 ease-in-out",
         "bg-[#F3F4F7]/95 border-r border-gray-200/80 backdrop-blur-xl",
         isCollapsed ? "w-[72px]" : "w-[260px]"
       )}
@@ -334,6 +353,27 @@ export const Sidebar = ({
             isCollapsed={isCollapsed}
           />
           <NavItem
+            icon={Blocks}
+            label="Skills"
+            isActive={isNavActive({ type: "view", id: "skills" })}
+            onClick={() => handleNavClick({ type: "view", id: "skills" })}
+            isCollapsed={isCollapsed}
+          />
+          <NavItem
+            icon={Clock}
+            label="Automations"
+            isActive={isNavActive({ type: "view", id: "automations" })}
+            onClick={() => handleNavClick({ type: "view", id: "automations" })}
+            isCollapsed={isCollapsed}
+          />
+          <NavItem
+            icon={Brain}
+            label="Memory Studio"
+            isActive={isNavActive({ type: "view", id: "memory" })}
+            onClick={() => handleNavClick({ type: "view", id: "memory" })}
+            isCollapsed={isCollapsed}
+          />
+          <NavItem
             icon={Settings}
             label="Settings"
             isActive={isNavActive({ type: "view", id: "settings" })}
@@ -350,6 +390,7 @@ export const Sidebar = ({
           actionIcon={
             !isCollapsed && (
               <button
+                type="button"
                 onClick={() => {
                   void handleNewChat();
                 }}

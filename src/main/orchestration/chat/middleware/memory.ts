@@ -1,5 +1,6 @@
 import type { Middleware, MiddlewareContext } from "./types";
 import type { MemoryProvider } from "../../../memory/contracts/types";
+import { runtimeLogger } from "../../../logging/runtime-logger";
 
 /**
  * Memory middleware
@@ -14,14 +15,83 @@ export class MemoryMiddleware implements Middleware {
    * Inject memory context before LLM call
    */
   async beforeLLM(ctx: MiddlewareContext): Promise<MiddlewareContext> {
+    const startedAt = Date.now();
     try {
       // Read memory layers (L0/L1 by default)
       const query = this.getLatestUserQuery(ctx);
-      const chunks = await this.memory.injectContext(ctx.sessionId, query);
+      const memoryStepStarted = ctx.metadata.memoryStepStarted === true;
 
-      if (chunks.length === 0) {
+      // Run memory retrieval at most once per request lifecycle.
+      // Planner/final model stages share middleware context via metadata.
+      if (memoryStepStarted) {
         return ctx;
       }
+
+      ctx.runtime?.onUpdate?.("planning", "回忆相关上下文");
+
+      // Add timeout protection to prevent blocking
+      const timeoutMs = 3000; // 3 second timeout
+      const chunks = await Promise.race([
+        this.memory.injectContext(ctx.sessionId, query),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Memory injection timeout")),
+            timeoutMs,
+          ),
+        ),
+      ]).catch((error) => {
+        console.warn(
+          "[MemoryMiddleware] Context injection failed or timed out:",
+          error.message,
+        );
+        ctx.runtime?.onUpdate?.("planning", "回忆上下文失败，继续直接回答");
+        return [] as Awaited<ReturnType<typeof this.memory.injectContext>>;
+      });
+
+      if (chunks.length === 0) {
+        runtimeLogger.info({
+          module: "memory",
+          phase: "before_llm",
+          traceId: ctx.sessionId,
+          msg: "No memory matched",
+          durationMs: Date.now() - startedAt,
+        });
+        ctx.runtime?.onUpdate?.("planning", "未命中相关记忆");
+        const noMemoryGuard = [
+          "# Memory Retrieval Status",
+          "",
+          "No relevant memory was retrieved for this request.",
+          "Do not claim you found or read memory files.",
+          "If asked about stored memory, explicitly say retrieval returned no matching memory."
+        ].join("\n");
+
+        return {
+          ...ctx,
+          messages: [
+            {
+              role: "system" as const,
+              content: noMemoryGuard,
+            },
+            ...ctx.messages,
+          ],
+          metadata: {
+            ...ctx.metadata,
+            memoryStepStarted: true,
+          },
+        };
+      }
+
+      ctx.runtime?.onUpdate?.("planning", `已回忆 ${chunks.length} 条相关记忆`);
+      runtimeLogger.info({
+        module: "memory",
+        phase: "before_llm",
+        traceId: ctx.sessionId,
+        msg: "Memory injected",
+        durationMs: Date.now() - startedAt,
+        extra: {
+          chunks: chunks.length,
+        },
+      });
 
       // Format memory context as system message
       const memoryContent = this.formatMemoryContext(chunks);
@@ -30,9 +100,9 @@ export class MemoryMiddleware implements Middleware {
       const updatedMessages = [
         {
           role: "system" as const,
-          content: memoryContent
+          content: memoryContent,
         },
-        ...ctx.messages
+        ...ctx.messages,
       ];
 
       return {
@@ -40,11 +110,21 @@ export class MemoryMiddleware implements Middleware {
         messages: updatedMessages,
         metadata: {
           ...ctx.metadata,
-          memoryChunksInjected: chunks.length
-        }
+          memoryStepStarted: true,
+          memoryChunksInjected: chunks.length,
+        },
       };
     } catch (error) {
-      console.error("[MemoryMiddleware] Failed to inject context:", error);
+      runtimeLogger.error({
+        module: "memory",
+        phase: "before_llm",
+        traceId: ctx.sessionId,
+        msg: "Failed to inject context",
+        durationMs: Date.now() - startedAt,
+        extra: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       return ctx;
     }
   }
@@ -60,12 +140,12 @@ export class MemoryMiddleware implements Middleware {
         messages: ctx.messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         })),
         metadata: {
           taskId: ctx.taskId,
-          workspacePath: ctx.workspacePath
-        }
+          workspacePath: ctx.workspacePath,
+        },
       };
 
       // Queue for debounced storage (non-blocking)
@@ -75,11 +155,19 @@ export class MemoryMiddleware implements Middleware {
         ...ctx,
         metadata: {
           ...ctx.metadata,
-          memoryStorageQueued: true
-        }
+          memoryStorageQueued: true,
+        },
       };
     } catch (error) {
-      console.error("[MemoryMiddleware] Failed to queue storage:", error);
+      runtimeLogger.error({
+        module: "memory",
+        phase: "on_response",
+        traceId: ctx.sessionId,
+        msg: "Failed to queue storage",
+        extra: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       return ctx;
     }
   }
@@ -87,12 +175,14 @@ export class MemoryMiddleware implements Middleware {
   /**
    * Format memory chunks as system message
    */
-  private formatMemoryContext(chunks: Array<{ source: string; content: string; layer: string }>): string {
+  private formatMemoryContext(
+    chunks: Array<{ source: string; content: string; layer: string }>,
+  ): string {
     const lines = [
       "# Memory Context",
       "",
       "The following information has been retrieved from your memory:",
-      ""
+      "",
     ];
 
     for (const chunk of chunks) {

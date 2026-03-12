@@ -1,9 +1,10 @@
 import type { LlmMessage } from "../../../llm/runtime/types";
 import type { ModelsFactory } from "../../../llm/runtime";
 import type { AppConfig } from "../../../config";
+import type { ModelCapabilities } from "../../../config";
 import type { SandboxService } from "../../../sandbox";
 import type { ConversationStore } from "../../../persistence/sqlite";
-import type { ChatUpdatePayload, ChatUpdateStage } from "../../../../shared/ipc";
+import type { ChatMode, ChatUpdatePayload, ChatUpdateStage, ConversationResult } from "../../../../shared/ipc";
 import type { PlannerActionTool, ToolObservation } from "../planner-types";
 
 /**
@@ -16,8 +17,23 @@ export type Tool = {
 };
 
 /**
+ * Todo item for sub-agents mode task tracking
+ */
+export type TodoItem = {
+  id: string;
+  subject: string;
+  description: string;
+  status: "pending" | "in_progress" | "completed";
+};
+
+/**
  * Middleware context that flows through the pipeline
  * Contains all state needed for request processing
+ *
+ * Aligned with DeerFlow's AgentState pattern:
+ * - beforeAgent/afterAgent: once per request
+ * - beforeModel/afterModel: per model call
+ * - wrapToolCall: tool execution interception
  */
 export type MiddlewareContext = {
   /** Unique session identifier */
@@ -64,6 +80,21 @@ export type MiddlewareContext = {
   /** Final user-facing response text */
   finalResponse?: string;
 
+  /** Chat mode for this request */
+  chatMode?: ChatMode;
+
+  /** Capabilities of the selected model profile for this request */
+  modelCapabilities?: ModelCapabilities;
+
+  /** Request-level runtime parameters used to build middleware chain */
+  requestParams?: {
+    thinkingEnabled?: boolean;
+    isPlanMode?: boolean;
+  };
+
+  /** Todo list for sub-agents mode (managed by TodoListMiddleware) */
+  todos?: TodoItem[];
+
   /** Runtime collaborators available to middlewares */
   runtime?: {
     config: AppConfig;
@@ -71,6 +102,7 @@ export type MiddlewareContext = {
     sandboxService: SandboxService;
     conversationStore?: ConversationStore;
     onUpdate?: (stage: ChatUpdateStage, message: string, payload?: ChatUpdatePayload) => void;
+    onConversationUpdated?: (conversation: ConversationResult) => void;
     abortSignal?: AbortSignal;
   };
 };

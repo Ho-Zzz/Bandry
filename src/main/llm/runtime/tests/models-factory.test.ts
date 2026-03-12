@@ -17,12 +17,14 @@ const createConfig = () => {
       resourcesDir: path.join(workspaceDir, "resources"),
       pluginsDir: path.join(workspaceDir, "plugins"),
       traceDir: path.join(workspaceDir, "traces"),
+      skillsDir: path.join(workspaceDir, "skills"),
+      soulDir: path.join(workspaceDir, "soul"),
+      cronDir: path.join(workspaceDir, "cron"),
       projectConfigPath: path.join(workspaceDir, "config.json"),
       userConfigPath: path.join(workspaceDir, "user-config.json"),
       auditLogPath: path.join(workspaceDir, "model-audit.log"),
       sandboxAuditLogPath: path.join(workspaceDir, "sandbox-audit.log"),
       databasePath: path.join(workspaceDir, "bandry.db"),
-      dotenvPath: path.join(workspaceDir, ".env")
     },
     runtime: {
       inheritedEnv: {}

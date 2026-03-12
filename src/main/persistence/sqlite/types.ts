@@ -15,6 +15,7 @@ export type ConversationRecord = {
   id: string;
   title?: string;
   model_profile_id?: string;
+  workspace_path?: string;
   created_at: number;
   updated_at: number;
 };
@@ -30,6 +31,9 @@ export type MessageRecord = {
   status: MessageStatus;
   trace?: string; // JSON string of trace events
   created_at: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 /**
@@ -43,7 +47,9 @@ export type CreateConversationInput = {
 /**
  * Input for updating a conversation
  */
-export type UpdateConversationInput = Partial<CreateConversationInput>;
+export type UpdateConversationInput = Partial<CreateConversationInput> & {
+  workspace_path?: string;
+};
 
 /**
  * Input for creating a message
@@ -54,6 +60,9 @@ export type CreateMessageInput = {
   content: string;
   status?: MessageStatus;
   trace?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 /**
@@ -63,4 +72,7 @@ export type UpdateMessageInput = {
   content?: string;
   status?: MessageStatus;
   trace?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };

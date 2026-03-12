@@ -1,4 +1,13 @@
-import type { OpenVikingFindResult } from "./types";
+import type {
+  OpenVikingAbstractResult,
+  OpenVikingAddResourceResult,
+  OpenVikingFindResult,
+  OpenVikingGlobResult,
+  OpenVikingLsResult,
+  OpenVikingOverviewResult,
+  OpenVikingReadResult
+} from "./types";
+import { runtimeLogger } from "../../logging/runtime-logger";
 
 type OpenVikingApiError = {
   code: string;
@@ -25,6 +34,8 @@ export class OpenVikingHttpError extends Error {
 }
 
 export class OpenVikingHttpClient {
+  private static readonly SLOW_REQUEST_MS = 300;
+
   constructor(
     private baseUrl: string,
     private apiKey: string,
@@ -76,6 +87,69 @@ export class OpenVikingHttpClient {
     });
   }
 
+  async addResource(path: string): Promise<OpenVikingAddResourceResult> {
+    return await this.request<OpenVikingAddResourceResult>("POST", "/api/v1/resources", {
+      path
+    });
+  }
+
+  async ls(uri: string): Promise<OpenVikingLsResult> {
+    return await this.request<OpenVikingLsResult>(
+      "GET",
+      `/api/v1/fs/ls?${new URLSearchParams({ uri, output: "original" }).toString()}`
+    );
+  }
+
+  async glob(pattern: string, uri: string): Promise<OpenVikingGlobResult> {
+    return await this.request<OpenVikingGlobResult>("POST", "/api/v1/search/glob", {
+      pattern,
+      uri
+    });
+  }
+
+  async read(uri: string): Promise<OpenVikingReadResult> {
+    return await this.request<OpenVikingReadResult>(
+      "GET",
+      `/api/v1/content/read?${new URLSearchParams({ uri }).toString()}`
+    );
+  }
+
+  async abstract(uri: string): Promise<OpenVikingAbstractResult> {
+    return await this.request<OpenVikingAbstractResult>(
+      "GET",
+      `/api/v1/content/abstract?${new URLSearchParams({ uri }).toString()}`
+    );
+  }
+
+  async overview(uri: string): Promise<OpenVikingOverviewResult> {
+    return await this.request<OpenVikingOverviewResult>(
+      "GET",
+      `/api/v1/content/overview?${new URLSearchParams({ uri }).toString()}`
+    );
+  }
+
+  async rm(uri: string, recursive: boolean = false): Promise<void> {
+    const params = new URLSearchParams({ uri });
+    if (recursive) {
+      params.set("recursive", "true");
+    }
+    await this.request("DELETE", `/api/v1/fs?${params.toString()}`);
+  }
+
+  async find(query: string, targetUri: string, limit: number = 10): Promise<OpenVikingFindResult> {
+    return await this.request<OpenVikingFindResult>("POST", "/api/v1/search/find", {
+      query,
+      target_uri: targetUri,
+      limit
+    });
+  }
+
+  async waitProcessed(timeoutMs: number = 120_000): Promise<void> {
+    await this.request("POST", "/api/v1/system/wait", {
+      timeout: timeoutMs / 1_000
+    });
+  }
+
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const payload = await this.requestRaw<OpenVikingApiResponse<T>>(method, path, body);
     if (payload.status !== "ok") {
@@ -92,6 +166,7 @@ export class OpenVikingHttpClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     const url = `${this.baseUrl}${path}`;
+    const startedAt = Date.now();
 
     try {
       const response = await fetch(url, {
@@ -108,10 +183,37 @@ export class OpenVikingHttpClient {
       const data = text ? (JSON.parse(text) as T) : ({} as T);
 
       if (!response.ok) {
+        runtimeLogger.warn({
+          module: "openviking",
+          phase: "http_request",
+          msg: "HTTP request returned non-2xx",
+          durationMs: Date.now() - startedAt,
+          extra: {
+            method,
+            path,
+            status: response.status,
+          },
+        });
         throw new OpenVikingHttpError(
           `OpenViking HTTP ${response.status}: ${text || response.statusText}`,
           response.status
         );
+      }
+
+      const duration = Date.now() - startedAt;
+      const logVerbose = process.env.BANDRY_LOG_OPENVIKING_HTTP === "1";
+      if (duration >= OpenVikingHttpClient.SLOW_REQUEST_MS || logVerbose) {
+        runtimeLogger.info({
+          module: "openviking",
+          phase: "http_request",
+          msg: "HTTP request completed",
+          durationMs: duration,
+          extra: {
+            method,
+            path,
+            status: response.status,
+          },
+        });
       }
 
       return data;
@@ -121,8 +223,31 @@ export class OpenVikingHttpClient {
       }
 
       if ((error as Error).name === "AbortError") {
+        runtimeLogger.error({
+          module: "openviking",
+          phase: "http_request",
+          msg: "HTTP request timeout",
+          durationMs: Date.now() - startedAt,
+          extra: {
+            method,
+            path,
+            timeoutMs: this.timeoutMs,
+          },
+        });
         throw new OpenVikingHttpError(`OpenViking request timeout: ${method} ${path}`);
       }
+
+      runtimeLogger.error({
+        module: "openviking",
+        phase: "http_request",
+        msg: "HTTP request failed",
+        durationMs: Date.now() - startedAt,
+        extra: {
+          method,
+          path,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
 
       throw new OpenVikingHttpError(
         `OpenViking request failed: ${method} ${path}: ${

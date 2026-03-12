@@ -17,12 +17,14 @@ const createConfig = () => {
       resourcesDir: path.join(workspaceDir, "resources"),
       pluginsDir: path.join(workspaceDir, "plugins"),
       traceDir: path.join(workspaceDir, "traces"),
+      skillsDir: path.join(workspaceDir, "skills"),
+      soulDir: path.join(workspaceDir, "soul"),
+      cronDir: path.join(workspaceDir, "cron"),
       projectConfigPath: path.join(workspaceDir, "config.json"),
       userConfigPath: path.join(workspaceDir, "user-config.json"),
       auditLogPath: path.join(workspaceDir, "model-audit.log"),
       sandboxAuditLogPath: path.join(workspaceDir, "sandbox-audit.log"),
       databasePath: path.join(workspaceDir, "bandry.db"),
-      dotenvPath: path.join(workspaceDir, ".env")
     },
     runtime: {
       inheritedEnv: {}
@@ -31,7 +33,7 @@ const createConfig = () => {
 };
 
 describe("middleware loader order", () => {
-  it("builds middlewares in fixed order and keeps clarification last", () => {
+  it("builds middlewares in fixed order and keeps clarification last (default mode)", () => {
     const config = createConfig();
     const sandboxService = new SandboxService(config);
 
@@ -44,15 +46,101 @@ describe("middleware loader order", () => {
 
     expect(middlewares.map((item) => item.name)).toEqual([
       "workspace",
+      "soul",
+      "skill",
       "local_resource",
       "sandbox_binding",
       "dangling_tool_call",
       "summarization",
-      "title",
       "memory",
+      "clarification"
+    ]);
+    expect(middlewares[middlewares.length - 1]?.name).toBe("clarification");
+  });
+
+  it("includes todolist and subagent_limit in subagents mode", () => {
+    const config = createConfig();
+    const sandboxService = new SandboxService(config);
+
+    const middlewares = buildMiddlewares({
+      config,
+      modelsFactory: {} as never,
+      sandboxService,
+      conversationStore: undefined,
+      mode: "subagents"
+    });
+
+    expect(middlewares.map((item) => item.name)).toEqual([
+      "workspace",
+      "soul",
+      "skill",
+      "local_resource",
+      "sandbox_binding",
+      "dangling_tool_call",
+      "summarization",
+      "memory",
+      "todolist",
       "subagent_limit",
       "clarification"
     ]);
     expect(middlewares[middlewares.length - 1]?.name).toBe("clarification");
+  });
+
+  it("includes todolist and subagent_limit when requestParams.isPlanMode is true", () => {
+    const config = createConfig();
+    const sandboxService = new SandboxService(config);
+
+    const middlewares = buildMiddlewares({
+      config,
+      modelsFactory: {} as never,
+      sandboxService,
+      conversationStore: undefined,
+      mode: "default",
+      requestParams: {
+        isPlanMode: true
+      }
+    });
+
+    expect(middlewares.map((item) => item.name)).toContain("todolist");
+    expect(middlewares.map((item) => item.name)).toContain("subagent_limit");
+    expect(middlewares[middlewares.length - 1]?.name).toBe("clarification");
+  });
+
+  it("uses NoopMemoryMiddleware when no memoryProvider given", () => {
+    const config = createConfig();
+    const sandboxService = new SandboxService(config);
+
+    const middlewares = buildMiddlewares({
+      config,
+      modelsFactory: {} as never,
+      sandboxService,
+      memoryProvider: undefined
+    });
+
+    const memory = middlewares.find((item) => item.name === "memory");
+    expect(memory).toBeDefined();
+    expect(memory!.beforeLLM).toBeUndefined();
+  });
+
+  it("uses real MemoryMiddleware when memoryProvider is given", () => {
+    const config = createConfig();
+    const sandboxService = new SandboxService(config);
+
+    const mockProvider = {
+      injectContext: async () => [],
+      storeConversation: async () => undefined
+    };
+
+    const middlewares = buildMiddlewares({
+      config,
+      modelsFactory: {} as never,
+      sandboxService,
+      memoryProvider: mockProvider
+    });
+
+    const memory = middlewares.find((item) => item.name === "memory");
+    expect(memory).toBeDefined();
+    expect(memory!.beforeLLM).toBeDefined();
+    expect(memory!.onResponse).toBeDefined();
   });
 });

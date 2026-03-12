@@ -1,6 +1,7 @@
 import { resolveRuntimeTarget } from "../../../llm/runtime/runtime-target";
 import type { LlmMessage } from "../../../llm/runtime/types";
 import type { Middleware, MiddlewareContext } from "./types";
+import { runtimeLogger } from "../../../logging/runtime-logger";
 
 const MESSAGE_COUNT_THRESHOLD = 24;
 const CHAR_THRESHOLD = 16_000;
@@ -39,6 +40,8 @@ export class SummarizationMiddleware implements Middleware {
     );
 
     try {
+      const traceId = ctx.sessionId;
+      const modelCallId = `sum-${Date.now().toString(36)}`;
       const target = resolveRuntimeTarget(ctx.runtime.config, "lead.synthesizer");
       const prompt = [
         "Summarize the conversation history for context compression.",
@@ -51,11 +54,25 @@ export class SummarizationMiddleware implements Middleware {
         model: target.model,
         temperature: 0,
         maxTokens: 600,
+        traceId,
+        phase: "summarization",
+        modelCallId,
         messages: [
           { role: "system", content: prompt },
           { role: "user", content: sourceText }
         ],
         abortSignal: ctx.runtime.abortSignal
+      });
+      runtimeLogger.info({
+        module: "middleware",
+        phase: "summarization",
+        traceId,
+        modelCallId,
+        msg: "Summarization applied",
+        extra: {
+          originalMessages: messages.length,
+          keptMessages: trailing.length + 1,
+        },
       });
 
       ctx.runtime.onUpdate?.(
@@ -80,6 +97,15 @@ export class SummarizationMiddleware implements Middleware {
         }
       };
     } catch (error) {
+      runtimeLogger.warn({
+        module: "middleware",
+        phase: "summarization",
+        traceId: ctx.sessionId,
+        msg: "Summarization failed",
+        extra: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       ctx.runtime.onUpdate?.(
         "model",
         `summarization failed: ${error instanceof Error ? error.message : String(error)}`

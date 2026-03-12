@@ -60,7 +60,8 @@ describe("OpenVikingMemoryProvider", () => {
       targetUris: ["viking://user/memories"],
       topK: 5,
       scoreThreshold: 0.3,
-      commitDebounceMs: 1000
+      commitDebounceMs: 1000,
+      persistTimeoutMs: 5000
     });
 
     const chunks = await provider.injectContext("session_1", "what are my preferences?");
@@ -91,7 +92,8 @@ describe("OpenVikingMemoryProvider", () => {
       targetUris: ["viking://user/memories"],
       topK: 5,
       scoreThreshold: 0.3,
-      commitDebounceMs: 1000
+      commitDebounceMs: 1000,
+      persistTimeoutMs: 5000
     });
 
     const conversation = createConversation();
@@ -112,5 +114,43 @@ describe("OpenVikingMemoryProvider", () => {
     await vi.runOnlyPendingTimersAsync();
 
     expect(mockClient.commitSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("deduplicates adjacent identical messages before persistence", async () => {
+    vi.useFakeTimers();
+
+    const mockClient: MockOpenVikingClient = {
+      createSession: vi.fn(async () => ({ sessionId: "ov_session_1" })),
+      addSessionMessage: vi.fn(async () => undefined),
+      commitSession: vi.fn(async () => undefined),
+      search: vi.fn(async () => ({
+        memories: [],
+        resources: [],
+        skills: []
+      }))
+    };
+
+    const provider = new OpenVikingMemoryProvider(mockClient as never, {
+      targetUris: ["viking://user/memories"],
+      topK: 5,
+      scoreThreshold: 0.3,
+      commitDebounceMs: 200,
+      persistTimeoutMs: 5000
+    });
+
+    await provider.storeConversation({
+      sessionId: "session_2",
+      messages: [
+        { role: "user", content: "我的名字是张三", timestamp: Date.now() - 3 },
+        { role: "user", content: "我的名字是张三", timestamp: Date.now() - 2 },
+        { role: "assistant", content: "收到", timestamp: Date.now() - 1 },
+        { role: "assistant", content: "收到", timestamp: Date.now() }
+      ]
+    });
+
+    await vi.advanceTimersByTimeAsync(200);
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(mockClient.addSessionMessage).toHaveBeenCalledTimes(2);
   });
 });

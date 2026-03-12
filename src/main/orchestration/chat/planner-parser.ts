@@ -100,6 +100,11 @@ const parsePlannerInput = (inputRaw: unknown): PlannerActionTool["input"] => {
 
   return {
     path: typeof obj.path === "string" ? obj.path : undefined,
+    content: typeof obj.content === "string" ? obj.content : undefined,
+    filepaths: Array.isArray(obj.filepaths)
+      ? obj.filepaths.filter((item): item is string => typeof item === "string")
+      : undefined,
+    overwrite: typeof obj.overwrite === "boolean" ? obj.overwrite : undefined,
     command: typeof obj.command === "string" ? obj.command : undefined,
     args: Array.isArray(obj.args) ? obj.args.filter((item): item is string => typeof item === "string") : undefined,
     cwd: typeof obj.cwd === "string" ? obj.cwd : undefined,
@@ -137,16 +142,24 @@ export const parsePlannerAction = (rawText: string): PlannerAction | null => {
       root.action === "tool" &&
       (root.tool === "list_dir" ||
         root.tool === "read_file" ||
+        root.tool === "write_file" ||
+        root.tool === "present_files" ||
         root.tool === "exec" ||
         root.tool === "web_search" ||
         root.tool === "web_fetch" ||
+        root.tool === "github_search" ||
         root.tool === "delegate_sub_tasks" ||
-        root.tool === "ask_clarification")
+        root.tool === "ask_clarification" ||
+        root.tool === "memory_search" ||
+        root.tool === "write_todos" ||
+        root.tool === "task")
     ) {
+      // Support both "input" and "action_input" field names
+      const inputRaw = root.input ?? root.action_input;
       return {
         action: "tool",
         tool: root.tool,
-        input: parsePlannerInput(root.input),
+        input: parsePlannerInput(inputRaw),
         reason: typeof root.reason === "string" ? root.reason : undefined
       };
     }
